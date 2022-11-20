@@ -6,11 +6,11 @@ Usage
 Installation
 ------------
 
-To use Lumache, first install it using pip:
+To use jaxspec, first install it using pip:
 
 .. code-block:: console
 
-   (.venv) $ pip install lumache
+   (.venv) $ pip install jaxspec
 
 Creating recipes
 ----------------
@@ -27,6 +27,14 @@ will raise an exception.
 .. autoexception:: lumache.InvalidKindError
 
 For example:
+
+>>> import main
+>>> lumache.get_random_ingredients()
+['shells', 'gorgonzola', 'parsley']
+
+>>> import main
+>>> lumache.get_random_ingredients()
+['shells', 'gorgonzola', 'parsley']
 
 >>> import lumache
 >>> lumache.get_random_ingredients()
