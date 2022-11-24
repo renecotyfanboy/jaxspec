@@ -1,9 +1,10 @@
 import haiku as hk
 import jax.numpy as jnp
-from .abc import ModelComponent
+from .abc import AdditiveComponent
 from haiku.initializers import Constant
 
-class PowerLaw(ModelComponent):
+
+class PowerLaw(AdditiveComponent):
 
     def __call__(self, energy):
 
