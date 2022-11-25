@@ -2,6 +2,7 @@ import haiku as hk
 from abc import ABC, abstractmethod
 
 
+
 class ModelComponent(ABC, hk.Module):
 
     def __len__(self):
@@ -19,6 +20,7 @@ class AdditiveComponent(ModelComponent):
 
 
 class MultiplicativeComponent(ModelComponent):
+
 
     @abstractmethod
     def __call__(self, E):
