@@ -1,7 +1,5 @@
-API
-===
+API Documentation
+=================
 
-.. autosummary::
-   :toctree: generated
-
-   jaxspec
+.. automodule:: jaxspec
+   :members:
