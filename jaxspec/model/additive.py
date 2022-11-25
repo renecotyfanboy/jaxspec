@@ -4,7 +4,7 @@ from .abc import AdditiveComponent
 from haiku.initializers import Constant
 
 
-class PowerLaw(AdditiveComponent):
+class Powerlaw(AdditiveComponent):
 
     def __call__(self, energy):
 

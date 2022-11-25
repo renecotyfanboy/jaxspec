@@ -4,7 +4,7 @@ from .abc import MultiplicativeComponent
 from haiku.initializers import Constant
 
 
-class ExpFac(MultiplicativeComponent):
+class Expfac(MultiplicativeComponent):
 
     def __call__(self, energy):
 
