@@ -1,3 +1,11 @@
+import os
+import sys
+
+#Allow relative imports for github workflows
+current_dir = os.path.dirname(os.path.abspath(__file__))
+source_dir = os.path.abspath(os.path.join(current_dir, ".."))
+sys.path.append(source_dir)
+
 import chex
 from jax import grad, vmap
 import jax.numpy as jnp
