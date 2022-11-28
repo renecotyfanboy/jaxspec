@@ -1,8 +1,14 @@
+import os
+import sys
 import chex
 import jax.numpy as jnp
 from jax import vmap, grad
 from jaxspec.model.from_string import build_model
 
+#Allow relative imports for github workflows
+current_dir = os.path.dirname(os.path.abspath(__file__))
+source_dir = os.path.abspath(os.path.join(current_dir, ".."))
+sys.path.append(source_dir)
 chex.set_n_cpu_devices(n=2)
 
 
