@@ -1,5 +1,5 @@
 API Documentation
 =================
 
-.. automodule:: jaxspec
+.. automodule:: jaxspec.model
    :members:

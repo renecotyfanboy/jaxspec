@@ -2,29 +2,22 @@ import haiku as hk
 from abc import ABC, abstractmethod
 
 
-
 class ModelComponent(ABC, hk.Module):
-
-    def __len__(self):
-        return 1
-
-
-class AdditiveComponent(ModelComponent):
+    """Abstract class that allows to build model components from haiku modules"""
 
     @abstractmethod
-    def __call__(self, E):
+    def __call__(self, energy):
         """
         Return the model evaluated at a given energy
         """
         pass
 
 
-class MultiplicativeComponent(ModelComponent):
+class AdditiveComponent(ModelComponent, ABC):
+    """Abstract class for additive model components"""
+    pass
 
 
-    @abstractmethod
-    def __call__(self, E):
-        """
-        Return the model evaluated at a given energy
-        """
-        pass
+class MultiplicativeComponent(ModelComponent, ABC):
+    """Abstract class for multiplicative model components"""
+    pass
