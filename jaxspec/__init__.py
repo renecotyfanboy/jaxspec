@@ -8,4 +8,7 @@ Model
 
 .. automodule:: model
     :members:
+
 """
+
+__version__ = "0.1"
