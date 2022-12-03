@@ -1,6 +1,10 @@
 JAXSPEC
 =======
 
+.. image:: https://readthedocs.org/projects/jaxspec/badge/?version=latest
+    :target: https://jaxspec.readthedocs.io/en/latest/?badge=latest
+    :alt: Documentation Status
+
 This GitHub template includes fictional Python library
 with some basic Sphinx docs.
 
