@@ -20,6 +20,7 @@ extensions = [
     'sphinx.ext.duration',
     'sphinx.ext.doctest',
     'sphinx.ext.autodoc',
+    'sphinx.ext.module',
     'sphinx.ext.autosummary',
     'sphinx.ext.intersphinx',
 ]
@@ -30,6 +31,9 @@ intersphinx_mapping = {
 }
 intersphinx_disabled_domains = ['std']
 
+# The suffix(es) of source filenames.
+source_suffix = '.rst'
+
 templates_path = ['_templates']
 
 # -- Options for HTML output
@@ -38,4 +42,3 @@ html_theme = 'sphinx_rtd_theme'
 
 # -- Options for EPUB output
 epub_show_urls = 'footnote'
-master_doc = 'index'
