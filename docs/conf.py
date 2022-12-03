@@ -43,4 +43,4 @@ html_theme = 'sphinx_rtd_theme'
 epub_show_urls = 'footnote'
 
 #Setting master doc
-master_doc = 'index'
+master_doc = 'source/index.rst'
