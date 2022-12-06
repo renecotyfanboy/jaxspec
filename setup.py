@@ -1,12 +1,17 @@
 from setuptools import setup
-
+from jaxspec import __version__
 
 setup(
-    name='jaxspec',    # This is the name of your PyPI-package.
-    version='0.1.0',
-    description='Python package for fitting X-Ray spectra with JAX',
-    author='Simon Dupourqué',
-    author_email='sdupourque@irap.omp.eu',
-    url="https://github.com/renecotyfanboy/jaxspec",
-    packages=['jaxspec']
+    name="jaxspec",
+    version=__version__,
+    description="Fitting X-Ray spectra with jax and numpyro",
+    author="Simon Dupourqué",
+    author_email="sdupourque@irap.omp.eu",
+    packages=["jaxspec"],
+    install_requires=[
+        "chex",
+        "jax",
+        "simpleeval",
+        "dm-haiku"
+    ],
 )
