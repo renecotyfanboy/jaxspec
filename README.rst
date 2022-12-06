@@ -5,9 +5,4 @@ JAXSPEC
     :target: https://jaxspec.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-This GitHub template includes fictional Python library
-with some basic Sphinx docs.
-
-Read the tutorial here:
-
-https://docs.readthedocs.io/en/stable/tutorial/
+A library for fitting X-ray spectra with jax and numpyro
