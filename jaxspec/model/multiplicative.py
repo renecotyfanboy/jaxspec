@@ -5,6 +5,10 @@ from haiku.initializers import Constant
 
 
 class Expfac(MultiplicativeComponent):
+    r"""
+    An exponential modification of a spectrum
+
+    """
 
     def __call__(self, energy):
 
