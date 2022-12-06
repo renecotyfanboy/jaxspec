@@ -5,6 +5,9 @@ from haiku.initializers import Constant
 
 
 class Powerlaw(AdditiveComponent):
+    """
+    Powerlaw model
+    """
 
     def __call__(self, energy):
 
@@ -15,7 +18,9 @@ class Powerlaw(AdditiveComponent):
 
 
 class Lorentz(AdditiveComponent):
-
+    """
+    Lorentz line profile
+    """
     def __call__(self, energy):
 
         line_energy = hk.get_parameter('E_l', [], init=Constant(1))

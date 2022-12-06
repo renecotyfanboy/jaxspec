@@ -1,5 +1,15 @@
 API Documentation
 =================
 
-.. automodule:: jaxspec
+.. toctree::
+   :maxdepth: 1
+   :caption: Contents:
+
+Models
+======
+
+.. automodule:: jaxspec.model.additive
+   :members:
+
+.. automodule:: jaxspec.model.multiplicative
    :members:
