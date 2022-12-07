@@ -2,3 +2,5 @@ chex==0.1.5
 jax==0.3.25
 simpleeval==0.9.12
 dm-haiku==0.0.9
+numpy==1.21.2
+astropy==4.3.1

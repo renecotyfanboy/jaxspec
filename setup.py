@@ -1,5 +1,6 @@
 from setuptools import setup
-from jaxspec import __version__
+from src.jaxspec import __version__
+
 
 setup(
     name="jaxspec",
@@ -8,10 +9,13 @@ setup(
     author="Simon Dupourqué",
     author_email="sdupourque@irap.omp.eu",
     packages=["jaxspec"],
+    package_dir={'':'src'},
     install_requires=[
         "chex",
         "jax",
         "simpleeval",
         "dm-haiku"
     ],
+    include_package_data=True,
+    package_data={'jaxspec.tables': ['*.fits']},
 )
