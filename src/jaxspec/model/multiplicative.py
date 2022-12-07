@@ -1,5 +1,6 @@
 import haiku as hk
 import jax.numpy as jnp
+import importlib.resources
 from .abc import MultiplicativeComponent
 from haiku.initializers import Constant
 from astropy.table import Table
@@ -33,8 +34,9 @@ class TbAbs(MultiplicativeComponent):
 
         super(TbAbs, self).__init__()
         # Fixing incoming path issues
-        path = 'tables/xsect_tbabs_wilm.fits'
-        table = Table.read(path)
+        ref = importlib.resources.files('jaxspec') / 'tables/xsect_tbabs_wilm.fits'
+        with importlib.resources.as_file(ref) as path:
+            table = Table.read(path)
         self.energy = jnp.asarray(table['ENERGY'])
         self.sigma = jnp.asarray(table['SIGMA'])
 
