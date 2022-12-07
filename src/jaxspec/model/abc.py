@@ -3,13 +3,7 @@ from abc import ABC, abstractmethod
 
 
 
-class ModelComponent(ABC, hk.Module):
-
-    def __len__(self):
-        return 1
-
-
-class AdditiveComponent(ModelComponent):
+class ModelComponent(hk.Module, ABC):
 
     @abstractmethod
     def __call__(self, E):
@@ -19,12 +13,11 @@ class AdditiveComponent(ModelComponent):
         pass
 
 
-class MultiplicativeComponent(ModelComponent):
+class AdditiveComponent(ModelComponent, ABC):
+
+    pass
 
 
-    @abstractmethod
-    def __call__(self, E):
-        """
-        Return the model evaluated at a given energy
-        """
-        pass
+class MultiplicativeComponent(ModelComponent, ABC):
+
+    pass
