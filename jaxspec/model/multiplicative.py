@@ -33,7 +33,7 @@ class TbAbs(MultiplicativeComponent):
 
         super(TbAbs, self).__init__()
         # Fixing incoming path issues
-        path = 'jaxspec/tables/xsect_tbabs_wilm.fits'
+        path = 'tables/xsect_tbabs_wilm.fits'
         table = Table.read(path)
         self.energy = jnp.asarray(table['ENERGY'])
         self.sigma = jnp.asarray(table['SIGMA'])
