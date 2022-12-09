@@ -8,10 +8,21 @@ from astropy.table import Table
 
 class Expfac(MultiplicativeComponent):
     r"""
-    An exponential modification of a spectrum
+    An exponential modification of a spectrum b
+
+    .. math::
+        D_{it} =
+
+    Parameters
+    ----------
+        :math:`A` : amplitude of the modification
+
+        :math:`f` : exponential factor
+
+        :math:`E_c` : start energy of modification
 
     """
-
+#\begin{cases}1 & \text{if bank $i$ issues ABs at time $t$}\\0 & \text{otherwise}\end{cases}
     def __call__(self, energy):
 
         amplitude = hk.get_parameter('A', [], init=Constant(1))
