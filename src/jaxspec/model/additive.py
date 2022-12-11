@@ -55,7 +55,7 @@ class LogParabola(AdditiveComponent):
     A LogParabola model
 
     .. math::
-        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_{Pivot}} \right)^{-(\alpha + \beta \mathrm{ln}(E/E_{Pivot})) }
+        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_{\text{Pivot}}} \right)^{-(\alpha + \beta \mathrm{ln}(E/E_{\text{Pivot}})) }
 
     Parameters
     ----------
@@ -65,7 +65,7 @@ class LogParabola(AdditiveComponent):
 
         :math:`K` : Normalization at the pivot energy :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
 
-        :math:`E_{Pivot }` : Pivot energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
+        :math:`E_{\text{Pivot}}` : Pivot energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
     """
 
     def __call__(self, energy):
