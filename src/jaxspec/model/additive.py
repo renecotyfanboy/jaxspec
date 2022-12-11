@@ -49,3 +49,29 @@ class Lorentz(AdditiveComponent):
         norm = hk.get_parameter('norm', [], init=Constant(1))
 
         return norm*(sigma/(2*jnp.pi))/((energy-line_energy)**2 + (sigma/2)**2)
+
+class LogParabola(AdditiveComponent):
+    r"""
+    A LogParabola model
+
+    .. math::
+        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_{Pivot}} \right)^{-(\alpha + \beta \mathrm{ln}(E/E_{Pivot})) }
+
+    Parameters
+    ----------
+        :math:`a` : Slope of the LogParabola at the pivot energy :math:`\left[\text{dimensionless}\right]`
+
+        :math:`b` : Curve parameter of the LogParabola :math:`\left[\text{dimensionless}\right]`
+
+        :math:`K` : Normalization at the pivot energy :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+
+        :math:`E_{Pivot }` : Pivot energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
+    """
+
+    def __call__(self, energy):
+
+        a = hk.get_parameter('a', [], init=Constant(11/3))
+        b = hk.get_parameter('b', [], init=Constant(0.2))
+        norm = hk.get_parameter('norm', [], init=Constant(1))
+
+        return norm*energy**(-(a + b*jnp.log(energy)))
