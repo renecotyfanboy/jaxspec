@@ -75,3 +75,28 @@ class Logparabola(AdditiveComponent):
         norm = hk.get_parameter('norm', [], init=Constant(1))
 
         return norm*energy**(-(a + b*jnp.log(energy)))
+
+
+class Gauss(AdditiveComponent):
+    r"""
+    A Gaussian line profile
+
+    .. math::
+        \mathcal{M}\left( E \right) = K\frac{1}{\sqrt{2\pi\sigma^2}}\exp\left(\frac{-(E-E_L)^2}{2\sigma^2}\right)
+
+    Parameters
+    ----------
+        :math:`E_L` : Energy of the line :math:`\left[\text{keV}\right]`
+
+        :math:`\sigma` : Width of the line :math:`\left[\text{keV}\right]`
+
+        :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+    """
+
+    def __call__(self, energy):
+
+        line_energy = hk.get_parameter('E_l', [], init=Constant(1))
+        sigma = hk.get_parameter('sigma', [], init=Constant(1))
+        norm = hk.get_parameter('norm', [], init=Constant(1))
+
+        return norm*(1/(jnp.sqrt(2*jnp.pi)*sigma))*jnp.exp(-(energy-line_energy)**2/(2*sigma**2))
