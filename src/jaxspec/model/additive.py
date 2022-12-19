@@ -75,3 +75,26 @@ class LogParabola(AdditiveComponent):
         norm = hk.get_parameter('norm', [], init=Constant(1))
 
         return norm*energy**(-(a + b*jnp.log(energy)))
+    
+    
+class BlackBody(AdditiveComponent):
+    r"""
+    A black body model
+
+    .. math::
+        \mathcal{M}\left( E \right) = \frac{K \times 8.0525 E^{2}}{(kT)^{4}\left(exp(E/kT)-1\right)}
+
+    Parameters
+    ----------
+        :math:`kT` : Temperature :math:`\left[\text{keV}\right]`
+
+        :math:`K` : :math:`L_{39}/D_{10}^{2}`, where :math:`L_{39}` is the source luminosity in units of `1O^{39}` erg/s and `D_{10}` is the distance to the source in units of 10 kpc
+         :math:`\left[\right]`
+    """
+
+    def __call__(self, energy):
+
+        kT = hk.get_parameter('kT', [], init=Constant(11/3))
+        norm = hk.get_parameter('norm', [], init=Constant(1))
+
+        return norm*8.0525*energy**2/((kT**4)*(jnp.exp(energy/kT)-1))
