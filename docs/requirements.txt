@@ -1,9 +1,9 @@
-chex==0.1.5
+chex
 jax[cpu]
-simpleeval==0.9.12
-dm-haiku==0.0.9
-numpy==1.21.2
-astropy==4.3.1
-nbsphinx==0.8.10
-ipython==7.27.0
-matplotlib==3.4.3
+simpleeval
+dm-haiku
+numpy
+astropy
+nbsphinx
+ipython
+matplotlib
