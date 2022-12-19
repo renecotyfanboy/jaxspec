@@ -12,7 +12,7 @@ build:
     python: "3.9"
 
 sphinx:
-  fail_on_warning: true
+  fail_on_warning: false #Should change this in the future
 
 # If using Sphinx, optionally build your docs in additional formats such as PDF
 formats:
