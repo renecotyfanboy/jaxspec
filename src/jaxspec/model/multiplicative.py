@@ -10,6 +10,17 @@ class Expfac(MultiplicativeComponent):
     r"""
     An exponential modification of a spectrum
 
+    .. math::
+        \mathcal{M}(E) = \begin{cases}1 + A \exp \left(-fE\right) & \text{if $E>E_c$}\\1 & \text{if $E<E_c$}\end{cases}
+
+    Parameters
+    ----------
+        :math:`A` : amplitude of the modification :math:`\left[\text{dimensionless}\right]`
+
+        :math:`f` : exponential factor :math:`\left[\text{keV}^{-1}\right]`
+
+        :math:`E_c` : start energy of modification :math:`\left[\text{keV}\right]`
+
     """
 
     def __call__(self, energy):
