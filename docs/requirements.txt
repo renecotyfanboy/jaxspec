@@ -1,5 +1,5 @@
 chex
-jax[cpu]
+jax[cpu]<0.4
 simpleeval
 dm-haiku
 numpy
