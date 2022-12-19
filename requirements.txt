@@ -1,5 +1,5 @@
 chex~=0.1.5
-jax~=0.3.25
+jax[cpu]
 simpleeval~=0.9.12
 dm-haiku~=0.0.9
 setuptools~=65.6.3
