@@ -88,8 +88,7 @@ class BlackBody(AdditiveComponent):
     ----------
         :math:`kT` : Temperature :math:`\left[\text{keV}\right]`
 
-        :math:`K` : :math:`L_{39}/D_{10}^{2}`, where :math:`L_{39}` is the source luminosity in units of `1O^{39}` erg/s and `D_{10}` is the distance to the source in units of 10 kpc
-         :math:`\left[\right]`
+        :math:`K` : :math:`L_{39}/D_{10}^{2}`, where :math:`L_{39}` is the source luminosity in units of :math:`10^{39}` erg/s and :math:`D_{10}` is the distance to the source in units of 10 kpc
     """
 
     def __call__(self, energy):
