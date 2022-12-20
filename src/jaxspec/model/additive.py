@@ -82,11 +82,11 @@ class BlackBody(AdditiveComponent):
     A black body model
 
     .. math::
-        \mathcal{M}\left( E \right) = \frac{K \times 8.0525 E^{2}}{(kT)^{4}\left(exp(E/kT)-1\right)}
+        \mathcal{M}\left( E \right) = \frac{K \times 8.0525 E^{2}}{(k_B T)^{4}\left(\exp(E/k_BT)-1\right)}
 
     Parameters
     ----------
-        :math:`kT` : Temperature :math:`\left[\text{keV}\right]`
+        :math:`k_B T` : Temperature :math:`\left[\text{keV}\right]`
 
         :math:`K` : :math:`L_{39}/D_{10}^{2}`, where :math:`L_{39}` is the source luminosity in units of :math:`10^{39}` erg/s and :math:`D_{10}` is the distance to the source in units of 10 kpc
     """
