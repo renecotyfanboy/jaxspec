@@ -15,6 +15,6 @@ Installation
 
 For the moment, this pacakge is not referenced on Pypi, so it must be installed from this repository
 
-``
-pip install git+https://github.com/renecotyfanboy/jaxspec
-``
+::
+
+    pip install git+https://github.com/renecotyfanboy/jaxspec
