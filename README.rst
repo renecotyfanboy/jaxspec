@@ -1,3 +1,4 @@
+=======
 JAXSPEC
 =======
 
@@ -15,6 +16,6 @@ Installation
 
 For the moment, this pacakge is not referenced on Pypi, so it must be installed from this repository
 
-::
+.. code-block::
 
     pip install git+https://github.com/renecotyfanboy/jaxspec
