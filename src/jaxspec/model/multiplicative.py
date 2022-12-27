@@ -15,11 +15,9 @@ class Expfac(MultiplicativeComponent):
 
     Parameters
     ----------
-        :math:`A` : amplitude of the modification :math:`\left[\text{dimensionless}\right]`
-
-        :math:`f` : exponential factor :math:`\left[\text{keV}^{-1}\right]`
-
-        :math:`E_c` : start energy of modification :math:`\left[\text{keV}\right]`
+        * :math:`A` : amplitude of the modification :math:`\left[\text{dimensionless}\right]`
+        * :math:`f` : exponential factor :math:`\left[\text{keV}^{-1}\right]`
+        * :math:`E_c` : start energy of modification :math:`\left[\text{keV}\right]`
 
     """
 
@@ -38,7 +36,7 @@ class Tbabs(MultiplicativeComponent):
 
     Parameters
     ----------
-        :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
+        * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
 
     """
     def __init__(self):
@@ -64,7 +62,7 @@ class Phabs(MultiplicativeComponent):
 
     Parameters
     ----------
-        :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
+        * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
 
     """
     def __init__(self):

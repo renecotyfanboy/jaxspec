@@ -4,14 +4,14 @@ import jax.numpy as jnp
 
 class IntegrateDEQUAD(hk.Module):
     r"""
-    Module for integrating a model between two energies. It relies on double exponential quadrature [1]_ [2]_ [3]_ for
+    Module for integrating a model between two energies. It relies on double exponential quadrature for
     finite intervals to compute an approximation of the integral of a model.
 
     References
     ----------
-    .. [1] `Takahasi and Mori (1974) <https://ems.press/journals/prims/articles/2686>`_
-    .. [2] `Mori and Sugihara (2001) <https://doi.org/10.1016/S0377-0427(00)00501-X>`_
-    .. [3] `Tanh-sinh quadrature <https://en.wikipedia.org/wiki/Tanh-sinh_quadrature>`_ from Wikipedia
+    * `Takahasi and Mori (1974) <https://ems.press/journals/prims/articles/2686>`_
+    * `Mori and Sugihara (2001) <https://doi.org/10.1016/S0377-0427(00)00501-X>`_
+    * `Tanh-sinh quadrature <https://en.wikipedia.org/wiki/Tanh-sinh_quadrature>`_ from Wikipedia
 
 
     """

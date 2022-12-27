@@ -2,14 +2,13 @@ from astropy.table import QTable
 
 
 class DataARF:
-    """Class to handle ARF data defined with OGIP standards [1]_ [2]_.
+    """Class to handle ARF data defined with OGIP standards.
 
     References
     ----------
 
-    .. [1] "The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats)", https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html
-
-    .. [2] "The Calibration Requirements for Spectral Analysis Addendum: Changes log", https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html
+    * `The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats) <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html>`_
+    * `The Calibration Requirements for Spectral Analysis Addendum: Changes log <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html>`_
 
     """
 
