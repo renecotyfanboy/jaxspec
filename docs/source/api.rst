@@ -16,3 +16,6 @@ Models
 
 .. automodule:: jaxspec.model.integrate
    :members:
+
+.. automodule:: jaxspec.instru.ogip
+   :members:
