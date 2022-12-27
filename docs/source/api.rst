@@ -13,3 +13,6 @@ Models
 
 .. automodule:: jaxspec.model.multiplicative
    :members:
+
+.. automodule:: jaxspec.model.integrate
+   :members:
