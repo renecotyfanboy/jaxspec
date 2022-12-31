@@ -1,5 +1,7 @@
 import numpy as np
+import jax.numpy as jnp
 from astropy.table import QTable
+from jax.experimental import sparse
 
 
 class DataARF:
@@ -93,7 +95,8 @@ class DataRMF:
                     base += self.n_chan[i][j]
 
         # Transposed matrix so that we just have to multiply by the spectrum
-        self.full_matrix = self.full_matrix.T
+        self.full_matrix = jnp.asarray(self.full_matrix.T)
+        self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
 
     @classmethod
     def from_file(cls, rmf_file):
