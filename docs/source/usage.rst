@@ -8,7 +8,7 @@ Installation
 
 To use jaxspec, first install it using pip:
 
-.. code-block:: console
+::
 
     pip install git+https://github.com/renecotyfanboy/jaxspec@main
 
