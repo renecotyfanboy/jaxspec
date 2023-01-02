@@ -2,12 +2,18 @@
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
 name: Unit tests
-
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
+    paths-ignore:
+      - 'README.rst'
+      - '.github/workflows/test-and-coverage.yml'
   pull_request:
-    branches: [ "main" ]
+    paths-ignore:
+      - 'README.rst'
+      - '.github/workflows/test-and-coverage.yml'
+
 
 permissions:
   contents: read
@@ -31,7 +37,7 @@ jobs:
         pip install .
     - name: Test with pytest
       run: |
-        pytest --cov jaxspec
+        pytest --cov tests/
     - name: "Upload coverage to Codecov"
       uses: codecov/codecov-action@v3
       with:

@@ -1,3 +1,4 @@
+=======
 JAXSPEC
 =======
 
@@ -9,3 +10,12 @@ JAXSPEC
  :target: https://codecov.io/gh/renecotyfanboy/jaxspec
 
 A library for fitting X-ray spectra with jax and numpyro
+
+Installation
+============
+
+For the moment, this pacakge is not referenced on Pypi, so it must be installed from this repository
+
+.. code-block::
+
+    pip install git+https://github.com/renecotyfanboy/jaxspec
