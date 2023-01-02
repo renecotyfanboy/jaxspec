@@ -119,7 +119,7 @@ class RMF(object):
         tlmin_idx = np.hstack(np.where(t))[0]
 
         # get the corresponding value
-        tlmin = np.int(list(hdr.items())[tlmin_idx][1])
+        tlmin = int(list(hdr.items())[tlmin_idx][1])
 
         return tlmin
 
@@ -251,7 +251,7 @@ class RMF(object):
                     counts[counts_idx:counts_idx +
                                       current_num_chans] += self.matrix[resp_idx:resp_idx +
                                                                                  current_num_chans] * \
-                                                                np.float(source_bin_i)
+                                                                float(source_bin_i)
                     # iterate the response index for next round
                     resp_idx += current_num_chans
 
