@@ -1,8 +1,16 @@
 import haiku as hk
 import jax.numpy as jnp
+from abc import ABC
 
 
-class IntegrateDEQUAD(hk.Module):
+class IntegrateABC(hk.Module, ABC):
+    """
+    Abstract class for integration methods
+    """
+    pass
+
+
+class IntegrateDEQUAD(IntegrateABC):
     r"""
     Module for integrating a model between two energies. It relies on double exponential quadrature for
     finite intervals to compute an approximation of the integral of a model.
@@ -41,12 +49,16 @@ class IntegrateDEQUAD(hk.Module):
         return jnp.trapz(self.model(x) * dx, x=self.t)
 
 
-class IntegrateTRAPZ(hk.Module):
+class IntegrateTRAPZ(IntegrateABC):
     r"""
-    Module for integrating a model between two energies. It relies on the well-known trapezoidal rule.
+    Module for integrating a model between two energies. It relies on the well-known trapezoidal rule. Integration is
+    performed in log space as many models are better behaved (i.e. power laws).
+
+    .. caution::
+        This module only handles integration for strictly positive values due to log-space change of variables.
     """
 
-    def __init__(self, model: hk.Module, n_points=71):
+    def __init__(self, model: hk.Module, n_points=301):
         super(IntegrateTRAPZ, self).__init__()
         self.model = model
         self.n = n_points
