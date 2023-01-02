@@ -2,7 +2,6 @@ import haiku as hk
 from abc import ABC, abstractmethod
 
 
-
 class ModelComponent(hk.Module, ABC):
 
     @abstractmethod

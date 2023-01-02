@@ -15,6 +15,7 @@ Contents
 
 .. toctree::
 
+    introduction
     usage
     notebooks/demonstration
     contribute

@@ -13,9 +13,8 @@ class Powerlaw(AdditiveComponent):
 
     Parameters
     ----------
-        :math:`\alpha` : Photon index of the power law :math:`\left[\text{dimensionless}\right]`
-
-        :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+        * :math:`\alpha` : Photon index of the power law :math:`\left[\text{dimensionless}\right]`
+        * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
     """
 
     def __call__(self, energy):
@@ -35,11 +34,9 @@ class Lorentz(AdditiveComponent):
 
     Parameters
     ----------
-        :math:`E_L` : Energy of the line :math:`\left[\text{keV}\right]`
-
-        :math:`\sigma` : FWHM of the line :math:`\left[\text{keV}\right]`
-
-        :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+        * :math:`E_L` : Energy of the line :math:`\left[\text{keV}\right]`
+        * :math:`\sigma` : FWHM of the line :math:`\left[\text{keV}\right]`
+        * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
     """
 
     def __call__(self, energy):
@@ -55,17 +52,14 @@ class Logparabola(AdditiveComponent):
     A LogParabola model
 
     .. math::
-        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_{\text{Pivot}}} \right)^{-(\alpha + \beta \mathrm{ln}(E/E_{\text{Pivot}})) }
+        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_{\text{Pivot}}} \right)^{-(\alpha + \beta ~ \log (E/E_{\text{Pivot}})) }
 
     Parameters
     ----------
-        :math:`a` : Slope of the LogParabola at the pivot energy :math:`\left[\text{dimensionless}\right]`
-
-        :math:`b` : Curve parameter of the LogParabola :math:`\left[\text{dimensionless}\right]`
-
-        :math:`K` : Normalization at the pivot energy :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
-
-        :math:`E_{\text{Pivot}}` : Pivot energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
+        * :math:`a` : Slope of the LogParabola at the pivot energy :math:`\left[\text{dimensionless}\right]`
+        * :math:`b` : Curve parameter of the LogParabola :math:`\left[\text{dimensionless}\right]`
+        * :math:`K` : Normalization at the pivot energy :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+        * :math:`E_{\text{Pivot}}` : Pivot energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
     """
 
     def __call__(self, energy):
@@ -82,14 +76,12 @@ class BlackBody(AdditiveComponent):
     A black body model
 
     .. math::
-        \mathcal{M}\left( E \right) = \frac{K \times 8.0525 E^{2}}{(kT)^{4}\left(exp(E/kT)-1\right)}
+        \mathcal{M}\left( E \right) = \frac{K \times 8.0525 E^{2}}{(k_B T)^{4}\left(\exp(E/k_BT)-1\right)}
 
     Parameters
     ----------
-        :math:`kT` : Temperature :math:`\left[\text{keV}\right]`
-
-        :math:`K` : :math:`L_{39}/D_{10}^{2}`, where :math:`L_{39}` is the source luminosity in units of `1O^{39}` erg/s and `D_{10}` is the distance to the source in units of 10 kpc
-         :math:`\left[\right]`
+        * :math:`k_B T` : Temperature :math:`\left[\text{keV}\right]`
+        * :math:`K` : :math:`L_{39}/D_{10}^{2}`, where :math:`L_{39}` is the source luminosity in units of :math:`10^{39}` erg/s and :math:`D_{10}` is the distance to the source in units of 10 kpc
     """
 
     def __call__(self, energy):
@@ -109,11 +101,9 @@ class Gauss(AdditiveComponent):
 
     Parameters
     ----------
-        :math:`E_L` : Energy of the line :math:`\left[\text{keV}\right]`
-
-        :math:`\sigma` : Width of the line :math:`\left[\text{keV}\right]`
-
-        :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+        * :math:`E_L` : Energy of the line :math:`\left[\text{keV}\right]`
+        * :math:`\sigma` : Width of the line :math:`\left[\text{keV}\right]`
+        * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
     """
 
     def __call__(self, energy):

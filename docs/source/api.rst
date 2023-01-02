@@ -13,3 +13,9 @@ Models
 
 .. automodule:: jaxspec.model.multiplicative
    :members:
+
+.. automodule:: jaxspec.model.integrate
+   :members:
+
+.. automodule:: jaxspec.instru.ogip
+   :members:
