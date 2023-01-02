@@ -3,7 +3,7 @@ import sys
 import numpy as np
 from unittest import TestCase
 from jaxspec.instru.ogip import DataARF, DataRMF
-from clarsach_rsp import ARF as RefARF, RMF as RefRMF
+from ref_clarsach_rsp import ARF as RefARF, RMF as RefRMF
 
 #Allow relative imports for github workflows
 current_dir = os.path.dirname(os.path.abspath(__file__))
