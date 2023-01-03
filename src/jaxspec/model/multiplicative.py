@@ -90,7 +90,7 @@ class Gabs(MultiplicativeComponent):
         \mathcal{M}(E) = \exp \left( - \frac{\tau}{\sqrt{2 \pi} \sigma} \exp \left( -\frac{\left(E-E_0\right)^2}{2 \sigma^2} \right) \right)
 
     .. note::
-        The optical depth at line center is :math:`\frac{\tau}{\sqrt{2 \pi} \sigma}`.
+        The optical depth at line center is :math:`\tau}/(\sqrt{2 \pi} \sigma)`.
 
     Parameters
     ----------
@@ -107,3 +107,24 @@ class Gabs(MultiplicativeComponent):
         center = hk.get_parameter('E_0', [], init=Constant(1))
 
         return jnp.exp(-tau/(jnp.sqrt(2*jnp.pi)*sigma)*jnp.exp(-0.5*((energy-center)/sigma)**2))
+
+
+class Highecut(MultiplicativeComponent):
+    r"""
+    A high-energy cutoff model.
+
+    .. math::
+        \mathcal{M}(E) = \begin{cases} \exp \left \frac{E_c - E}{E_f} \right)& \text{if $E < E_c$}\\ 1 & \text{if $E > E_c$}\end{cases}
+
+    Parameters
+    ----------
+        * :math:`E_c` : cutoff energy :math:`\left[\text{keV}\right]`
+        * :math:`E_f` : e-folding energy :math:`\left[\text{keV}\right]`
+    """
+
+    def __call__(self, energy):
+
+        cutoff = hk.get_parameter('E_c', [], init=Constant(1))
+        folding = hk.get_parameter('E_f', [], init=Constant(1))
+
+        return jnp.where(energy <= cutoff, 1., jnp.exp((cutoff-energy)/folding))
