@@ -90,7 +90,7 @@ class Gabs(MultiplicativeComponent):
         \mathcal{M}(E) = \exp \left( - \frac{\tau}{\sqrt{2 \pi} \sigma} \exp \left( -\frac{\left(E-E_0\right)^2}{2 \sigma^2} \right) \right)
 
     .. note::
-        The optical depth at line center is :math:`\tau}/(\sqrt{2 \pi} \sigma)`.
+        The optical depth at line center is :math:`\tau/(\sqrt{2 \pi} \sigma)`.
 
     Parameters
     ----------
@@ -114,7 +114,7 @@ class Highecut(MultiplicativeComponent):
     A high-energy cutoff model.
 
     .. math::
-        \mathcal{M}(E) = \begin{cases} \exp \left \frac{E_c - E}{E_f} \right)& \text{if $E < E_c$}\\ 1 & \text{if $E > E_c$}\end{cases}
+        \mathcal{M}(E) = \begin{cases} \exp \left( \frac{E_c - E}{E_f} \right)& \text{if $E > E_c$}\\ 1 & \text{if $E < E_c$}\end{cases}
 
     Parameters
     ----------
