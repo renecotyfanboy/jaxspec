@@ -13,6 +13,11 @@ Multiplicative Components
 .. automodule:: jaxspec.model.multiplicative
    :members:
 
+Abstract Components
+-------------------
+.. automodule:: jaxspec.model.abc
+   :members:
+
 Utilities
 ---------
 
