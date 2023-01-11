@@ -1,7 +1,50 @@
 import numpy as np
 import jax.numpy as jnp
 from astropy.table import QTable
+from astropy.io import fits
 from jax.experimental import sparse
+
+
+class DataPHA:
+    r"""
+    Class to handle PHA data defined with OGIP standards.
+
+    References
+    ----------
+
+    * `THE OGIP STANDARD PHA FILE FORMAT <https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html>`_
+
+    """
+
+    def __init__(self, channel, counts, exposure, grouping=None, quality=None, backfile=None, respfile=None, ancrfile=None):
+
+        self.channel = channel
+        self.counts = counts
+        self.exposure = exposure
+        self.grouping = grouping
+        self.quality = quality
+        self.backfile = backfile
+        self.respfile = respfile
+        self.ancrfile = ancrfile
+
+    @classmethod
+    def from_file(cls, pha_file):
+
+        data = QTable.read(pha_file,'SPECTRUM')
+        header = fits.getheader(pha_file,'SPECTRUM')
+
+        kwargs = {}
+
+        # Grouping and quality parameters are in binned PHA dataset
+        kwargs['grouping'] = data['GROUPING'] if 'GROUPING' in data.colnames else None
+        kwargs['quality'] = data['QUALITY'] if 'GROUPING' in data.colnames else None
+
+        # Backfile, respfile and ancrfile are in primary header
+        kwargs['backfile'] = header['BACKFILE'] if len(header['BACKFILE']) > 0 else None
+        kwargs['respfile'] = header['RESPFILE'] if len(header['RESPFILE']) > 0 else None
+        kwargs['ancrfile'] = header['ANCRFILE'] if len(header['ANCRFILE']) > 0 else None
+
+        return cls(data['CHANNEL'], data['COUNTS'], header['EXPOSURE'], **kwargs)
 
 
 class DataARF:
@@ -95,8 +138,8 @@ class DataRMF:
                     base += self.n_chan[i][j]
 
         # Transposed matrix so that we just have to multiply by the spectrum
-        self.full_matrix = jnp.asarray(self.full_matrix.T)
-        self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
+        self.full_matrix = self.full_matrix.T
+        #self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
 
     @classmethod
     def from_file(cls, rmf_file):
