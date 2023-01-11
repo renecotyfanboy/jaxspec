@@ -30,25 +30,22 @@ class DataPHA:
     @classmethod
     def from_file(cls, pha_file):
 
-        data=QTable.read(pha_file,'SPECTRUM')
-        header=fits.getheader(pha_file,'SPECTRUM')
-        
-        # Grouping and quality parameters are in binned PHA dataset
-        if 'GROUPING' in data.colnames:
-            grouping=data['GROUPING']
-            quality=data['QUALITY']
-        else:
-            grouping=None
-            quality=None
+        data = QTable.read(pha_file,'SPECTRUM')
+        header = fits.getheader(pha_file,'SPECTRUM')
 
-        return cls(data['CHANNEL'],
-                   data['COUNTS'],
-                   header['EXPOSURE'],
-                   grouping,
-                   quality,
-                   header['BACKFILE'], # Empty string in PHA ! Change to None.
-                   header['RESPFILE'], # Empty string in PHA ! Change to None.
-                   header['ANCRFILE']) # Empty string in PHA ! Change to None.
+        kwargs = {}
+
+        # Grouping and quality parameters are in binned PHA dataset
+        kwargs['grouping'] = data['GROUPING'] if 'GROUPING' in data.colnames else None
+        kwargs['quality'] = data['QUALITY'] if 'GROUPING' in data.colnames else None
+
+        # Backfile, respfile and ancrfile are in primary header
+        kwargs['backfile'] = header['BACKFILE'] if len(header['BACKFILE']) > 0 else None
+        kwargs['respfile'] = header['RESPFILE'] if len(header['RESPFILE']) > 0 else None
+        kwargs['ancrfile'] = header['ANCRFILE'] if len(header['ANCRFILE']) > 0 else None
+
+        return cls(data['CHANNEL'], data['COUNTS'], header['EXPOSURE'], **kwargs)
+
 
     #def plot_pha(self):
     #   import matplotlib.pyplot as plt
@@ -150,8 +147,8 @@ class DataRMF:
                     base += self.n_chan[i][j]
 
         # Transposed matrix so that we just have to multiply by the spectrum
-        self.full_matrix = jnp.asarray(self.full_matrix.T)
-        self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
+        self.full_matrix = self.full_matrix.T
+        #self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
 
     @classmethod
     def from_file(cls, rmf_file):

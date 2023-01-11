@@ -11,6 +11,8 @@ JAXSPEC
 
 A library for fitting X-ray spectra with jax and numpyro
 
+Documentation : https://jaxspec.readthedocs.io/en/latest/
+
 Installation
 ============
 
