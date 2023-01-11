@@ -37,7 +37,7 @@ class DataPHA:
 
         # Grouping and quality parameters are in binned PHA dataset
         kwargs['grouping'] = data['GROUPING'] if 'GROUPING' in data.colnames else None
-        kwargs['quality'] = data['QUALITY'] if 'GROUPING' in data.colnames else None
+        kwargs['quality'] = data['QUALITY'] if 'QUALITY' in data.colnames else None
 
         # Backfile, respfile and ancrfile are in primary header
         kwargs['backfile'] = header['BACKFILE'] if len(header['BACKFILE']) > 0 else None
