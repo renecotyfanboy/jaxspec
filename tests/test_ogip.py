@@ -2,7 +2,7 @@ import os
 import sys
 import numpy as np
 from unittest import TestCase
-from jaxspec.instru.ogip import DataARF, DataRMF
+from jaxspec.instru.ogip import DataARF, DataRMF, DataPHA
 from ref_clarsach_rsp import ARF as RefARF, RMF as RefRMF
 
 #Allow relative imports for github workflows
@@ -17,6 +17,8 @@ class TestRSP(TestCase):
                  for file in ['data/ogip/PN.arf', 'data/ogip/M1.arf', 'data/ogip/M2.arf']]
     rmf_files = [os.path.join(current_dir, file)
                  for file in ['data/ogip/PN.rmf', 'data/ogip/M1.rmf', 'data/ogip/M2.rmf']]
+    pha_files = [os.path.join(current_dir, file)
+                 for file in ['data/ogip/nustar_pha.pha', 'data/ogip/xmm_pha.fits']]
 
     def test_arf(self):
         """
@@ -56,3 +58,12 @@ class TestRSP(TestCase):
             dummy_spec = np.ones(test_rmf.energ_lo.shape)
 
             assert np.isclose(test_rmf.full_matrix @ dummy_spec, test_rmf.sparse_matrix @ dummy_spec).all()
+
+    def test_pha(self):
+        """
+        Test opening various PHA files from fits and pha
+        """
+
+        for pha_file in self.pha_files:
+
+            test_rmf = DataPHA.from_file(pha_file)
