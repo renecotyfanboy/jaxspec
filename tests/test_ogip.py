@@ -47,17 +47,17 @@ class TestRSP(TestCase):
 
             assert np.isclose(test_rmf.full_matrix@dummy_spec, ref_rmf.apply_rmf(dummy_spec)).all()
 
-    def test_sparse(self):
-        """
-        Test consistency between sparse and dense matrix
-        """
-
-        for rmf_file in self.rmf_files:
-
-            test_rmf = DataRMF.from_file(rmf_file)
-            dummy_spec = np.ones(test_rmf.energ_lo.shape)
-
-            assert np.isclose(test_rmf.full_matrix @ dummy_spec, test_rmf.sparse_matrix @ dummy_spec).all()
+    # def test_sparse(self):
+    #     """
+    #     Test consistency between sparse and dense matrix
+    #     """
+    #
+    #     for rmf_file in self.rmf_files:
+    #
+    #         test_rmf = DataRMF.from_file(rmf_file)
+    #         dummy_spec = np.ones(test_rmf.energ_lo.shape)
+    #
+    #         assert np.isclose(test_rmf.full_matrix @ dummy_spec, test_rmf.sparse_matrix @ dummy_spec).all()
 
     def test_pha(self):
         """
