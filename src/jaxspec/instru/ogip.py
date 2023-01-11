@@ -50,6 +50,15 @@ class DataPHA:
                    header['RESPFILE'], # Empty string in PHA ! Change to None.
                    header['ANCRFILE']) # Empty string in PHA ! Change to None.
 
+    #def plot_pha(self):
+    #   import matplotlib.pyplot as plt
+    #   plt.figure()
+    #   plt.plot(self.channel, self.counts/self.exposure)
+    #   plt.xlabel(f'Channel')
+    #   plt.ylabel(f'Countrate [cts/s]')
+    #   plt.show()
+
+
 class DataARF:
     r"""
     Class to handle ARF data defined with OGIP standards.
@@ -77,7 +86,7 @@ class DataARF:
                    arf_table['ENERG_HI'],
                    arf_table['SPECRESP'])
 
-    # def plot(self):
+    # def plot_arf(self):
     #
     #     import matplotlib.pyplot as plt
     #
@@ -160,7 +169,7 @@ class DataRMF:
                    ebounds_table['E_MIN'],
                    ebounds_table['E_MAX'])
 
-    # def plot(self):
+    # def plot_rmf(self):
     #
     #     import cmasher as cmr
     #     import matplotlib.pyplot as plt
