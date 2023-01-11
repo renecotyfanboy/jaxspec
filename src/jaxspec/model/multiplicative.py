@@ -80,3 +80,29 @@ class Phabs(MultiplicativeComponent):
         sigma = jnp.interp(energy, self.energy, self.sigma, left=jnp.inf, right=0.)
 
         return jnp.exp(-nh*sigma)
+
+
+class Wabs(MultiplicativeComponent):
+    r"""
+    A photo-electric absorption using Wisconsin (Morrison & McCammon 1983) cross-sections.
+
+    Parameters
+    ----------
+        * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
+
+    """
+    def __init__(self):
+
+        super(Phabs, self).__init__()
+        ref = importlib.resources.files('jaxspec') / 'tables/xsect_wabs_angr.fits'
+        with importlib.resources.as_file(ref) as path:
+            table = Table.read(path)
+        self.energy = jnp.asarray(table['ENERGY'])
+        self.sigma = jnp.asarray(table['SIGMA'])
+
+    def __call__(self, energy):
+
+        nh = hk.get_parameter('N_H', [], init=Constant(1))
+        sigma = jnp.interp(energy, self.energy, self.sigma, left=jnp.inf, right=0.)
+
+        return jnp.exp(-nh*sigma)

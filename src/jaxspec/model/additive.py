@@ -25,6 +25,25 @@ class Powerlaw(AdditiveComponent):
         return norm*energy**(-alpha)
 
 
+class Continual(AdditiveComponent): # Not named Constant due to haiku.initialisers
+    r"""
+    A constant model
+
+    .. math::
+        \mathcal{M}\left( E \right) = K
+
+    Parameters
+    ----------
+        * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+    """
+
+    def __call__(self, energy):
+
+        norm = hk.get_parameter('norm', [], init=Constant(1))
+
+        return norm*jnp.ones_like(energy)
+
+
 class Lorentz(AdditiveComponent):
     r"""
     A Lorentzian line profile
