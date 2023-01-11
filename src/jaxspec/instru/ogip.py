@@ -1,8 +1,54 @@
 import numpy as np
 import jax.numpy as jnp
 from astropy.table import QTable
+from astropy.io import fits
 from jax.experimental import sparse
 
+
+class DataPHA:
+    r"""
+    Class to handle PHA data defined with OGIP standards.
+
+    References
+    ----------
+
+    * `THE OGIP STANDARD PHA FILE FORMAT <https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html>`_
+
+    """
+
+    def __init__(self, channel, counts, exposure, grouping=None, quality=None, backfile=None, respfile=None, ancrfile=None):
+
+        self.channel = channel
+        self.counts = counts
+        self.exposure = exposure
+        self.grouping = grouping
+        self.quality = quality
+        self.backfile = backfile
+        self.respfile = respfile
+        self.ancrfile = ancrfile
+
+    @classmethod
+    def from_file(cls, pha_file):
+
+        data=QTable.read(pha_file,'SPECTRUM')
+        header=fits.getheader(pha_file,'SPECTRUM')
+        
+        # Grouping and quality parameters are in binned PHA dataset
+        if 'GROUPING' in data.colnames:
+            grouping=data['GROUPING']
+            quality=data['QUALITY']
+        else:
+            grouping=None
+            quality=None
+
+        return cls(data['CHANNEL'],
+                   data['COUNTS'],
+                   header['EXPOSURE'],
+                   grouping,
+                   quality,
+                   header['BACKFILE'], # Empty string in PHA ! Change to None.
+                   header['RESPFILE'], # Empty string in PHA ! Change to None.
+                   header['ANCRFILE']) # Empty string in PHA ! Change to None.
 
 class DataARF:
     r"""
