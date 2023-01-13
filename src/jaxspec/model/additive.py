@@ -66,6 +66,7 @@ class Lorentz(AdditiveComponent):
 
         return norm*(sigma/(2*jnp.pi))/((energy-line_energy)**2 + (sigma/2)**2)
 
+
 class Logparabola(AdditiveComponent):
     r"""
     A LogParabola model

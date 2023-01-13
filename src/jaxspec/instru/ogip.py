@@ -131,16 +131,14 @@ class DataRMF:
             if np.size(self.f_chan[i]) == 1:
 
                 low = self.f_chan[i]
-                high = self.f_chan[i] + self.n_chan[i]
-
-                self.full_matrix[i, low:high] = self.matrix_entry[i][0:self.n_chan[i]]
+                high = min(self.f_chan[i] + self.n_chan[i], self.full_matrix.shape[1])
+                self.full_matrix[i, low:high] = self.matrix_entry[i][0:high - low]
 
             else:
 
                 for j in range(n_grp):
-
                     low = self.f_chan[i][j]
-                    high = self.f_chan[i][j] + self.n_chan[i][j]
+                    high = min(self.f_chan[i][j] + self.n_chan[i][j], self.full_matrix.shape[1])
 
                     self.full_matrix[i, low:high] = self.matrix_entry[i][base:base + self.n_chan[i][j]]
 
@@ -166,24 +164,25 @@ class DataRMF:
                    ebounds_table['E_MIN'],
                    ebounds_table['E_MAX'])
 
-    # def plot_rmf(self):
-    #
-    #     import cmasher as cmr
-    #     import matplotlib.pyplot as plt
-    #
-    #     fig, ax = plt.subplots()
-    #
-    #     energy_in = np.array(self.energ_lo+self.energ_hi)/2
-    #     energy_out = np.array(self.e_min+self.e_max)/2
-    #     mappable = ax.pcolormesh(energy_out, energy_in, self.full_matrix.T, shading='auto', cmap=cmr.cosmic)
-    #     plt.xlabel(r'$E_{spectrum}$')
-    #     plt.ylabel(r'$E_{instrument}$')
-    #     plt.colorbar(mappable=mappable)
-    #     plt.loglog()
-    #     e = np.linspace(-6, 2, 1000)
-    #     plt.plot(e, e)
-    #     plt.xlim(left=min(energy_out), right=max(energy_out))
-    #     plt.ylim(bottom=min(energy_in), top=max(energy_in))
-    #     plt.show()
-    #
-    #     return fig
+
+    def plot(self):
+
+        import cmasher as cmr
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots()
+
+        energy_in = np.array(self.energ_lo+self.energ_hi)/2
+        energy_out = np.array(self.e_min+self.e_max)/2
+        mappable = ax.pcolormesh(energy_out, energy_in, self.full_matrix.T, shading='auto', cmap=cmr.cosmic)
+        plt.xlabel(r'$E_{spectrum}$')
+        plt.ylabel(r'$E_{instrument}$')
+        plt.colorbar(mappable=mappable)
+        plt.loglog()
+        e = np.linspace(-6, 2, 1000)
+        plt.plot(e, e)
+        plt.xlim(left=min(energy_out), right=max(energy_out))
+        plt.ylim(bottom=min(energy_in), top=max(energy_in))
+        plt.show()
+
+        return fig

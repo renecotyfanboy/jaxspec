@@ -14,9 +14,9 @@ sys.path.append(source_dir)
 class TestRSP(TestCase):
 
     arf_files = [os.path.join(current_dir, file)
-                 for file in ['data/ogip/PN.arf', 'data/ogip/M1.arf', 'data/ogip/M2.arf']]
+                 for file in ['data/ogip/PN.arf', 'data/ogip/M1.arf', 'data/ogip/M2.arf', 'data/ogip/nustar.arf']]
     rmf_files = [os.path.join(current_dir, file)
-                 for file in ['data/ogip/PN.rmf', 'data/ogip/M1.rmf', 'data/ogip/M2.rmf']]
+                 for file in ['data/ogip/PN.rmf', 'data/ogip/M1.rmf', 'data/ogip/M2.rmf', 'data/ogip/nustar.rmf', 'data/ogip/XIFU.rmf']]
     pha_files = [os.path.join(current_dir, file)
                  for file in ['data/ogip/nustar_pha.pha', 'data/ogip/xmm_pha.fits']]
 
@@ -29,7 +29,6 @@ class TestRSP(TestCase):
 
             test_arf = DataARF.from_file(arf_file)
             ref_arf = RefARF(arf_file)
-            print(current_dir)
             assert np.isclose(test_arf.specresp.value, ref_arf.specresp).all()
 
     def test_rmf(self):
