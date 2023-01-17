@@ -1,6 +1,7 @@
 import haiku as hk
 import jax.numpy as jnp
-from .abc import AdditiveComponent
+import jax.scipy as jsp
+from .abc import AdditiveComponent, AnalyticalAdditive
 from haiku.initializers import Constant
 
 
@@ -93,7 +94,7 @@ class BlackBody(AdditiveComponent):
         return norm*8.0525*energy**2/((kT**4)*(jnp.exp(energy/kT)-1))
 
 
-class Gauss(AdditiveComponent):
+class Gauss(AnalyticalAdditive):
     r"""
     A Gaussian line profile
 
@@ -114,3 +115,11 @@ class Gauss(AdditiveComponent):
         norm = hk.get_parameter('norm', [], init=Constant(1))
 
         return norm*(1/(jnp.sqrt(2*jnp.pi)*sigma))*jnp.exp(-(energy-line_energy)**2/(2*sigma**2))
+
+    def integral(self, energy):
+
+        line_energy = hk.get_parameter('E_l', [], init=Constant(1))
+        sigma = hk.get_parameter('sigma', [], init=Constant(1))
+        norm = hk.get_parameter('norm', [], init=Constant(1))
+
+        return norm/2*(1 + jsp.special.erf((energy-line_energy)/(jnp.sqrt(2)*sigma)))
