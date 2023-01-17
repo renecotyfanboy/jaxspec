@@ -125,6 +125,11 @@ class Gauss(AnalyticalAdditive):
     .. math::
         \int \mathcal{M}\left( E \right) \text{d}E = \frac{K}{2}\left( 1+\text{erf} \frac{(E-E_L)}{\sqrt{2}\sigma} \right)
 
+    The primitive is defined as :
+
+    .. math::
+        \int \mathcal{M}\left( E \right) \diff E = K\frac{1}{2}\left( 1+\erf frac{(E-E_L)}{\sqrt{2}\sigma} \right)
+
     Parameters
     ----------
         * :math:`E_L` : Energy of the line :math:`\left[\text{keV}\right]`
