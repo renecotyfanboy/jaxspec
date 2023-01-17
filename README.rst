@@ -11,10 +11,12 @@ JAXSPEC
 
 A library for fitting X-ray spectra with jax and numpyro
 
+Documentation : https://jaxspec.readthedocs.io/en/latest/
+
 Installation
 ============
 
-For the moment, this pacakge is not referenced on Pypi, so it must be installed from this repository
+For the moment, this package is not referenced on Pypi, so it must be installed from this repository
 
 .. code-block::
 
