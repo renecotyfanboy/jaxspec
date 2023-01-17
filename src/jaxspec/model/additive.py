@@ -101,6 +101,11 @@ class Gauss(AnalyticalAdditive):
     .. math::
         \mathcal{M}\left( E \right) = K\frac{1}{\sqrt{2\pi\sigma^2}}\exp\left(\frac{-(E-E_L)^2}{2\sigma^2}\right)
 
+    The primitive is defined as :
+
+    .. math::
+        \int \mathcal{M}\left( E \right) \diff E = K\frac{1}{2}\left( 1+\erf frac{(E-E_L)}{\sqrt{2}\sigma} \right)
+
     Parameters
     ----------
         * :math:`E_L` : Energy of the line :math:`\left[\text{keV}\right]`
@@ -114,12 +119,12 @@ class Gauss(AnalyticalAdditive):
         sigma = hk.get_parameter('sigma', [], init=Constant(1))
         norm = hk.get_parameter('norm', [], init=Constant(1))
 
-        return norm*(1/(jnp.sqrt(2*jnp.pi)*sigma))*jnp.exp(-(energy-line_energy)**2/(2*sigma**2))
+        return norm*jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
 
-    def integral(self, energy):
+    def primitive(self, energy):
 
         line_energy = hk.get_parameter('E_l', [], init=Constant(1))
         sigma = hk.get_parameter('sigma', [], init=Constant(1))
         norm = hk.get_parameter('norm', [], init=Constant(1))
 
-        return norm/2*(1 + jsp.special.erf((energy-line_energy)/(jnp.sqrt(2)*sigma)))
+        return norm*jsp.stats.norm.cdf(energy, loc=line_energy, scale=sigma)
