@@ -99,12 +99,12 @@ class Gauss(AnalyticalAdditive):
     A Gaussian line profile
 
     .. math::
-        \mathcal{M}\left( E \right) = K\frac{1}{\sqrt{2\pi\sigma^2}}\exp\left(\frac{-(E-E_L)^2}{2\sigma^2}\right)
+        \mathcal{M}\left( E \right) = \frac{K}{\sqrt{2\pi\sigma^2}}\exp\left(\frac{-(E-E_L)^2}{2\sigma^2}\right)
 
     The primitive is defined as :
 
     .. math::
-        \int \mathcal{M}\left( E \right) \diff E = K\frac{1}{2}\left( 1+\erf frac{(E-E_L)}{\sqrt{2}\sigma} \right)
+        \int \mathcal{M}\left( E \right) \text{d}E = \frac{K}{2}\left( 1+\text{erf} \frac{(E-E_L)}{\sqrt{2}\sigma} \right)
 
     Parameters
     ----------
