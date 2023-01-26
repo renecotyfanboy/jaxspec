@@ -37,7 +37,7 @@ class DataPHA:
 
         # Grouping and quality parameters are in binned PHA dataset
         kwargs['grouping'] = data['GROUPING'] if 'GROUPING' in data.colnames else None
-        kwargs['quality'] = data['QUALITY'] if 'GROUPING' in data.colnames else None
+        kwargs['quality'] = data['QUALITY'] if 'QUALITY' in data.colnames else None
 
         # Backfile, respfile and ancrfile are in primary header
         kwargs['backfile'] = header['BACKFILE'] if len(header['BACKFILE']) > 0 else None
@@ -45,6 +45,15 @@ class DataPHA:
         kwargs['ancrfile'] = header['ANCRFILE'] if len(header['ANCRFILE']) > 0 else None
 
         return cls(data['CHANNEL'], data['COUNTS'], header['EXPOSURE'], **kwargs)
+
+
+    #def plot_pha(self):
+    #   import matplotlib.pyplot as plt
+    #   plt.figure()
+    #   plt.plot(self.channel, self.counts/self.exposure)
+    #   plt.xlabel(f'Channel')
+    #   plt.ylabel(f'Countrate [cts/s]')
+    #   plt.show()
 
 
 class DataARF:
@@ -74,7 +83,7 @@ class DataARF:
                    arf_table['ENERG_HI'],
                    arf_table['SPECRESP'])
 
-    # def plot(self):
+    # def plot_arf(self):
     #
     #     import matplotlib.pyplot as plt
     #
@@ -154,6 +163,7 @@ class DataRMF:
                    ebounds_table['CHANNEL'],
                    ebounds_table['E_MIN'],
                    ebounds_table['E_MAX'])
+
 
     def plot(self):
 
