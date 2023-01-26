@@ -106,6 +106,7 @@ class Wabs(MultiplicativeComponent):
 
         return jnp.exp(-nh*sigma)
 
+
 class Gabs(MultiplicativeComponent):
     r"""
     A Gaussian absorption model.
