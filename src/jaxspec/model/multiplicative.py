@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 import importlib.resources
 from .abc import MultiplicativeComponent
-from haiku.initializers import Constant
+from haiku.initializers import Constant as HaikuConstant
 from astropy.table import Table
 
 
@@ -24,9 +24,9 @@ class Expfac(MultiplicativeComponent):
 
     def __call__(self, energy):
 
-        amplitude = hk.get_parameter('A', [], init=Constant(1))
-        factor = hk.get_parameter('f', [], init=Constant(1))
-        pivot = hk.get_parameter('E_c', [], init=Constant(1))
+        amplitude = hk.get_parameter('A', [], init=HaikuConstant(1))
+        factor = hk.get_parameter('f', [], init=HaikuConstant(1))
+        pivot = hk.get_parameter('E_c', [], init=HaikuConstant(1))
 
         return jnp.where(energy >= pivot, 1. + amplitude*jnp.exp(-factor*energy), 1.)
 
@@ -48,7 +48,7 @@ class Tbabs(MultiplicativeComponent):
 
     def __call__(self, energy):
 
-        nh = hk.get_parameter('N_H', [], init=Constant(1))
+        nh = hk.get_parameter('N_H', [], init=HaikuConstant(1))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.)
 
         return jnp.exp(-nh*sigma)
@@ -74,11 +74,10 @@ class Phabs(MultiplicativeComponent):
 
     def __call__(self, energy):
 
-        nh = hk.get_parameter('N_H', [], init=Constant(1))
+        nh = hk.get_parameter('N_H', [], init=HaikuConstant(1))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=jnp.inf, right=0.)
 
         return jnp.exp(-nh*sigma)
-
 
 
 class Wabs(MultiplicativeComponent):
@@ -101,7 +100,7 @@ class Wabs(MultiplicativeComponent):
 
     def __call__(self, energy):
 
-        nh = hk.get_parameter('N_H', [], init=Constant(1))
+        nh = hk.get_parameter('N_H', [], init=HaikuConstant(1))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=jnp.inf, right=0.)
 
         return jnp.exp(-nh*sigma)
@@ -127,9 +126,9 @@ class Gabs(MultiplicativeComponent):
 
     def __call__(self, energy):
 
-        tau = hk.get_parameter('tau', [], init=Constant(1))
-        sigma = hk.get_parameter('sigma', [], init=Constant(1))
-        center = hk.get_parameter('E_0', [], init=Constant(1))
+        tau = hk.get_parameter('tau', [], init=HaikuConstant(1))
+        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
+        center = hk.get_parameter('E_0', [], init=HaikuConstant(1))
 
         return jnp.exp(-tau/(jnp.sqrt(2*jnp.pi)*sigma)*jnp.exp(-0.5*((energy-center)/sigma)**2))
 
@@ -149,7 +148,7 @@ class Highecut(MultiplicativeComponent):
 
     def __call__(self, energy):
 
-        cutoff = hk.get_parameter('E_c', [], init=Constant(1))
-        folding = hk.get_parameter('E_f', [], init=Constant(1))
+        cutoff = hk.get_parameter('E_c', [], init=HaikuConstant(1))
+        folding = hk.get_parameter('E_f', [], init=HaikuConstant(1))
 
         return jnp.where(energy <= cutoff, 1., jnp.exp((cutoff-energy)/folding))

@@ -2,7 +2,7 @@ import haiku as hk
 import jax.numpy as jnp
 import jax.scipy as jsp
 from .abc import AdditiveComponent, AnalyticalAdditive
-from haiku.initializers import Constant
+from haiku.initializers import Constant as HaikuConstant
 
 
 class Powerlaw(AdditiveComponent):
@@ -20,13 +20,13 @@ class Powerlaw(AdditiveComponent):
 
     def __call__(self, energy):
 
-        alpha = hk.get_parameter('alpha', [], init=Constant(11/3))
-        norm = hk.get_parameter('norm', [], init=Constant(1))
+        alpha = hk.get_parameter('alpha', [], init=HaikuConstant(11 / 3))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
         return norm*energy**(-alpha)
 
 
-class Continual(AdditiveComponent): # Not named Constant due to haiku.initialisers
+class AdditiveConstant(AdditiveComponent):
     r"""
     A constant model
 
@@ -40,7 +40,7 @@ class Continual(AdditiveComponent): # Not named Constant due to haiku.initialise
 
     def __call__(self, energy):
 
-        norm = hk.get_parameter('norm', [], init=Constant(1))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
         return norm*jnp.ones_like(energy)
 
@@ -61,9 +61,9 @@ class Lorentz(AdditiveComponent):
 
     def __call__(self, energy):
 
-        line_energy = hk.get_parameter('E_l', [], init=Constant(1))
-        sigma = hk.get_parameter('sigma', [], init=Constant(1))
-        norm = hk.get_parameter('norm', [], init=Constant(1))
+        line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
+        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
         return norm*(sigma/(2*jnp.pi))/((energy-line_energy)**2 + (sigma/2)**2)
 
@@ -85,14 +85,14 @@ class Logparabola(AdditiveComponent):
 
     def __call__(self, energy):
 
-        a = hk.get_parameter('a', [], init=Constant(11/3))
-        b = hk.get_parameter('b', [], init=Constant(0.2))
-        norm = hk.get_parameter('norm', [], init=Constant(1))
+        a = hk.get_parameter('a', [], init=HaikuConstant(11 / 3))
+        b = hk.get_parameter('b', [], init=HaikuConstant(0.2))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
         return norm*energy**(-(a + b*jnp.log(energy)))
 
 
-class BlackBody(AdditiveComponent):
+class Blackbody(AdditiveComponent):
     r"""
     A black body model
 
@@ -107,8 +107,8 @@ class BlackBody(AdditiveComponent):
 
     def __call__(self, energy):
 
-        kT = hk.get_parameter('kT', [], init=Constant(11/3))
-        norm = hk.get_parameter('norm', [], init=Constant(1))
+        kT = hk.get_parameter('kT', [], init=HaikuConstant(11 / 3))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
         return norm*8.0525*energy**2/((kT**4)*(jnp.exp(energy/kT)-1))
 
@@ -139,16 +139,16 @@ class Gauss(AnalyticalAdditive):
 
     def __call__(self, energy):
 
-        line_energy = hk.get_parameter('E_l', [], init=Constant(1))
-        sigma = hk.get_parameter('sigma', [], init=Constant(1))
-        norm = hk.get_parameter('norm', [], init=Constant(1))
+        line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
+        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
         return norm*jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
 
     def primitive(self, energy):
 
-        line_energy = hk.get_parameter('E_l', [], init=Constant(1))
-        sigma = hk.get_parameter('sigma', [], init=Constant(1))
-        norm = hk.get_parameter('norm', [], init=Constant(1))
+        line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
+        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
         return norm*jsp.stats.norm.cdf(energy, loc=line_energy, scale=sigma)
