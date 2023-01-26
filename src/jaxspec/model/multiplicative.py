@@ -1,5 +1,6 @@
 import haiku as hk
 import jax.numpy as jnp
+import numpy as np
 import importlib.resources
 from .abc import MultiplicativeComponent
 from haiku.initializers import Constant
@@ -39,19 +40,16 @@ class Tbabs(MultiplicativeComponent):
         * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
 
     """
-    def __init__(self):
-
-        super(Tbabs, self).__init__()
-        ref = importlib.resources.files('jaxspec') / 'tables/xsect_tbabs_wilm.fits'
-        with importlib.resources.as_file(ref) as path:
-            table = Table.read(path)
-        self.energy = jnp.asarray(table['ENERGY'])
-        self.sigma = jnp.asarray(table['SIGMA'])
+    ref = importlib.resources.files('jaxspec') / 'tables/xsect_tbabs_wilm.fits'
+    with importlib.resources.as_file(ref) as path:
+        table = Table.read(path)
+    energy = np.asarray(table['ENERGY']).astype(np.float32)
+    sigma = np.asarray(table['SIGMA']).astype(np.float32)
 
     def __call__(self, energy):
 
         nh = hk.get_parameter('N_H', [], init=Constant(1))
-        sigma = jnp.interp(energy, self.energy, self.sigma, left=jnp.inf, right=0.)
+        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.)
 
         return jnp.exp(-nh*sigma)
 
@@ -71,8 +69,8 @@ class Phabs(MultiplicativeComponent):
         ref = importlib.resources.files('jaxspec') / 'tables/xsect_phabs_aspl.fits'
         with importlib.resources.as_file(ref) as path:
             table = Table.read(path)
-        self.energy = jnp.asarray(table['ENERGY'])
-        self.sigma = jnp.asarray(table['SIGMA'])
+        self.energy = jnp.asarray(table['ENERGY']).astype(jnp.float32)
+        self.sigma = jnp.asarray(table['SIGMA']).astype(jnp.float32)
 
     def __call__(self, energy):
 
