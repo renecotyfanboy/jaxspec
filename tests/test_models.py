@@ -16,8 +16,8 @@ chex.set_n_cpu_devices(n=2)
 class TestModules(chex.TestCase):
 
     def setUp(self):
-        from jaxspec.model import _modules
-        self.module_dict = _modules.items()
+        from jaxspec.model import model_components
+        self.module_dict = model_components.items()
         self.energy = jnp.geomspace(0.1, 100, 50)
 
     @chex.all_variants
