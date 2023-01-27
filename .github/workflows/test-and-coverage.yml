@@ -37,7 +37,7 @@ jobs:
         pip install .
     - name: Test with pytest
       run: |
-        pytest --cov src/jaxspec/
+        pytest --cov jaxspec
     - name: "Upload coverage to Codecov"
       uses: codecov/codecov-action@v3
       with:
