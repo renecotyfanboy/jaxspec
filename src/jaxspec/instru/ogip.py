@@ -130,8 +130,8 @@ class DataRMF:
 
             if np.size(self.f_chan[i]) == 1:
 
-                low = self.f_chan[i]
-                high = min(self.f_chan[i] + self.n_chan[i], self.full_matrix.shape[1])
+                low = int(self.f_chan[i])
+                high = min(int(self.f_chan[i] + self.n_chan[i]), self.full_matrix.shape[1])
                 self.full_matrix[i, low:high] = self.matrix_entry[i][0:high - low]
 
             else:
