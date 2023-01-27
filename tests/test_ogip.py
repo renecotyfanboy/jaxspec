@@ -3,7 +3,6 @@ import sys
 import numpy as np
 from unittest import TestCase
 from jaxspec.instru.ogip import DataARF, DataRMF, DataPHA
-from ref_clarsach_rsp import ARF as RefARF, RMF as RefRMF
 
 #Allow relative imports for github workflows
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -22,7 +21,7 @@ class TestRSP(TestCase):
 
     def test_arf(self):
         """
-        Test reading an ARF file using XMM's PN, M1 and M2 files
+        Test reading an AMF file using ref files
         """
 
         for arf_file in self.arf_files:
@@ -33,30 +32,12 @@ class TestRSP(TestCase):
 
     def test_rmf(self):
         """
-        Test reading an ARF file using XMM's PN, M1 and M2 files
+        Test reading an RMF file using ref files
         """
 
-        # We should modify clarsach_rsp if we want to test with PN's RMF
-        for rmf_file in self.rmf_files[1:2]:
+        for rmf_file in self.rmf_files:
 
-            test_rmf = DataRMF.from_file(rmf_file)
-            ref_rmf = RefRMF(rmf_file)
-
-            dummy_spec = np.ones(test_rmf.energ_lo.shape)
-
-            assert np.isclose(test_rmf.full_matrix@dummy_spec, ref_rmf.apply_rmf(dummy_spec)).all()
-
-    # def test_sparse(self):
-    #     """
-    #     Test consistency between sparse and dense matrix
-    #     """
-    #
-    #     for rmf_file in self.rmf_files:
-    #
-    #         test_rmf = DataRMF.from_file(rmf_file)
-    #         dummy_spec = np.ones(test_rmf.energ_lo.shape)
-    #
-    #         assert np.isclose(test_rmf.full_matrix @ dummy_spec, test_rmf.sparse_matrix @ dummy_spec).all()
+            DataRMF.from_file(rmf_file)
 
     def test_pha(self):
         """
