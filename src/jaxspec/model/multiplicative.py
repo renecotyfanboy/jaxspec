@@ -40,6 +40,7 @@ class Tbabs(MultiplicativeComponent):
         * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
 
     """
+
     ref = importlib.resources.files('jaxspec') / 'tables/xsect_tbabs_wilm.fits'
     with importlib.resources.as_file(ref) as path:
         table = Table.read(path)
@@ -63,14 +64,12 @@ class Phabs(MultiplicativeComponent):
         * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
 
     """
-    def __init__(self):
 
-        super(Phabs, self).__init__()
-        ref = importlib.resources.files('jaxspec') / 'tables/xsect_phabs_aspl.fits'
-        with importlib.resources.as_file(ref) as path:
-            table = Table.read(path)
-        self.energy = jnp.asarray(table['ENERGY']).astype(jnp.float32)
-        self.sigma = jnp.asarray(table['SIGMA']).astype(jnp.float32)
+    ref = importlib.resources.files('jaxspec') / 'tables/xsect_phabs_aspl.fits'
+    with importlib.resources.as_file(ref) as path:
+        table = Table.read(path)
+    energy = jnp.asarray(table['ENERGY']).astype(jnp.float32)
+    sigma = jnp.asarray(table['SIGMA']).astype(jnp.float32)
 
     def __call__(self, energy):
 
