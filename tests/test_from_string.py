@@ -1,25 +1,25 @@
 import os
 import sys
 import chex
+from jax import grad, vmap
 import jax.numpy as jnp
-from jax import vmap, grad
-from jaxspec.model.from_string import build_model
 
 #Allow relative imports for github workflows
 current_dir = os.path.dirname(os.path.abspath(__file__))
 source_dir = os.path.abspath(os.path.join(current_dir, ".."))
 sys.path.append(source_dir)
-
 chex.set_n_cpu_devices(n=2)
 
 
 class TestFromString(chex.TestCase):
 
     def setUp(self):
+        from jaxspec.model.from_string import build_model
         from jaxspec.model import model_components
         self.module_dict = model_components.items()
         self.model_string = 'expfac*lorentz'
         self.energy = jnp.geomspace(0.1, 100, 50)
+        self.build = build_model
 
     @chex.all_variants
     def test_build_model_str(self):
@@ -27,7 +27,7 @@ class TestFromString(chex.TestCase):
         Test building a model from fixed string and evaluating it
         """
 
-        model = build_model(model_string=self.model_string)
+        model = self.build(model_string=self.model_string)
 
         @self.variant
         def f(inputs): return model.apply(model.init(None, self.energy), inputs)
@@ -42,7 +42,7 @@ class TestFromString(chex.TestCase):
         Test building a model from fixed string and evaluating its gradient
         """
 
-        model = build_model(model_string=self.model_string)
+        model = self.build(model_string=self.model_string)
 
         @self.variant
         def f(inputs):
