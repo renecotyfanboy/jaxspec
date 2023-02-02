@@ -1,6 +1,7 @@
 import inspect
 from .abc import ModelComponent, AdditiveComponent, MultiplicativeComponent
-from . import additive, multiplicative
+from .additive import *
+from .multiplicative import *
 
 
 def all_models(cls: ModelComponent) -> list[ModelComponent]:
