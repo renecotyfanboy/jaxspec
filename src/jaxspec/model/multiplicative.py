@@ -40,11 +40,12 @@ class Tbabs(MultiplicativeComponent):
         * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
 
     """
+
     ref = importlib.resources.files('jaxspec') / 'tables/xsect_tbabs_wilm.fits'
     with importlib.resources.as_file(ref) as path:
         table = Table.read(path)
-    energy = np.asarray(table['ENERGY']).astype(np.float32)
-    sigma = np.asarray(table['SIGMA']).astype(np.float32)
+    energy = jnp.asarray(np.array(table['ENERGY']), dtype=np.float32)
+    sigma = jnp.asarray(np.array(table['SIGMA']), dtype=np.float32)
 
     def __call__(self, energy):
 
@@ -63,14 +64,12 @@ class Phabs(MultiplicativeComponent):
         * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
 
     """
-    def __init__(self):
 
-        super(Phabs, self).__init__()
-        ref = importlib.resources.files('jaxspec') / 'tables/xsect_phabs_aspl.fits'
-        with importlib.resources.as_file(ref) as path:
-            table = Table.read(path)
-        self.energy = jnp.asarray(table['ENERGY']).astype(jnp.float32)
-        self.sigma = jnp.asarray(table['SIGMA']).astype(jnp.float32)
+    ref = importlib.resources.files('jaxspec') / 'tables/xsect_phabs_aspl.fits'
+    with importlib.resources.as_file(ref) as path:
+        table = Table.read(path)
+    energy = jnp.asarray(np.array(table['ENERGY']), dtype=np.float32)
+    sigma = jnp.asarray(np.array(table['SIGMA']), dtype=np.float32)
 
     def __call__(self, energy):
 
@@ -89,14 +88,12 @@ class Wabs(MultiplicativeComponent):
         * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
 
     """
-    def __init__(self):
 
-        super(Wabs, self).__init__()
-        ref = importlib.resources.files('jaxspec') / 'tables/xsect_wabs_angr.fits'
-        with importlib.resources.as_file(ref) as path:
-            table = Table.read(path)
-        self.energy = jnp.asarray(table['ENERGY'])
-        self.sigma = jnp.asarray(table['SIGMA'])
+    ref = importlib.resources.files('jaxspec') / 'tables/xsect_wabs_angr.fits'
+    with importlib.resources.as_file(ref) as path:
+        table = Table.read(path)
+    energy = jnp.asarray(np.array(table['ENERGY']), dtype=np.float32)
+    sigma = jnp.asarray(np.array(table['SIGMA']), dtype=np.float32)
 
     def __call__(self, energy):
 

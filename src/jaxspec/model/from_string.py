@@ -1,4 +1,4 @@
-from . import _modules
+from . import model_components
 import ast
 import haiku as hk
 from simpleeval import simple_eval
@@ -34,7 +34,7 @@ def build_model(model_string='expfac*lorentz'):
     @hk.transform
     def model_func(energy):
         operators = {ast.Add: lambda x, y: x + y, ast.Mult: lambda x, y: x * y}
-        lazy_modules = _LazyModules(_modules, energy)
+        lazy_modules = _LazyModules(model_components, energy)
         return simple_eval(model_string, operators=operators, names=lazy_modules)
 
     return model_func

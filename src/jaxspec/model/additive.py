@@ -26,7 +26,7 @@ class Powerlaw(AdditiveComponent):
         return norm*energy**(-alpha)
 
 
-class AdditiveConstant(AdditiveComponent):
+class AdditiveConstant(AnalyticalAdditive):
     r"""
     A constant model
 
@@ -43,6 +43,12 @@ class AdditiveConstant(AdditiveComponent):
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
         return norm*jnp.ones_like(energy)
+
+    def primitive(self, energy):
+
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
+
+        return norm*energy
 
 
 class Lorentz(AdditiveComponent):
