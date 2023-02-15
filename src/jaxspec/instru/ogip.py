@@ -26,6 +26,16 @@ class DataPHA:
         self.backfile = backfile
         self.respfile = respfile
         self.ancrfile = ancrfile
+        
+        if grouping:
+            # Indices array of beginning of each group
+            b_grp=np.where(grouping==1)[0]
+            # Indices array of enfing of each group
+            e_grp=np.hstack((b_grp[1:],len(channel)))
+            # Matrix to multiply with counts/channel to have counts/group
+            grp_matrix=np.zeros((len(b_grp),len(channel)),dtype=bool)
+            for i in range(len(b_grp)):
+                grp_matrix[i,b_grp[i]:e_grp[i]]=1
 
     @classmethod
     def from_file(cls, pha_file):
@@ -47,7 +57,7 @@ class DataPHA:
         return cls(data['CHANNEL'], data['COUNTS'], header['EXPOSURE'], **kwargs)
 
 
-    #def plot_pha(self):
+    #def plot(self):
     #   import matplotlib.pyplot as plt
     #   plt.figure()
     #   plt.plot(self.channel, self.counts/self.exposure)
@@ -83,7 +93,7 @@ class DataARF:
                    arf_table['ENERG_HI'],
                    arf_table['SPECRESP'])
 
-    # def plot_arf(self):
+    # def plot(self):
     #
     #     import matplotlib.pyplot as plt
     #
