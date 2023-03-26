@@ -27,7 +27,7 @@ class DataPHA:
         self.respfile = respfile
         self.ancrfile = ancrfile
         
-        if grouping:
+        if grouping is not None:
             # Indices array of beginning of each group
             b_grp=np.where(grouping==1)[0]
             # Indices array of enfing of each group
@@ -184,7 +184,7 @@ class DataRMF:
 
         energy_in = np.array(self.energ_lo+self.energ_hi)/2
         energy_out = np.array(self.e_min+self.e_max)/2
-        mappable = ax.pcolormesh(energy_out, energy_in, self.full_matrix.T, shading='auto', cmap=cmr.cosmic)
+        mappable = ax.pcolormesh(energy_out, energy_in, self.full_matrix.T, shading='flat', cmap=cmr.cosmic)
         plt.xlabel(r'$E_{spectrum}$')
         plt.ylabel(r'$E_{instrument}$')
         plt.colorbar(mappable=mappable)
