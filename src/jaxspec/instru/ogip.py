@@ -21,7 +21,7 @@ class DataPHA:
         self.channel = channel
         self.counts = counts
         self.exposure = exposure
-        self.grouping = grouping
+
         self.quality = quality
         self.backfile = backfile
         self.respfile = respfile
@@ -29,13 +29,21 @@ class DataPHA:
         
         if grouping is not None:
             # Indices array of beginning of each group
-            b_grp=np.where(grouping==1)[0]
-            # Indices array of enfing of each group
-            e_grp=np.hstack((b_grp[1:],len(channel)))
+            b_grp = np.where(grouping == 1)[0]
+            # Indices array of ending of each group
+            e_grp = np.hstack((b_grp[1:], len(channel)))
             # Matrix to multiply with counts/channel to have counts/group
-            grp_matrix=np.zeros((len(b_grp),len(channel)),dtype=bool)
+            grp_matrix = np.zeros((len(b_grp), len(channel)), dtype=bool)
+
             for i in range(len(b_grp)):
-                grp_matrix[i,b_grp[i]:e_grp[i]]=1
+
+                grp_matrix[i, b_grp[i]:e_grp[i]] = 1
+
+        else:
+
+            grp_matrix = np.eye(len(channel))
+
+        self.grouping = grp_matrix
 
     @classmethod
     def from_file(cls, pha_file):
