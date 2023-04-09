@@ -1,7 +1,7 @@
 import os
 import typing
 import numpy as np
-from ..instru.ogip import DataPHA, DataARF, DataRMF
+from data.ogip import DataPHA, DataARF, DataRMF
 
 
 class Observation:
