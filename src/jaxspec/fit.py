@@ -8,7 +8,7 @@ from jax import random
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
 from .model.abc import SpectralModel
-from data.observation import Observation
+from .data.observation import Observation
 from numpyro.infer import MCMC, NUTS
 from numpyro.infer.mcmc import MCMCKernel
 from numpyro.distributions import Distribution, Poisson
