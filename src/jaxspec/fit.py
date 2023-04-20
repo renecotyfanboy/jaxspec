@@ -109,6 +109,7 @@ class BayesianModel(ForwardModelFit):
             likelihood: Distribution = Poisson,
             kernel: MCMCKernel = NUTS,
             kernel_kwargs: dict = {},
+            mcmc_kwargs: dict = {},
             return_inference_data: bool = True):
 
         def model():
@@ -121,14 +122,14 @@ class BayesianModel(ForwardModelFit):
                                likelihood(self.model_observation(parameters, obs)),
                                obs=obs.observed_counts)
 
-        mcmc_kwargs = {
+        chain_kwargs = {
             'num_warmup': num_warmup,
             'num_samples': num_samples,
             'num_chains': num_chains
         }
 
         kernel = kernel(model, **kernel_kwargs)
-        mcmc = MCMC(kernel, **mcmc_kwargs)
+        mcmc = MCMC(kernel, **(chain_kwargs | mcmc_kwargs))
 
         mcmc.run(random.PRNGKey(rng_key))
 
