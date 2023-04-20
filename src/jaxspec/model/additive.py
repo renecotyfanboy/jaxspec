@@ -20,8 +20,8 @@ class Powerlaw(AdditiveComponent):
 
     def __call__(self, energy):
 
-        alpha = hk.get_parameter('alpha', [], init=HaikuConstant(11 / 3))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
+        alpha = hk.get_parameter('alpha', [], init=HaikuConstant(1.3))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1e-4))
 
         return norm*energy**(-alpha)
 

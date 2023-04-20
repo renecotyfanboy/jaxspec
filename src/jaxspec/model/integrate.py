@@ -1,6 +1,6 @@
 import haiku as hk
 import jax.numpy as jnp
-from abc import ABC
+from fit import ABC
 
 
 class IntegrateABC(hk.Module, ABC):

@@ -1,7 +1,7 @@
 import os
-import typing
 import numpy as np
-from data.ogip import DataPHA, DataARF, DataRMF
+from typing import Union
+from .ogip import DataPHA, DataARF, DataRMF
 
 
 class Observation:
@@ -41,7 +41,7 @@ class Observation:
         col_idx *= rmf.energ_lo.value > 0.  # Exclude channels with 0. as lower energy bound
         col_idx *= rmf.full_matrix.sum(axis=0) > 0  # Exclude channels with no contribution
 
-        # Energy grid for the model, we integrate it using trapz evaluated on edges (2 points)
+        # Energy grid for the model, we integrate it using trapezoid evaluated on edges (2 points)
         energies = np.stack((np.asarray(rmf.energ_lo, dtype=np.float64), np.asarray(rmf.energ_hi, dtype=np.float64)))
 
         # Transfer matrix computation considering grouping
@@ -53,7 +53,7 @@ class Observation:
         self.observed_counts = (grouping @ np.asarray(pha.counts.value, dtype=np.int64))[row_idx]
 
     @classmethod
-    def from_pha_file(cls, pha_file: typing.Union[str, os.PathLike], **kwargs):
+    def from_pha_file(cls, pha_file: Union[str, os.PathLike], **kwargs):
         """
         Build an Observation object from a PHA file.
         PHA file must contain the ARF and RMF filenames in the header.
@@ -74,3 +74,6 @@ class Observation:
         rmf = DataRMF.from_file(os.path.join(directory, pha.respfile))
 
         return cls(pha, arf, rmf, **kwargs)
+
+    def __str__(self):
+        return f"obs_{self.pha.id}"

@@ -9,3 +9,4 @@ ipython
 matplotlib
 furo
 networkx
+numpyro

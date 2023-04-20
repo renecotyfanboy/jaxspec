@@ -22,10 +22,13 @@ class SpectralModel:
 
         self.raw_graph = internal_graph
         self.labels = labels
-        self.callable = hk.without_apply_rng(
-            hk.transform(lambda e: self.execution_graph(e)))
         self.graph = self.build_namespace()
-        self.n_parameters = hk.data_structures.tree_size(self.callable.init(None, jnp.ones(1)))
+
+        model_callable = hk.without_apply_rng(hk.transform(lambda e: self.execution_graph(e)))
+
+        self.eval = model_callable.apply
+        self.params = model_callable.init(None, jnp.ones(1))
+        self.n_parameters = hk.data_structures.tree_size(self.params)
 
     def build_namespace(self):
         """
@@ -153,7 +156,7 @@ class SpectralModel:
         return self.compose(other, operation='mul', function=lambda x, y: x * y, name=r'$\times$')
 
     def __call__(self, params, energy):
-        return self.callable.apply(params, energy)
+        return self.eval(params, energy)
 
     def plot(self, figsize=(8, 8)):
 

@@ -6,3 +6,5 @@ setuptools
 astropy
 numpy
 networkx
+numpyro
+matplotlib

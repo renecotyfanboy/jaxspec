@@ -16,7 +16,13 @@ class DataPHA:
 
     """
 
-    def __init__(self, channel, counts, exposure, grouping=None, quality=None, backfile=None, respfile=None, ancrfile=None):
+    def __init__(self, channel, counts, exposure,
+                 grouping=None,
+                 quality=None,
+                 backfile=None,
+                 respfile=None,
+                 ancrfile=None,
+                 id=None):
 
         self.channel = channel
         self.counts = counts
