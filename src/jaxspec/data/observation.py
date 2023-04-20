@@ -49,6 +49,7 @@ class Observation:
 
         # Selecting only the channels that are not masked
         self.energies = energies[:, col_idx]
+        self.out_energies = np.stack((e_min[row_idx], e_max[row_idx]))
         self.transfer_matrix = transfer_matrix[row_idx, :][:, col_idx]
         self.observed_counts = (grouping @ np.asarray(pha.counts.value, dtype=np.int64))[row_idx]
 
