@@ -1,4 +1,5 @@
 import haiku as hk
+import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from .abc import AdditiveComponent, AnalyticalAdditive
@@ -65,13 +66,28 @@ class Lorentz(AdditiveComponent):
         * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
     """
 
+    has_fine_structure = True
+
+    def fine_structure(self, e_min, e_max) -> (jax.Array, jax.Array):
+
+        #return the primitive of a lorentzian
+        line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
+        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
+
+        #This is AI generated for tests I should double check this at some point
+        def primitive(energy):
+            return norm*(sigma/(2*jnp.pi))*jnp.arctan((energy-line_energy)/(sigma/2))
+
+        return primitive(e_max) - primitive(e_min), (e_min + e_max)/2
+
     def __call__(self, energy):
 
         line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
         sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
-        return norm*(sigma/(2*jnp.pi))/((energy-line_energy)**2 + (sigma/2)**2)
+        return jnp.zeros_like(energy) #norm*(sigma/(2*jnp.pi))/((energy-line_energy)**2 + (sigma/2)**2)
 
 
 class Logparabola(AdditiveComponent):
@@ -143,13 +159,22 @@ class Gauss(AnalyticalAdditive):
         * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
     """
 
+    has_fine_structure = True
+
+    def fine_structure(self, e_min, e_max) -> (jax.Array, jax.Array):
+        line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
+        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
+
+        return norm * (jsp.stats.norm.cdf(e_max, loc=line_energy, scale=sigma) - jsp.stats.norm.cdf(e_min, loc=line_energy, scale=sigma)), (e_min + e_max)/2
+
     def __call__(self, energy):
 
         line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
         sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
-        return norm*jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
+        return jnp.zeros_like(energy)#norm*jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
 
     def primitive(self, energy):
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import haiku as hk
+import jax
 import jax.numpy as jnp
 import networkx as nx
 from haiku._src import base
@@ -24,7 +25,7 @@ class SpectralModel:
         self.labels = labels
         self.graph = self.build_namespace()
 
-        model_callable = hk.without_apply_rng(hk.transform(lambda e: self.execution_graph(e)))
+        model_callable = hk.without_apply_rng(hk.transform(lambda e: self.continuum(e)))
 
         self.eval = model_callable.apply
         self.params = model_callable.init(None, jnp.ones(1))
@@ -48,12 +49,12 @@ class SpectralModel:
 
         return new_graph
 
-    def execution_graph(self, energy):
+    def continuum(self, energy):
         """
         This method evaluate the graph of operations and returns the result. It should be transformed using haiku
         """
 
-        cumulative_op = {}
+        continuum = {}
 
         for node_id in nx.dag.topological_sort(self.graph):
 
@@ -61,15 +62,75 @@ class SpectralModel:
 
             if node and node['type'] == 'component':
 
-                cumulative_op[node_id] = node['component'](name=node['name'], **node['kwargs'])(energy)
+                continuum[node_id] = node['component'](name=node['name'], **node['kwargs'])(energy)
 
             elif node and node['type'] == 'operation':
 
                 component_1 = list(self.graph.in_edges(node_id))[0][0]
                 component_2 = list(self.graph.in_edges(node_id))[1][0]
-                cumulative_op[node_id] = node['function'](cumulative_op[component_1], cumulative_op[component_2])
+                continuum[node_id] = node['function'](continuum[component_1], continuum[component_2])
 
-        return cumulative_op[list(self.graph.in_edges('out'))[0][0]]
+        return continuum[list(self.graph.in_edges('out'))[0][0]]
+
+    def find_multiplicative_components(self, node_id):
+        """
+        Recursively finds all the multiplicative components connected to the node with the given ID.
+        """
+        node = self.graph.nodes[node_id]
+        multiplicative_nodes = []
+
+        if node.get('operation_type') == 'mul':
+            # Recursively find all the multiplicative components using the predecessors
+            predecessors = self.graph.pred[node_id]
+            for node_id in predecessors:
+                if self.graph.nodes[node_id].get('component_type') == 'multiplicative':
+                    multiplicative_nodes.append(node_id)
+                elif self.graph.nodes[node_id].get('operation_type') == 'mul':
+                    multiplicative_nodes.extend(self.find_multiplicative_components(node_id))
+
+        return multiplicative_nodes
+
+    def fine_structure(self, e_low, e_high):
+        """
+        This method evaluate the graph of operations and returns the fine structures.
+        """
+
+        fine = {}
+        energy = {}
+        flux_to_return = jnp.zeros_like(e_low)
+        root_nodes = [node_id for node_id, in_degree in self.graph.in_degree(self.graph.nodes) if in_degree == 0]
+
+        for node_id in root_nodes:
+
+            node = self.graph.nodes[node_id]
+
+            if node.get('fine_structure'):
+
+                name = node.get('name')
+                path = nx.shortest_path(self.graph, source=node_id, target='out')
+                nodes_id_in_path = [node_id for node_id in path]
+
+                flux_from_component, mean_energy = node['component']().fine_structure(e_low, e_high)
+
+                multiplicative_nodes = []
+
+                # Search all multiplicative components connected to this node
+                for node_id in nodes_id_in_path[::-1]:
+                    multiplicative_nodes.extend([node_id for node_id in self.find_multiplicative_components(node_id)])
+
+                for mul_node in multiplicative_nodes:
+                    flux_from_component *= self.graph.nodes[mul_node]['component']()(mean_energy)
+
+                flux_to_return += flux_from_component
+
+        return flux_to_return
+                #print(f"{name} : {[self.graph.nodes[node_id]['name'] for node_id in multiplicative_nodes]}")
+
+    def binned(self, e_low, e_high):
+
+        energies = jnp.stack((e_low, e_high))
+
+        return self.fine_structure(e_low, e_high) + jnp.trapz(self.continuum(energies), x=energies, axis=0)
 
     @classmethod
     def from_component(cls, component: ModelComponent, **kwargs) -> SpectralModel:
@@ -80,16 +141,24 @@ class SpectralModel:
         graph = nx.DiGraph()
 
         # Add the component node
+        # Random static node id to keep it trackable in the graph
         node_id = str(uuid4())
 
-        graph.add_node(node_id,
-                       type='component',
-                       component_type=component.type,
-                       name=component.__name__.lower(),
-                       component=component,
-                       params=hk.transform(lambda e: component(**kwargs)(e)).init(None, jnp.ones(1)),
-                       kwargs=kwargs,
-                       depth=0)
+        node_properties = {
+            'type': 'component',
+            'component_type': component.type,
+            'name': component.__name__.lower(),
+            'component': component,
+            'params': hk.transform(lambda e: component()(e)).init(None, jnp.ones(1)),
+            'fine_structure': False
+            'kwargs' : kwargs,
+            'depth' : 0
+        }
+
+        if component.type == 'additive' and component.has_fine_structure:
+            node_properties['fine_structure'] = True
+
+        graph.add_node(node_id, **node_properties)
 
         # Add the output node
         labels = {node_id: component.__name__.lower(), 'out': 'out'}
@@ -103,7 +172,7 @@ class SpectralModel:
         """
         This function operate a composition between the operation graph of two models
         1) It fuses the two graphs using which joins at the 'out' nodes
-        2) It relabels the 'out' node with an unique identifier and labels it with the operation
+        2) It relabels the 'out' node with a unique identifier and labels it with the operation
         3) It links the operation to a new 'out' node
         """
 
@@ -134,6 +203,7 @@ class SpectralModel:
         graph.add_node('out', type='out')
         graph.add_edge(node_id, 'out')
 
+        # Compute the new depth of each node
         longest_path = nx.dag_longest_path_length(graph)
 
         for node in graph.nodes:
@@ -141,14 +211,14 @@ class SpectralModel:
 
         return SpectralModel(graph, labels)
 
-    def __add__(self, other: SpectralModel) -> SpectralModel:
+    def __add__(self, other: SpectralModel|ModelComponent) -> SpectralModel:
 
         if type(other) is not SpectralModel:
             other = SpectralModel.from_component(other)
 
         return self.compose(other, operation='add', function=lambda x, y: x + y, name='+')
 
-    def __mul__(self, other: SpectralModel) -> SpectralModel:
+    def __mul__(self, other: SpectralModel|ModelComponent) -> SpectralModel:
 
         if type(other) is not SpectralModel:
             other = SpectralModel.from_component(other)
@@ -235,6 +305,18 @@ class ModelComponent(hk.Module, ABC, metaclass=ComponentMetaClass):
 
 class AdditiveComponent(ModelComponent, ABC):
     type = 'additive'
+    has_fine_structure = False
+
+    def fine_structure(self, e_min, e_max) -> (jax.Array, jax.Array):
+        """
+        Method for computing the fine structure of an additive model between two energies.
+        By default, this is set to 0, which means that the model has no emission lines.
+        This should be surcharged by the user if the model has a fine structure.
+        """
+        if self.has_fine_structure:
+            raise NotImplementedError('This model has a fine structure, please surcharge the fine_structure method')
+
+        return jnp.zeros_like(e_min), (e_min+e_max)/2
 
     def integral(self, e_min, e_max):
         r"""
