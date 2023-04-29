@@ -1,8 +1,8 @@
 from __future__ import annotations
 import haiku as hk
-import jax
 import jax.numpy as jnp
 import networkx as nx
+import inspect
 from haiku._src import base
 from uuid import uuid4
 from abc import ABC, abstractmethod
@@ -25,10 +25,10 @@ class SpectralModel:
         self.labels = labels
         self.graph = self.build_namespace()
 
-        model_callable = hk.without_apply_rng(hk.transform(lambda e: self.continuum(e)))
+        func = hk.without_apply_rng(hk.transform(lambda e_low, e_high : self.flux(e_low, e_high)))
 
-        self.eval = model_callable.apply
-        self.params = model_callable.init(None, jnp.ones(1))
+        self.params = func.init(None, jnp.ones(1),  jnp.ones(1))
+        self.flux_func = func.apply
         self.n_parameters = hk.data_structures.tree_size(self.params)
 
     def build_namespace(self):
@@ -49,12 +49,17 @@ class SpectralModel:
 
         return new_graph
 
-    def continuum(self, energy):
+    def flux(self, e_low, e_high):
         """
         This method evaluate the graph of operations and returns the result. It should be transformed using haiku
         """
 
+        energies = jnp.stack((e_low, e_high), axis=0)
+        fine_structures_flux = jnp.zeros_like(e_low)
+        runtime_modules = {}
         continuum = {}
+
+        # Iterate through the graph in topological order and compute the continuum contribution for each component
 
         for node_id in nx.dag.topological_sort(self.graph):
 
@@ -62,7 +67,8 @@ class SpectralModel:
 
             if node and node['type'] == 'component':
 
-                continuum[node_id] = node['component'](name=node['name'], **node['kwargs'])(energy)
+                runtime_modules[node_id] = node['component'](name=node['name'], **node['kwargs'])
+                continuum[node_id] = runtime_modules[node_id](energies)
 
             elif node and node['type'] == 'operation':
 
@@ -70,7 +76,32 @@ class SpectralModel:
                 component_2 = list(self.graph.in_edges(node_id))[1][0]
                 continuum[node_id] = node['function'](continuum[component_1], continuum[component_2])
 
-        return continuum[list(self.graph.in_edges('out'))[0][0]]
+        continuum_flux = jnp.trapz(continuum[list(self.graph.in_edges('out'))[0][0]], x=energies, axis=0)
+
+        # Iterate from the root nodes to the output node and compute the fine structure contribution for each component
+
+        root_nodes = [node_id for node_id, in_degree in self.graph.in_degree(self.graph.nodes) if in_degree == 0
+                      and self.graph.nodes[node_id].get('component_type') == 'additive']
+
+        for root_node_id in root_nodes:
+
+            path = nx.shortest_path(self.graph, source=root_node_id, target='out')
+            nodes_id_in_path = [node_id for node_id in path]
+
+            flux_from_component, mean_energy = runtime_modules[root_node_id].fine_structure(e_low, e_high)
+
+            multiplicative_nodes = []
+
+            # Search all multiplicative components connected to this node
+            for node_id in nodes_id_in_path[::-1]:
+                multiplicative_nodes.extend([node_id for node_id in self.find_multiplicative_components(node_id)])
+
+            for mul_node in multiplicative_nodes:
+                flux_from_component *= runtime_modules[mul_node](mean_energy)
+
+            fine_structures_flux += flux_from_component
+
+        return continuum_flux + fine_structures_flux
 
     def find_multiplicative_components(self, node_id):
         """
@@ -90,83 +121,49 @@ class SpectralModel:
 
         return multiplicative_nodes
 
-    def fine_structure(self, e_low, e_high):
-        """
-        This method evaluate the graph of operations and returns the fine structures.
-        """
+    def __call__(self, pars, e_low, e_high):
 
-        fine = {}
-        energy = {}
-        flux_to_return = jnp.zeros_like(e_low)
-        root_nodes = [node_id for node_id, in_degree in self.graph.in_degree(self.graph.nodes) if in_degree == 0]
-
-        for node_id in root_nodes:
-
-            node = self.graph.nodes[node_id]
-
-            if node.get('fine_structure'):
-
-                name = node.get('name')
-                path = nx.shortest_path(self.graph, source=node_id, target='out')
-                nodes_id_in_path = [node_id for node_id in path]
-
-                flux_from_component, mean_energy = node['component']().fine_structure(e_low, e_high)
-
-                multiplicative_nodes = []
-
-                # Search all multiplicative components connected to this node
-                for node_id in nodes_id_in_path[::-1]:
-                    multiplicative_nodes.extend([node_id for node_id in self.find_multiplicative_components(node_id)])
-
-                for mul_node in multiplicative_nodes:
-                    flux_from_component *= self.graph.nodes[mul_node]['component']()(mean_energy)
-
-                flux_to_return += flux_from_component
-
-        return flux_to_return
-                #print(f"{name} : {[self.graph.nodes[node_id]['name'] for node_id in multiplicative_nodes]}")
-
-    def binned(self, e_low, e_high):
-
-        energies = jnp.stack((e_low, e_high))
-
-        return self.fine_structure(e_low, e_high) + jnp.trapz(self.continuum(energies), x=energies, axis=0)
+        return self.flux_func(pars, e_low, e_high)
 
     @classmethod
-    def from_component(cls, component: ModelComponent, **kwargs) -> SpectralModel:
+    def from_component(cls, component, **kwargs) -> SpectralModel:
         """
         Build a model from a single component
         """
 
-        graph = nx.DiGraph()
+        # This is bad, for unknown reason, sometimes, the spectral models are not recognized
+        # Ex: Tbabs*(Powerlaw + Gaussian)
+        if inspect.isclass(component):
 
-        # Add the component node
-        # Random static node id to keep it trackable in the graph
-        node_id = str(uuid4())
+            graph = nx.DiGraph()
 
-        node_properties = {
-            'type': 'component',
-            'component_type': component.type,
-            'name': component.__name__.lower(),
-            'component': component,
-            'params': hk.transform(lambda e: component()(e)).init(None, jnp.ones(1)),
-            'fine_structure': False
-            'kwargs' : kwargs,
-            'depth' : 0
-        }
+            # Add the component node
+            # Random static node id to keep it trackable in the graph
+            node_id = str(uuid4())
 
-        if component.type == 'additive' and component.has_fine_structure:
-            node_properties['fine_structure'] = True
+            node_properties = {
+                'type': 'component',
+                'component_type': component.type,
+                'name': component.__name__.lower(),
+                'component': component,
+                'params': hk.transform(lambda e: component()(e)).init(None, jnp.ones(1)),
+                'fine_structure': False,
+                'kwargs': kwargs,
+                'depth': 0
+            }
 
-        graph.add_node(node_id, **node_properties)
+            graph.add_node(node_id, **node_properties)
 
-        # Add the output node
-        labels = {node_id: component.__name__.lower(), 'out': 'out'}
+            # Add the output node
+            labels = {node_id: component.__name__.lower(), 'out': 'out'}
 
-        graph.add_node('out', type='out', depth=1)
-        graph.add_edge(node_id, 'out')
+            graph.add_node('out', type='out', depth=1)
+            graph.add_edge(node_id, 'out')
 
-        return cls(graph, labels)
+            return cls(graph, labels)
+
+        else:
+            return component
 
     def compose(self, other: SpectralModel, operation=None, function=None, name=None) ->SpectralModel:
         """
@@ -211,22 +208,15 @@ class SpectralModel:
 
         return SpectralModel(graph, labels)
 
-    def __add__(self, other: SpectralModel|ModelComponent) -> SpectralModel:
+    def __add__(self, other: SpectralModel | ComponentMetaClass) -> SpectralModel:
 
-        if type(other) is not SpectralModel:
-            other = SpectralModel.from_component(other)
-
+        other = SpectralModel.from_component(other)
         return self.compose(other, operation='add', function=lambda x, y: x + y, name='+')
 
-    def __mul__(self, other: SpectralModel|ModelComponent) -> SpectralModel:
+    def __mul__(self, other: SpectralModel | ComponentMetaClass) -> SpectralModel:
 
-        if type(other) is not SpectralModel:
-            other = SpectralModel.from_component(other)
-
+        other = SpectralModel.from_component(other)
         return self.compose(other, operation='mul', function=lambda x, y: x * y, name=r'$\times$')
-
-    def __call__(self, params, energy):
-        return self.eval(params, energy)
 
     def plot(self, figsize=(8, 8)):
 
@@ -258,6 +248,14 @@ class ComponentMetaClass(type(hk.Module)):
     the components to be used as haiku modules
     """
 
+    def __add__(self, other) -> SpectralModel:
+
+        return SpectralModel.from_component(self) + SpectralModel.from_component(other)
+
+    def __mul__(self, other) -> SpectralModel:
+
+        return SpectralModel.from_component(self) * SpectralModel.from_component(other)
+
     def __call__(self, *args, **kwargs):
         """
         This method enable to use model components as haiku modules when folded in a haiku transform
@@ -270,20 +268,6 @@ class ComponentMetaClass(type(hk.Module)):
 
         else:
             return super().__call__(*args, **kwargs)
-
-    def __add__(self, other) -> SpectralModel:
-
-        if isinstance(other, SpectralModel):
-            return SpectralModel.from_component(self) + other
-        else:
-            return SpectralModel.from_component(self) + SpectralModel.from_component(other)
-
-    def __mul__(self, other):
-
-        if isinstance(other, SpectralModel):
-            return SpectralModel.from_component(self) * other
-        else:
-            return SpectralModel.from_component(self) * SpectralModel.from_component(other)
 
 
 class ModelComponent(hk.Module, ABC, metaclass=ComponentMetaClass):
@@ -301,66 +285,3 @@ class ModelComponent(hk.Module, ABC, metaclass=ComponentMetaClass):
         Return the model evaluated at a given energy
         """
         pass
-
-
-class AdditiveComponent(ModelComponent, ABC):
-    type = 'additive'
-    has_fine_structure = False
-
-    def fine_structure(self, e_min, e_max) -> (jax.Array, jax.Array):
-        """
-        Method for computing the fine structure of an additive model between two energies.
-        By default, this is set to 0, which means that the model has no emission lines.
-        This should be surcharged by the user if the model has a fine structure.
-        """
-        if self.has_fine_structure:
-            raise NotImplementedError('This model has a fine structure, please surcharge the fine_structure method')
-
-        return jnp.zeros_like(e_min), (e_min+e_max)/2
-
-    def integral(self, e_min, e_max):
-        r"""
-        Method for integrating an additive model between two energies. It relies on double exponential quadrature for
-        finite intervals to compute an approximation of the integral of a model.
-
-        References
-        ----------
-        * `Takahasi and Mori (1974) <https://ems.press/journals/prims/articles/2686>`_
-        * `Mori and Sugihara (2001) <https://doi.org/10.1016/S0377-0427(00)00501-X>`_
-        * `Tanh-sinh quadrature <https://en.wikipedia.org/wiki/Tanh-sinh_quadrature>`_ from Wikipedia
-
-        """
-
-        t = jnp.linspace(-4, 4, 71) # The number of points used is hardcoded and this is not ideal
-        # Quadrature nodes as defined in reference
-        phi = jnp.tanh(jnp.pi / 2 * jnp.sinh(t))
-        dphi = jnp.pi / 2 * jnp.cosh(t) * (1 / jnp.cosh(jnp.pi / 2 * jnp.sinh(t)) ** 2)
-        # Change of variable to turn the integral from E_min to E_max into an integral from -1 to 1
-        x = (e_max - e_min) / 2 * phi + (e_max + e_min) / 2
-        dx = (e_max - e_min) / 2 * dphi
-
-        return jnp.trapz(self(x) * dx, x=t)
-
-
-class AnalyticalAdditive(AdditiveComponent, ABC):
-
-    @abstractmethod
-    def primitive(self, energy):
-        r"""
-        Analytical primitive of the model
-
-        """
-        pass
-
-    def integral(self, e_min, e_max):
-        r"""
-        Method for integrating an additive model between two energies. It relies on the primitive of the model.
-        """
-
-        return self.primitive(e_max) - self.primitive(e_min)
-
-
-class MultiplicativeComponent(ModelComponent, ABC):
-    type = 'multiplicative'
-
-    pass

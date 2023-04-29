@@ -1,9 +1,54 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+
 import haiku as hk
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-from .abc import AdditiveComponent, AnalyticalAdditive
+from jax.lax import dynamic_slice_in_dim as jax_slice, dynamic_index_in_dim as jax_index
+from jax import numpy as jnp
+
+from . import ModelComponent
 from haiku.initializers import Constant as HaikuConstant
+
+
+class AdditiveComponent(ModelComponent, ABC):
+    type = 'additive'
+
+    def fine_structure(self, e_min, e_max) -> (jax.Array, jax.Array):
+        """
+        Method for computing the fine structure of an additive model between two energies.
+        By default, this is set to 0, which means that the model has no emission lines.
+        This should be surcharged by the user if the model has a fine structure.
+        """
+
+        return jnp.zeros_like(e_min), (e_min+e_max)/2
+
+    '''
+    def integral(self, e_min, e_max):
+        r"""
+        Method for integrating an additive model between two energies. It relies on double exponential quadrature for
+        finite intervals to compute an approximation of the integral of a model.
+
+        References
+        ----------
+        * `Takahasi and Mori (1974) <https://ems.press/journals/prims/articles/2686>`_
+        * `Mori and Sugihara (2001) <https://doi.org/10.1016/S0377-0427(00)00501-X>`_
+        * `Tanh-sinh quadrature <https://en.wikipedia.org/wiki/Tanh-sinh_quadrature>`_ from Wikipedia
+
+        """
+
+        t = jnp.linspace(-4, 4, 71) # The number of points used is hardcoded and this is not ideal
+        # Quadrature nodes as defined in reference
+        phi = jnp.tanh(jnp.pi / 2 * jnp.sinh(t))
+        dphi = jnp.pi / 2 * jnp.cosh(t) * (1 / jnp.cosh(jnp.pi / 2 * jnp.sinh(t)) ** 2)
+        # Change of variable to turn the integral from E_min to E_max into an integral from -1 to 1
+        x = (e_max - e_min) / 2 * phi + (e_max + e_min) / 2
+        dx = (e_max - e_min) / 2 * dphi
+
+        return jnp.trapz(self(x) * dx, x=t)
+    '''
 
 
 class Powerlaw(AdditiveComponent):
@@ -27,7 +72,7 @@ class Powerlaw(AdditiveComponent):
         return norm*energy**(-alpha)
 
 
-class AdditiveConstant(AnalyticalAdditive):
+class AdditiveConstant(AdditiveComponent):
     r"""
     A constant model
 
@@ -65,8 +110,6 @@ class Lorentz(AdditiveComponent):
         * :math:`\sigma` : FWHM of the line :math:`\left[\text{keV}\right]`
         * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
     """
-
-    has_fine_structure = True
 
     def fine_structure(self, e_min, e_max) -> (jax.Array, jax.Array):
 
@@ -135,7 +178,7 @@ class Blackbody(AdditiveComponent):
         return norm*8.0525*energy**2/((kT**4)*(jnp.exp(energy/kT)-1))
 
 
-class Gauss(AnalyticalAdditive):
+class Gauss(AdditiveComponent):
     r"""
     A Gaussian line profile
 
@@ -159,14 +202,15 @@ class Gauss(AnalyticalAdditive):
         * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
     """
 
-    has_fine_structure = True
-
-    def fine_structure(self, e_min, e_max) -> (jax.Array, jax.Array):
+    def fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
         line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
         sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
-        return norm * (jsp.stats.norm.cdf(e_max, loc=line_energy, scale=sigma) - jsp.stats.norm.cdf(e_min, loc=line_energy, scale=sigma)), (e_min + e_max)/2
+        f_low = jsp.stats.norm.cdf(e_low, loc=line_energy, scale=sigma)
+        f_high = jsp.stats.norm.cdf(e_high, loc=line_energy, scale=sigma)
+
+        return norm * (f_high - f_low), (e_low + e_high)/2
 
     def __call__(self, energy):
 
@@ -175,11 +219,3 @@ class Gauss(AnalyticalAdditive):
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
         return jnp.zeros_like(energy)#norm*jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
-
-    def primitive(self, energy):
-
-        line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
-        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
-
-        return norm*jsp.stats.norm.cdf(energy, loc=line_energy, scale=sigma)

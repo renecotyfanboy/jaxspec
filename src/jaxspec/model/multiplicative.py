@@ -1,10 +1,20 @@
+from __future__ import annotations
+
+from abc import ABC
+
 import haiku as hk
 import jax.numpy as jnp
 import numpy as np
 import importlib.resources
-from .abc import MultiplicativeComponent
 from haiku.initializers import Constant as HaikuConstant
 from astropy.table import Table
+from . import ModelComponent
+
+
+class MultiplicativeComponent(ModelComponent, ABC):
+    type = 'multiplicative'
+
+    pass
 
 
 class Expfac(MultiplicativeComponent):

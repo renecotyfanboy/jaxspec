@@ -2,7 +2,7 @@ import os
 import sys
 import numpy as np
 from unittest import TestCase
-from jaxspec.instru.ogip import DataARF, DataRMF, DataPHA
+from jaxspec.data.ogip import DataARF, DataRMF, DataPHA
 
 #Allow relative imports for github workflows
 current_dir = os.path.dirname(os.path.abspath(__file__))
