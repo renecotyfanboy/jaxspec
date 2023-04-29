@@ -6,9 +6,10 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-from jax.lax import dynamic_slice_in_dim as jax_slice, dynamic_index_in_dim as jax_index
-from jax import numpy as jnp
-
+import numpy as np
+import importlib.resources
+from jax.lax import dynamic_slice_in_dim as jax_slice, dynamic_index_in_dim as jax_index, map as lax_map
+from functools import partial
 from . import ModelComponent
 from haiku.initializers import Constant as HaikuConstant
 
@@ -219,3 +220,77 @@ class Gauss(AdditiveComponent):
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
         return jnp.zeros_like(energy)#norm*jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
+
+
+class APEC(AdditiveComponent):
+
+    def __init__(self, name='apec'):
+        super(APEC, self).__init__(name=name)
+
+        ref = importlib.resources.files('jaxspec') / 'tables/apec_tab.npz'
+        with importlib.resources.as_file(ref) as path:
+            files = np.load(path)
+
+        self.kT_ref = files['kT_ref']
+        self.e_ref = files['continuum_energy']
+        self.c_ref = files['continuum_emissivity']
+        self.pe_ref = files['pseudo_energy']
+        self.pc_ref = files['pseudo_emissivity']
+        self.energy_lines = np.nan_to_num(files['lines_energy'])  # .astype(np.float32))
+        self.epsilon_lines = np.nan_to_num(files['lines_emissivity'])  # .astype(np.float32))
+        self.element_lines = np.nan_to_num(files['lines_element'])  # .astype(np.int32))
+
+        del files
+
+        self.trace_elements = jnp.array([3, 4, 5, 9, 11, 15, 17, 19, 21, 22, 23, 24, 25, 27, 29, 30]) - 1
+        self.metals = np.array([6, 7, 8, 10, 12, 13, 14, 16, 18, 20, 26, 28]) - 1  # Element number to python index
+        self.metals_one_hot = np.zeros((30,))
+        self.metals_one_hot[self.metals] = 1
+
+    def interp_on_cubes(self, energy, energy_cube, continuum_cube):
+        # Changer en loginterp
+        # Interpoler juste sur les points qui ne sont pas tabulés
+        # Ajouter l'info de la taille max des données (à resortir dans la routine qui trie les fichier apec)
+        return jnp.vectorize(lambda ecube, ccube: jnp.interp(energy, ecube, ccube), signature='(k),(k)->()')(
+            energy_cube, continuum_cube)
+
+    def reduction_with_elements(self, Z, energy, energy_cube, continuum_cube):
+        return jnp.sum(
+            self.interp_on_cubes(energy, energy_cube, continuum_cube) * jnp.where(self.metals_one_hot, Z, 1.)[None, :],
+            axis=-1)
+
+    @partial(jnp.vectorize, excluded=(0,))
+    def fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
+
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
+        kT = hk.get_parameter('kT', [], init=HaikuConstant(1))
+        Z = hk.get_parameter('Z', [], init=HaikuConstant(1))
+
+        idx = jnp.searchsorted(self.kT_ref, kT, side='left') - 1
+
+        energy = jax_slice(self.energy_lines, idx, 2)
+        epsilon = jax_slice(self.epsilon_lines, idx, 2)
+        element = jax_slice(self.element_lines, idx, 2) - 1
+
+        emissivity_in_bins = jnp.where((e_low < energy) & (energy < e_high), True, False) * epsilon
+        flux_at_edges = jnp.nansum(jnp.where(jnp.isin(element, self.metals), Z, 1) * emissivity_in_bins,
+                                   axis=-1)  # Coeff for metallicity
+
+        return jnp.interp(kT, jax_slice(self.kT_ref, idx, 2), flux_at_edges) * 1e14 * norm, (e_low + e_high)/2
+
+    @partial(jnp.vectorize, excluded=(0,))
+    def __call__(self, energy):
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
+        kT = hk.get_parameter('kT', [], init=HaikuConstant(1))
+        Z = hk.get_parameter('Z', [], init=HaikuConstant(1))
+
+        idx = jnp.searchsorted(self.kT_ref, kT, side='left') - 1  # index of left value
+
+        continuum = jnp.interp(kT, jax_slice(self.kT_ref, idx, 2),
+                               self.reduction_with_elements(Z, energy, jax_slice(self.e_ref, idx, 2),
+                                                            jax_slice(self.c_ref, idx, 2)))
+        pseudo = jnp.interp(kT, jax_slice(self.kT_ref, idx, 2),
+                            self.reduction_with_elements(Z, energy, jax_slice(self.pe_ref, idx, 2),
+                                                         jax_slice(self.pc_ref, idx, 2)))
+
+        return (continuum + pseudo) * 1e14 * norm

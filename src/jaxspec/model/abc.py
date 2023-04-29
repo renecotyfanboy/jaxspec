@@ -27,7 +27,7 @@ class SpectralModel:
 
         func = hk.without_apply_rng(hk.transform(lambda e_low, e_high : self.flux(e_low, e_high)))
 
-        self.params = func.init(None, jnp.ones(1),  jnp.ones(1))
+        self.params = func.init(None, jnp.ones(10),  jnp.ones(10))
         self.flux_func = func.apply
         self.n_parameters = hk.data_structures.tree_size(self.params)
 
@@ -54,7 +54,9 @@ class SpectralModel:
         This method evaluate the graph of operations and returns the result. It should be transformed using haiku
         """
 
-        energies = jnp.stack((e_low, e_high), axis=0)
+        energies = jnp.hstack((e_low, e_high[-1]))
+        energies_to_integrate = jnp.stack((e_low, e_high))
+
         fine_structures_flux = jnp.zeros_like(e_low)
         runtime_modules = {}
         continuum = {}
@@ -76,7 +78,9 @@ class SpectralModel:
                 component_2 = list(self.graph.in_edges(node_id))[1][0]
                 continuum[node_id] = node['function'](continuum[component_1], continuum[component_2])
 
-        continuum_flux = jnp.trapz(continuum[list(self.graph.in_edges('out'))[0][0]], x=energies, axis=0)
+        flux_1D = continuum[list(self.graph.in_edges('out'))[0][0]]
+        flux = jnp.stack((flux_1D[:-1], flux_1D[1:]))
+        continuum_flux = jnp.trapz(flux, x=energies_to_integrate, axis=0)
 
         # Iterate from the root nodes to the output node and compute the fine structure contribution for each component
 
