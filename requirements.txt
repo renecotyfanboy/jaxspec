@@ -1,8 +1,10 @@
 chex
-jax[cpu]<0.4
+jax[cpu]
 simpleeval
 dm-haiku
 setuptools
 astropy
 numpy
 networkx
+numpyro
+matplotlib

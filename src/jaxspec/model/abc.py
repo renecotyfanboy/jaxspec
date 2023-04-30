@@ -2,82 +2,185 @@ from __future__ import annotations
 import haiku as hk
 import jax.numpy as jnp
 import networkx as nx
+import inspect
+from haiku._src import base
 from uuid import uuid4
 from abc import ABC, abstractmethod
 
 
-class Model:
+class SpectralModel:
     """
     This class is supposed to handle the composition of models through basic
     operations, and allows tracking of the operation graph and individual parameters.
     """
 
+    raw_graph: nx.DiGraph
     graph: nx.DiGraph
     labels: dict[str, str]
+    n_parameters: int
 
     def __init__(self, internal_graph, labels):
 
-        self.graph = internal_graph
+        self.raw_graph = internal_graph
         self.labels = labels
-        self.callable = hk.without_apply_rng(hk.transform(lambda e : self.execution_graph(e)))
+        self.graph = self.build_namespace()
 
-    def execution_graph(self, energy):
+        func = hk.without_apply_rng(hk.transform(lambda e_low, e_high : self.flux(e_low, e_high)))
+
+        self.params = func.init(None, jnp.ones(10),  jnp.ones(10))
+        self.flux_func = func.apply
+        self.n_parameters = hk.data_structures.tree_size(self.params)
+
+    def build_namespace(self):
+        """
+        This method build a namespace for the model components, to avoid name collision
+        """
+
+        name_space = []
+        new_graph = self.raw_graph.copy()
+
+        for node_id in nx.dag.topological_sort(new_graph):
+            node = new_graph.nodes[node_id]
+
+            if node and node['type'] == 'component':
+                name_space.append(node['name'])
+                n = name_space.count(node['name'])
+                nx.set_node_attributes(new_graph, {node_id: name_space[-1] + f'_{n}'}, 'name')
+
+        return new_graph
+
+    def flux(self, e_low, e_high):
         """
         This method evaluate the graph of operations and returns the result. It should be transformed using haiku
         """
 
-        cumulative_op = {}
+        energies = jnp.hstack((e_low, e_high[-1]))
+        energies_to_integrate = jnp.stack((e_low, e_high))
+
+        fine_structures_flux = jnp.zeros_like(e_low)
+        runtime_modules = {}
+        continuum = {}
+
+        # Iterate through the graph in topological order and compute the continuum contribution for each component
 
         for node_id in nx.dag.topological_sort(self.graph):
+
             node = self.graph.nodes[node_id]
 
             if node and node['type'] == 'component':
-                cumulative_op[node_id] = node['component']()(energy)
+
+                runtime_modules[node_id] = node['component'](name=node['name'], **node['kwargs'])
+                continuum[node_id] = runtime_modules[node_id](energies)
 
             elif node and node['type'] == 'operation':
 
                 component_1 = list(self.graph.in_edges(node_id))[0][0]
                 component_2 = list(self.graph.in_edges(node_id))[1][0]
-                cumulative_op[node_id] = node['function'](cumulative_op[component_1], cumulative_op[component_2])
+                continuum[node_id] = node['function'](continuum[component_1], continuum[component_2])
 
-        return cumulative_op[list(self.graph.in_edges('out'))[0][0]]
+        flux_1D = continuum[list(self.graph.in_edges('out'))[0][0]]
+        flux = jnp.stack((flux_1D[:-1], flux_1D[1:]))
+        continuum_flux = jnp.trapz(flux, x=energies_to_integrate, axis=0)
+
+        # Iterate from the root nodes to the output node and compute the fine structure contribution for each component
+
+        root_nodes = [node_id for node_id, in_degree in self.graph.in_degree(self.graph.nodes) if in_degree == 0
+                      and self.graph.nodes[node_id].get('component_type') == 'additive']
+
+        for root_node_id in root_nodes:
+
+            path = nx.shortest_path(self.graph, source=root_node_id, target='out')
+            nodes_id_in_path = [node_id for node_id in path]
+
+            flux_from_component, mean_energy = runtime_modules[root_node_id].fine_structure(e_low, e_high)
+
+            multiplicative_nodes = []
+
+            # Search all multiplicative components connected to this node
+            for node_id in nodes_id_in_path[::-1]:
+                multiplicative_nodes.extend([node_id for node_id in self.find_multiplicative_components(node_id)])
+
+            for mul_node in multiplicative_nodes:
+                flux_from_component *= runtime_modules[mul_node](mean_energy)
+
+            fine_structures_flux += flux_from_component
+
+        return continuum_flux + fine_structures_flux
+
+    def find_multiplicative_components(self, node_id):
+        """
+        Recursively finds all the multiplicative components connected to the node with the given ID.
+        """
+        node = self.graph.nodes[node_id]
+        multiplicative_nodes = []
+
+        if node.get('operation_type') == 'mul':
+            # Recursively find all the multiplicative components using the predecessors
+            predecessors = self.graph.pred[node_id]
+            for node_id in predecessors:
+                if self.graph.nodes[node_id].get('component_type') == 'multiplicative':
+                    multiplicative_nodes.append(node_id)
+                elif self.graph.nodes[node_id].get('operation_type') == 'mul':
+                    multiplicative_nodes.extend(self.find_multiplicative_components(node_id))
+
+        return multiplicative_nodes
+
+    def __call__(self, pars, e_low, e_high):
+
+        return self.flux_func(pars, e_low, e_high)
 
     @classmethod
-    def from_component(cls, component: ModelComponent) -> Model:
+    def from_component(cls, component, **kwargs) -> SpectralModel:
         """
         Build a model from a single component
         """
 
-        graph = nx.DiGraph()
+        # This is bad, for unknown reason, sometimes, the spectral models are not recognized
+        # Ex: Tbabs*(Powerlaw + Gaussian)
+        if inspect.isclass(component):
 
-        # Add the component node
-        node_id = str(uuid4())
+            graph = nx.DiGraph()
 
-        graph.add_node(node_id,
-                       type='component',
-                       component_type=component.type,
-                       name=component.__name__.lower(),
-                       component=component,
-                       params=hk.transform(lambda e: component()(e)).init(None, jnp.ones(1)))
+            # Add the component node
+            # Random static node id to keep it trackable in the graph
+            node_id = str(uuid4())
 
-        # Add the output node
-        graph.add_edge(node_id, 'out')
-        labels = {node_id: component.__name__.lower(), 'out': 'out'}
+            node_properties = {
+                'type': 'component',
+                'component_type': component.type,
+                'name': component.__name__.lower(),
+                'component': component,
+                'params': hk.transform(lambda e: component()(e)).init(None, jnp.ones(1)),
+                'fine_structure': False,
+                'kwargs': kwargs,
+                'depth': 0
+            }
 
-        return cls(graph, labels)
+            graph.add_node(node_id, **node_properties)
 
-    def compose(self, other: Model, operation=None, function=None, name=None) -> Model:
+            # Add the output node
+            labels = {node_id: component.__name__.lower(), 'out': 'out'}
+
+            graph.add_node('out', type='out', depth=1)
+            graph.add_edge(node_id, 'out')
+
+            return cls(graph, labels)
+
+        else:
+            return component
+
+    def compose(self, other: SpectralModel, operation=None, function=None, name=None) ->SpectralModel:
         """
         This function operate a composition between the operation graph of two models
         1) It fuses the two graphs using which joins at the 'out' nodes
-        2) It relabels the 'out' node with an unique identifier and labels it with the operation
+        2) It relabels the 'out' node with a unique identifier and labels it with the operation
         3) It links the operation to a new 'out' node
         """
 
         # Compose the two graphs with their output as common node
         # and add the operation node by overwriting the 'out' node
         node_id = str(uuid4())
-        graph = nx.relabel_nodes(nx.compose(self.graph, other.graph), {'out': node_id})
+        graph = nx.relabel_nodes(nx.compose(self.raw_graph, other.raw_graph), {'out': node_id})
         nx.set_node_attributes(graph, {node_id: 'operation'}, 'type')
         nx.set_node_attributes(graph, {node_id: operation}, 'operation_type')
         nx.set_node_attributes(graph, {node_id: function}, 'function')
@@ -101,29 +204,23 @@ class Model:
         graph.add_node('out', type='out')
         graph.add_edge(node_id, 'out')
 
+        # Compute the new depth of each node
         longest_path = nx.dag_longest_path_length(graph)
 
         for node in graph.nodes:
             nx.set_node_attributes(graph, {node: longest_path-nx.shortest_path_length(graph, node, 'out')}, 'depth')
 
-        return Model(graph, labels)
+        return SpectralModel(graph, labels)
 
-    def __add__(self, other: Model) -> Model:
+    def __add__(self, other: SpectralModel | ComponentMetaClass) -> SpectralModel:
 
-        if type(other) is not Model:
-            other = Model.from_component(other)
-
+        other = SpectralModel.from_component(other)
         return self.compose(other, operation='add', function=lambda x, y: x + y, name='+')
 
-    def __mul__(self, other: Model) -> Model:
+    def __mul__(self, other: SpectralModel | ComponentMetaClass) -> SpectralModel:
 
-        if type(other) is not Model:
-            other = Model.from_component(other)
-
+        other = SpectralModel.from_component(other)
         return self.compose(other, operation='mul', function=lambda x, y: x * y, name=r'$\times$')
-
-    def __call__(self, *args, **kwargs):
-        return self.graph(*args, **kwargs)
 
     def plot(self, figsize=(8, 8)):
 
@@ -151,26 +248,40 @@ class Model:
 
 class ComponentMetaClass(type(hk.Module)):
     """
-    This metaclass enable the construction of model from components with a simple syntax
+    This metaclass enable the construction of model from components with a simple syntax while style enabling
+    the components to be used as haiku modules
     """
 
-    def __add__(self, other):
+    def __add__(self, other) -> SpectralModel:
 
-        if isinstance(other, Model):
-            return Model.from_component(self) + other
+        return SpectralModel.from_component(self) + SpectralModel.from_component(other)
+
+    def __mul__(self, other) -> SpectralModel:
+
+        return SpectralModel.from_component(self) * SpectralModel.from_component(other)
+
+    def __call__(self, *args, **kwargs):
+        """
+        This method enable to use model components as haiku modules when folded in a haiku transform
+        function and also to instantiate them as SpectralModel when out of a haiku transform
+        """
+
+        if not base.frame_stack:
+
+            return SpectralModel.from_component(self, **kwargs)
+
         else:
-            return Model.from_component(self) + Model.from_component(other)
-
-    def __mul__(self, other):
-
-        if isinstance(other, Model):
-            return Model.from_component(self) * other
-        else:
-            return Model.from_component(self) * Model.from_component(other)
+            return super().__call__(*args, **kwargs)
 
 
 class ModelComponent(hk.Module, ABC, metaclass=ComponentMetaClass):
+    """
+    Abstract class for model components
+    """
     type: str
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     @abstractmethod
     def __call__(self, energy):
@@ -178,54 +289,3 @@ class ModelComponent(hk.Module, ABC, metaclass=ComponentMetaClass):
         Return the model evaluated at a given energy
         """
         pass
-
-
-class AdditiveComponent(ModelComponent, ABC):
-    type = 'additive'
-
-    def integral(self, e_min, e_max):
-        r"""
-        Method for integrating an additive model between two energies. It relies on double exponential quadrature for
-        finite intervals to compute an approximation of the integral of a model.
-
-        References
-        ----------
-        * `Takahasi and Mori (1974) <https://ems.press/journals/prims/articles/2686>`_
-        * `Mori and Sugihara (2001) <https://doi.org/10.1016/S0377-0427(00)00501-X>`_
-        * `Tanh-sinh quadrature <https://en.wikipedia.org/wiki/Tanh-sinh_quadrature>`_ from Wikipedia
-
-        """
-
-        t = jnp.linspace(-4, 4, 71) # The number of points used is hardcoded and this is not ideal
-        # Quadrature nodes as defined in reference
-        phi = jnp.tanh(jnp.pi / 2 * jnp.sinh(t))
-        dphi = jnp.pi / 2 * jnp.cosh(t) * (1 / jnp.cosh(jnp.pi / 2 * jnp.sinh(t)) ** 2)
-        # Change of variable to turn the integral from E_min to E_max into an integral from -1 to 1
-        x = (e_max - e_min) / 2 * phi + (e_max + e_min) / 2
-        dx = (e_max - e_min) / 2 * dphi
-
-        return jnp.trapz(self(x) * dx, x=t)
-
-
-class AnalyticalAdditive(AdditiveComponent, ABC):
-
-    @abstractmethod
-    def primitive(self, energy):
-        r"""
-        Analytical primitive of the model
-
-        """
-        pass
-
-    def integral(self, e_min, e_max):
-        r"""
-        Method for integrating an additive model between two energies. It relies on the primitive of the model.
-        """
-
-        return self.primitive(e_max) - self.primitive(e_min)
-
-
-class MultiplicativeComponent(ModelComponent, ABC):
-    type = 'multiplicative'
-
-    pass

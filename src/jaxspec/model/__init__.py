@@ -1,5 +1,5 @@
 import inspect
-from .abc import ModelComponent, AdditiveComponent, MultiplicativeComponent
+from .abc import ModelComponent
 from .additive import *
 from .multiplicative import *
 
