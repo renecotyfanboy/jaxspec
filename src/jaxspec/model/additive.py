@@ -232,11 +232,11 @@ class APEC(AdditiveComponent):
             files = np.load(path)
 
         self.kT_ref = files['kT_ref']
-        self.e_ref = files['continuum_energy']
-        self.c_ref = files['continuum_emissivity']
-        self.pe_ref = files['pseudo_energy']
-        self.pc_ref = files['pseudo_emissivity']
-        self.energy_lines = np.nan_to_num(files['lines_energy'])  # .astype(np.float32))
+        self.e_ref = np.nan_to_num(files['continuum_energy'], nan=1e6)
+        self.c_ref = np.nan_to_num(files['continuum_emissivity'])
+        self.pe_ref = np.nan_to_num(files['pseudo_energy'], nan=1e6)
+        self.pc_ref = np.nan_to_num(files['pseudo_emissivity'])
+        self.energy_lines = np.nan_to_num(files['lines_energy'], nan=1e6) # .astype(np.float32))
         self.epsilon_lines = np.nan_to_num(files['lines_emissivity'])  # .astype(np.float32))
         self.element_lines = np.nan_to_num(files['lines_element'])  # .astype(np.int32))
 
@@ -259,8 +259,7 @@ class APEC(AdditiveComponent):
             self.interp_on_cubes(energy, energy_cube, continuum_cube) * jnp.where(self.metals_one_hot, Z, 1.)[None, :],
             axis=-1)
 
-    @partial(jnp.vectorize, excluded=(0,))
-    def fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
+    def mono_fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
 
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
         kT = hk.get_parameter('kT', [], init=HaikuConstant(1))
@@ -277,6 +276,14 @@ class APEC(AdditiveComponent):
                                    axis=-1)  # Coeff for metallicity
 
         return jnp.interp(kT, jax_slice(self.kT_ref, idx, 2), flux_at_edges) * 1e14 * norm, (e_low + e_high)/2
+
+    def fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
+        #Compute the fine structure lines with e_low and e_high as array, mapping the mono_fine_structure function
+        #over the various axes of e_low and e_high
+
+        return jnp.vectorize(self.mono_fine_structure)(e_low, e_high)
+
+        #return jnp.zeros_like(e_low), (e_low + e_high)/2
 
     @partial(jnp.vectorize, excluded=(0,))
     def __call__(self, energy):

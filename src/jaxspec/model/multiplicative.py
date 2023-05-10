@@ -108,7 +108,7 @@ class Wabs(MultiplicativeComponent):
     def __call__(self, energy):
 
         nh = hk.get_parameter('N_H', [], init=HaikuConstant(1))
-        sigma = jnp.interp(energy, self.energy, self.sigma, left=jnp.inf, right=0.)
+        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.)
 
         return jnp.exp(-nh*sigma)
 
