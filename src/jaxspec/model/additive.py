@@ -179,6 +179,27 @@ class Blackbody(AdditiveComponent):
         return norm*8.0525*energy**2/((kT**4)*(jnp.exp(energy/kT)-1))
 
 
+class Blackbodyrad(AdditiveComponent):
+    r"""
+    A black body model in radius normalization
+
+    .. math::
+        \mathcal{M}\left( E \right) = \frac{K \times 1.0344\times 10^{-3} E^{2}}{left(\exp(E/k_BT)-1\right)}
+
+    Parameters
+    ----------
+        * :math:`k_B T` : Temperature :math:`\left[\text{keV}\right]`
+        * :math:`K` : :math:`R^2_{km}/D_{10}^{2}`, where :math:`R_{km}` is the source radius in km and :math:`D_{10}` is the distance to the source in units of 10 kpc
+    """
+
+    def __call__(self, energy):
+
+        kT = hk.get_parameter('kT', [], init=HaikuConstant(11 / 3))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
+
+        return norm*1.0344e-3*energy**2/(jnp.exp(energy/kT)-1)
+
+
 class Gauss(AdditiveComponent):
     r"""
     A Gaussian line profile
