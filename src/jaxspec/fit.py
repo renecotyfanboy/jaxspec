@@ -43,10 +43,11 @@ class ForwardModel(hk.Module):
         Compute the count functions for a given observation.
         """
 
-        energies = jnp.asarray(self.observation.energies, dtype=jnp.float64)
-        transfer_matrix = jnp.asarray(self.observation.transfer_matrix, dtype=jnp.float64)
+        energies = jnp.asarray(self.observation.energies)
+        transfer_matrix = jnp.asarray(self.observation.transfer_matrix)
 
-        return jnp.clip(transfer_matrix @ jnp.trapz(self.model(parameters, energies), x=energies, axis=0), a_min=1e-6)
+        return jnp.clip(transfer_matrix @ jnp.trapz(self.model(parameters, *energies), x=energies, axis=0), a_min=1e-6)
+
 
 class ForwardModelFit(ABC):
     """
@@ -92,8 +93,23 @@ class BayesianModel(ForwardModelFit):
     def __init__(self, model, observation):
         super().__init__(model, observation)
 
+    def numpyro_model(self, prior_distributions, likelihood=Poisson):
+
+        def model():
+
+            prior_params = build_prior(prior_distributions)
+
+            for i, obs in enumerate(self.observation):
+
+                transformed_model = hk.without_apply_rng(hk.transform(lambda par: ForwardModel(self.model, obs)(par)))
+                obs_model = jax.jit(lambda p: transformed_model.apply(None, p))
+
+                numpyro.sample(f'likelihood_obs_{i}', likelihood(obs_model(prior_params)), obs=obs.observed_counts)
+
+        return model
+
     def fit(self,
-            prior_params,
+            prior_distributions,
             rng_key: int = 0,
             num_chains: int = 4,
             num_warmup: int = 1000,
@@ -105,23 +121,8 @@ class BayesianModel(ForwardModelFit):
             mcmc_kwargs: dict = {},
             return_inference_data: bool = True):
 
-        def bayesian_model():
-
-            pars = build_prior(prior_params)
-
-            for i, obs in enumerate(self.observation):
-
-                transformed_model = hk.without_apply_rng(hk.transform(lambda pars: ForwardModel(self.model, obs)(pars)))
-
-                if jit_model:
-                    obs_model = jax.jit(lambda p: transformed_model.apply(None, p))
-
-                else:
-                    def obs_model(p): transformed_model.apply(None, p)
-
-                numpyro.sample(f'likelihood_obs_{i}',
-                               likelihood(obs_model(pars)),
-                               obs=obs.observed_counts)
+        # Instantiate Bayesian model
+        bayesian_model = self.numpyro_model(prior_distributions)
 
         chain_kwargs = {
             'num_warmup': num_warmup,
