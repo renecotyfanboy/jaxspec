@@ -159,3 +159,26 @@ class Highecut(MultiplicativeComponent):
         folding = hk.get_parameter('E_f', [], init=HaikuConstant(1))
 
         return jnp.where(energy <= cutoff, 1., jnp.exp((cutoff-energy)/folding))
+
+
+class Zedge(MultiplicativeComponent):
+    r"""
+    A redshifted absorption edge model.
+
+    .. math::
+        \mathcal{M}(E) = \begin{cases} \exp \left( -D \left(\frac{E(1+z)}{E_c}\right^3 \right)& \text{if $E > E_c$}\\ 1 & \text{if $E < E_c$}\end{cases}
+
+    Parameters
+    ----------
+        * :math:`E_c` : threshold energy
+        * :math:`E_f` : absorption depth at the threshold
+        * :math:`z` : redshift
+    """
+
+    def __call__(self, energy):
+
+        E_c = hk.get_parameter('E_c', [], init=HaikuConstant(1))
+        D = hk.get_parameter('D', [], init=HaikuConstant(1))
+        z = hk.get_parameter('z', [], init=HaikuConstant(0))
+
+        return jnp.where(energy <= E_c, 1., jnp.exp(-D*(energy*(1+z)/E_c)**3))
