@@ -13,7 +13,7 @@ class Observation:
     rmf: DataRMF
     pha: DataPHA
     exposure: float
-    energies: np.ndarray
+    in_energies: np.ndarray
     transfer_matrix: np.ndarray
     observed_counts: np.ndarray
 
@@ -41,14 +41,14 @@ class Observation:
         col_idx *= rmf.energ_lo.value > 0.  # Exclude channels with 0. as lower energy bound
         col_idx *= rmf.full_matrix.sum(axis=0) > 0  # Exclude channels with no contribution
 
-        # Energy grid for the model, we integrate it using trapezoid evaluated on edges (2 points)
-        energies = np.stack((np.asarray(rmf.energ_lo, dtype=np.float64), np.asarray(rmf.energ_hi, dtype=np.float64)))
+        # In energy grid for the model, we integrate it using trapezoid evaluated on edges (2 points)
+        in_energies = np.stack((np.asarray(rmf.energ_lo, dtype=np.float64), np.asarray(rmf.energ_hi, dtype=np.float64)))
 
         # Transfer matrix computation considering grouping
         transfer_matrix = pha.grouping @ (rmf.full_matrix * arf.specresp * pha.exposure)
 
         # Selecting only the channels that are not masked
-        self.energies = energies[:, col_idx]
+        self.in_energies = in_energies[:, col_idx]
         self.out_energies = np.stack((e_min[row_idx], e_max[row_idx]))
         self.transfer_matrix = transfer_matrix[row_idx, :][:, col_idx]
         self.observed_counts = (grouping @ np.asarray(pha.counts.value, dtype=np.int64))[row_idx]

@@ -31,22 +31,25 @@ def build_prior(prior):
     return parameters
 
 
-class ForwardModel(hk.Module):
+class CountForwardModel(hk.Module):
+    """
+    A haiku module which allows to build the function that simulates the measured counts
+    """
 
     def __init__(self, model: SpectralModel, observation: Observation):
         super().__init__()
         self.model = model
-        self.observation = observation
+        self.energies = jnp.asarray(observation.in_energies)
+        self.transfer_matrix = jnp.asarray(observation.transfer_matrix)
 
     def __call__(self, parameters):
         """
         Compute the count functions for a given observation.
         """
 
-        energies = jnp.asarray(self.observation.energies)
-        transfer_matrix = jnp.asarray(self.observation.transfer_matrix)
+        expected_counts = self.transfer_matrix @ self.model(parameters, *self.energies)
 
-        return jnp.clip(transfer_matrix @ jnp.trapz(self.model(parameters, *energies), x=energies, axis=0), a_min=1e-6)
+        return jnp.clip(expected_counts, a_min=1e-6)
 
 
 class ForwardModelFit(ABC):
@@ -101,7 +104,7 @@ class BayesianModel(ForwardModelFit):
 
             for i, obs in enumerate(self.observation):
 
-                transformed_model = hk.without_apply_rng(hk.transform(lambda par: ForwardModel(self.model, obs)(par)))
+                transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(self.model, obs)(par)))
                 obs_model = jax.jit(lambda p: transformed_model.apply(None, p))
 
                 numpyro.sample(f'likelihood_obs_{i}', likelihood(obs_model(prior_params)), obs=obs.observed_counts)

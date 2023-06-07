@@ -51,7 +51,8 @@ class SpectralModel:
 
     def flux(self, e_low, e_high):
         """
-        This method evaluate the graph of operations and returns the result. It should be transformed using haiku
+        This method return the expected counts between e_low and e_high by integrating the model
+        It evaluates the graph of operations and returns the result. It should be transformed using haiku
         """
 
         energies = jnp.hstack((e_low, e_high[-1]))
@@ -80,7 +81,7 @@ class SpectralModel:
 
         flux_1D = continuum[list(self.graph.in_edges('out'))[0][0]]
         flux = jnp.stack((flux_1D[:-1], flux_1D[1:]))
-        continuum_flux = jnp.trapz(flux, x=energies_to_integrate, axis=0)
+        continuum_flux = jnp.trapz(flux*energies_to_integrate, x=jnp.log(energies_to_integrate), axis=0)
 
         # Iterate from the root nodes to the output node and compute the fine structure contribution for each component
 
