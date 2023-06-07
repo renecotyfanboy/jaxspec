@@ -235,12 +235,7 @@ class Gauss(AdditiveComponent):
         return norm * (f_high - f_low), (e_low + e_high)/2
 
     def __call__(self, energy):
-
-        line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
-        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
-
-        return jnp.zeros_like(energy)#norm*jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
+        return jnp.zeros_like(energy)
 
 
 class APEC(AdditiveComponent):
