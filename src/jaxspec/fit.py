@@ -138,10 +138,12 @@ class BayesianModel(ForwardModelFit):
 
         mcmc.run(random.PRNGKey(rng_key))
 
+        self.samples = mcmc.get_samples()
+
         if return_inference_data:
 
             return az.from_numpyro(posterior=mcmc)
 
         else:
 
-            return mcmc.get_samples()
+            return self.samples
