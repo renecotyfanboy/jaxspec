@@ -109,6 +109,8 @@ class BayesianModel(ForwardModelFit):
 
                 numpyro.sample(f'likelihood_obs_{i}', likelihood(obs_model(prior_params)), obs=obs.observed_counts)
 
+            return prior_params
+
         return model
 
     def fit(self,
