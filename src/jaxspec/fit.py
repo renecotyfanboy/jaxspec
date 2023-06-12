@@ -107,7 +107,9 @@ class BayesianModel(ForwardModelFit):
                 transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(self.model, obs)(par)))
                 obs_model = jax.jit(lambda p: transformed_model.apply(None, p))
 
-                numpyro.sample(f'likelihood_obs_{i}', likelihood(obs_model(prior_params)), obs=obs.observed_counts)
+                with numpyro.plate(f'obs_{i}', len(obs.observed_counts)):
+
+                    numpyro.sample(f'likelihood_obs_{i}', likelihood(obs_model(prior_params)), obs=obs.observed_counts)
 
             return prior_params
 
