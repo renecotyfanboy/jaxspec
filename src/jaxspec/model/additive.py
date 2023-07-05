@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 
 import haiku as hk
 import jax
@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 import numpy as np
 import importlib.resources
-from jax.lax import dynamic_slice_in_dim as jax_slice, dynamic_index_in_dim as jax_index, map as lax_map
+from jax.lax import dynamic_slice_in_dim as jax_slice
 from functools import partial
 from . import ModelComponent
 from haiku.initializers import Constant as HaikuConstant
@@ -131,7 +131,7 @@ class Lorentz(AdditiveComponent):
         sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
-        return jnp.zeros_like(energy) #norm*(sigma/(2*jnp.pi))/((energy-line_energy)**2 + (sigma/2)**2)
+        return jnp.zeros_like(energy)
 
 
 class Logparabola(AdditiveComponent):
