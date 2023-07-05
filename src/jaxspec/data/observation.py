@@ -28,6 +28,8 @@ class Observation:
         self.rmf = rmf
         self.pha = pha
         self.exposure = pha.exposure
+        self.low_energy = low_energy
+        self.high_energy = high_energy
         grouping = pha.grouping
 
         # Out energies considering grouping
@@ -78,3 +80,33 @@ class Observation:
 
     def __str__(self):
         return f"obs_{self.pha.id}"
+
+    def rebin(self, grouping):
+        arf = self.arf
+        rmf = self.rmf
+        pha = self.pha
+        low_energy = self.low_energy
+        high_energy = self.high_energy
+
+        # Out energies considering grouping
+        e_min = np.nanmin(np.where(grouping > 0, grouping, np.nan) * rmf.e_min.value[None, :], axis=1)
+        e_max = np.nanmax(np.where(grouping > 0, grouping, np.nan) * rmf.e_max.value[None, :], axis=1)
+
+        row_idx = np.ones(grouping.shape[0], dtype=bool)
+        row_idx *= (e_min >= low_energy) & (e_max <= high_energy)
+
+        col_idx = np.ones(rmf.energ_lo.shape, dtype=bool)
+        col_idx *= rmf.energ_lo.value > 0.  # Exclude channels with 0. as lower energy bound
+        col_idx *= rmf.full_matrix.sum(axis=0) > 0  # Exclude channels with no contribution
+
+        # In energy grid for the model, we integrate it using trapezoid evaluated on edges (2 points)
+        in_energies = np.stack((np.asarray(rmf.energ_lo, dtype=np.float64), np.asarray(rmf.energ_hi, dtype=np.float64)))
+
+        # Transfer matrix computation considering grouping
+        transfer_matrix = pha.grouping @ (rmf.full_matrix * arf.specresp * pha.exposure)
+
+        # Selecting only the channels that are not masked
+        self.in_energies = in_energies[:, col_idx]
+        self.out_energies = np.stack((e_min[row_idx], e_max[row_idx]))
+        self.transfer_matrix = transfer_matrix[row_idx, :][:, col_idx]
+        self.observed_counts = (grouping @ np.asarray(pha.counts.value, dtype=np.int64))[row_idx]
