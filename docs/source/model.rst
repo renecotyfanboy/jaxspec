@@ -17,9 +17,3 @@ Abstract Components
 -------------------
 .. automodule:: jaxspec.model.abc
    :members:
-
-Utilities
----------
-
-.. automodule:: jaxspec.model.integrate
-   :members:
