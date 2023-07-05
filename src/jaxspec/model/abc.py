@@ -51,7 +51,9 @@ class SpectralModel:
 
     def flux(self, e_low, e_high):
         """
-        This method evaluate the graph of operations and returns the result. It should be transformed using haiku
+        This method return the expected counts between e_low and e_high by integrating the model.
+        It contains most of the "usine à gaz" which makes jaxspec works.
+        It evaluates the graph of operations and returns the result. It should be transformed using haiku
         """
 
         energies = jnp.hstack((e_low, e_high[-1]))
@@ -67,6 +69,7 @@ class SpectralModel:
 
             node = self.graph.nodes[node_id]
 
+            # Instantiate the haiku modules
             if node and node['type'] == 'component':
 
                 runtime_modules[node_id] = node['component'](name=node['name'], **node['kwargs'])
@@ -80,7 +83,7 @@ class SpectralModel:
 
         flux_1D = continuum[list(self.graph.in_edges('out'))[0][0]]
         flux = jnp.stack((flux_1D[:-1], flux_1D[1:]))
-        continuum_flux = jnp.trapz(flux, x=energies_to_integrate, axis=0)
+        continuum_flux = jnp.trapz(flux*energies_to_integrate, x=jnp.log(energies_to_integrate), axis=0)
 
         # Iterate from the root nodes to the output node and compute the fine structure contribution for each component
 
@@ -96,7 +99,7 @@ class SpectralModel:
 
             multiplicative_nodes = []
 
-            # Search all multiplicative components connected to this node
+            # Search all multiplicative components connected to this node and apply them at mean energy
             for node_id in nodes_id_in_path[::-1]:
                 multiplicative_nodes.extend([node_id for node_id in self.find_multiplicative_components(node_id)])
 
@@ -194,7 +197,8 @@ class SpectralModel:
             class BadLuckError(Exception): pass
             raise BadLuckError('Congratulation, you may have experienced an uuid4 collision, this has ~50% '
                                'chance to happen if you generate an uuid4 every second for a century. If '
-                               'rerunning this code fixes this issue, consider playing lotto tonight. ')
+                               'rerunning this code fixes this issue, consider playing lotto tonight and open '
+                               'an issue in the JAXSPEC repository. ')
 
         # Merge label dictionaries
         labels = self.labels | other.labels

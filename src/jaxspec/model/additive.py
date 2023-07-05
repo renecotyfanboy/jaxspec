@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 
 import haiku as hk
 import jax
@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 import numpy as np
 import importlib.resources
-from jax.lax import dynamic_slice_in_dim as jax_slice, dynamic_index_in_dim as jax_index, map as lax_map
+from jax.lax import dynamic_slice_in_dim as jax_slice
 from functools import partial
 from . import ModelComponent
 from haiku.initializers import Constant as HaikuConstant
@@ -131,7 +131,7 @@ class Lorentz(AdditiveComponent):
         sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
-        return jnp.zeros_like(energy) #norm*(sigma/(2*jnp.pi))/((energy-line_energy)**2 + (sigma/2)**2)
+        return jnp.zeros_like(energy)
 
 
 class Logparabola(AdditiveComponent):
@@ -179,6 +179,27 @@ class Blackbody(AdditiveComponent):
         return norm*8.0525*energy**2/((kT**4)*(jnp.exp(energy/kT)-1))
 
 
+class Blackbodyrad(AdditiveComponent):
+    r"""
+    A black body model in radius normalization
+
+    .. math::
+        \mathcal{M}\left( E \right) = \frac{K \times 1.0344\times 10^{-3} E^{2}}{left(\exp(E/k_BT)-1\right)}
+
+    Parameters
+    ----------
+        * :math:`k_B T` : Temperature :math:`\left[\text{keV}\right]`
+        * :math:`K` : :math:`R^2_{km}/D_{10}^{2}`, where :math:`R_{km}` is the source radius in km and :math:`D_{10}` is the distance to the source in units of 10 kpc
+    """
+
+    def __call__(self, energy):
+
+        kT = hk.get_parameter('kT', [], init=HaikuConstant(11 / 3))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
+
+        return norm*1.0344e-3*energy**2/(jnp.exp(energy/kT)-1)
+
+
 class Gauss(AdditiveComponent):
     r"""
     A Gaussian line profile
@@ -214,12 +235,7 @@ class Gauss(AdditiveComponent):
         return norm * (f_high - f_low), (e_low + e_high)/2
 
     def __call__(self, energy):
-
-        line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
-        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
-
-        return jnp.zeros_like(energy)#norm*jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
+        return jnp.zeros_like(energy)
 
 
 class APEC(AdditiveComponent):
@@ -232,11 +248,11 @@ class APEC(AdditiveComponent):
             files = np.load(path)
 
         self.kT_ref = files['kT_ref']
-        self.e_ref = files['continuum_energy']
-        self.c_ref = files['continuum_emissivity']
-        self.pe_ref = files['pseudo_energy']
-        self.pc_ref = files['pseudo_emissivity']
-        self.energy_lines = np.nan_to_num(files['lines_energy'])  # .astype(np.float32))
+        self.e_ref = np.nan_to_num(files['continuum_energy'], nan=1e6)
+        self.c_ref = np.nan_to_num(files['continuum_emissivity'])
+        self.pe_ref = np.nan_to_num(files['pseudo_energy'], nan=1e6)
+        self.pc_ref = np.nan_to_num(files['pseudo_emissivity'])
+        self.energy_lines = np.nan_to_num(files['lines_energy'], nan=1e6) # .astype(np.float32))
         self.epsilon_lines = np.nan_to_num(files['lines_emissivity'])  # .astype(np.float32))
         self.element_lines = np.nan_to_num(files['lines_element'])  # .astype(np.int32))
 
@@ -259,8 +275,7 @@ class APEC(AdditiveComponent):
             self.interp_on_cubes(energy, energy_cube, continuum_cube) * jnp.where(self.metals_one_hot, Z, 1.)[None, :],
             axis=-1)
 
-    @partial(jnp.vectorize, excluded=(0,))
-    def fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
+    def mono_fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
 
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
         kT = hk.get_parameter('kT', [], init=HaikuConstant(1))
@@ -277,6 +292,14 @@ class APEC(AdditiveComponent):
                                    axis=-1)  # Coeff for metallicity
 
         return jnp.interp(kT, jax_slice(self.kT_ref, idx, 2), flux_at_edges) * 1e14 * norm, (e_low + e_high)/2
+
+    def fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
+        #Compute the fine structure lines with e_low and e_high as array, mapping the mono_fine_structure function
+        #over the various axes of e_low and e_high
+
+        return jnp.vectorize(self.mono_fine_structure)(e_low, e_high)
+
+        #return jnp.zeros_like(e_low), (e_low + e_high)/2
 
     @partial(jnp.vectorize, excluded=(0,))
     def __call__(self, energy):

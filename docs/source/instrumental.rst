@@ -1,5 +1,5 @@
 Instrumental files
 ==================
 
-.. automodule:: jaxspec.instru.ogip
+.. automodule:: jaxspec.data.ogip
    :members:

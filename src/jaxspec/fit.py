@@ -31,22 +31,26 @@ def build_prior(prior):
     return parameters
 
 
-class ForwardModel(hk.Module):
+class CountForwardModel(hk.Module):
+    """
+    A haiku module which allows to build the function that simulates the measured counts
+    """
 
     def __init__(self, model: SpectralModel, observation: Observation):
         super().__init__()
         self.model = model
-        self.observation = observation
+        self.energies = jnp.asarray(observation.in_energies)
+        self.transfer_matrix = jnp.asarray(observation.transfer_matrix)
 
     def __call__(self, parameters):
         """
         Compute the count functions for a given observation.
         """
 
-        energies = jnp.asarray(self.observation.energies, dtype=jnp.float64)
-        transfer_matrix = jnp.asarray(self.observation.transfer_matrix, dtype=jnp.float64)
+        expected_counts = self.transfer_matrix @ self.model(parameters, *self.energies)
 
-        return jnp.clip(transfer_matrix @ jnp.trapz(self.model(parameters, energies), x=energies, axis=0), a_min=1e-6)
+        return jnp.clip(expected_counts, a_min=1e-6)
+
 
 class ForwardModelFit(ABC):
     """
@@ -72,56 +76,54 @@ class ForwardModelFit(ABC):
         pass
 
 
-class FrequentistModel(ForwardModelFit):
-    """
-    Class to fit a model to a given set of observation using a frequentist approach.
-    """
-
-    def __init__(self, model, observation):
-        super().__init__(model, observation)
-
-    def fit(self):
-        pass
-
-
 class BayesianModel(ForwardModelFit):
     """
     Class to fit a model to a given set of observation using a Bayesian approach.
     """
 
+    samples: dict = {}
+
     def __init__(self, model, observation):
         super().__init__(model, observation)
 
+    def numpyro_model(self, prior_distributions):
+
+        def model():
+
+            prior_params = build_prior(prior_distributions)
+
+            for i, obs in enumerate(self.observation):
+
+                transformed_model = hk.without_apply_rng(
+                    hk.transform(lambda par: CountForwardModel(self.model, obs)(par))
+                )
+
+                obs_model = jax.jit(lambda p: transformed_model.apply(None, p))
+
+                with numpyro.plate(f'obs_{i}', len(obs.observed_counts)):
+
+                    numpyro.sample(
+                        f'likelihood_obs_{i}',
+                        Poisson(obs_model(prior_params)),
+                        obs=obs.observed_counts
+                    )
+
+            return prior_params
+
+        return model
+
     def fit(self,
-            prior_params,
+            prior_distributions,
             rng_key: int = 0,
             num_chains: int = 4,
             num_warmup: int = 1000,
             num_samples: int = 1000,
-            likelihood: Distribution = Poisson,
-            kernel: MCMCKernel = NUTS,
             jit_model: bool = False,
-            kernel_kwargs: dict = {},
             mcmc_kwargs: dict = {},
             return_inference_data: bool = True):
 
-        def bayesian_model():
-
-            pars = build_prior(prior_params)
-
-            for i, obs in enumerate(self.observation):
-
-                transformed_model = hk.without_apply_rng(hk.transform(lambda pars: ForwardModel(self.model, obs)(pars)))
-
-                if jit_model:
-                    obs_model = jax.jit(lambda p: transformed_model.apply(None, p))
-
-                else:
-                    def obs_model(p): transformed_model.apply(None, p)
-
-                numpyro.sample(f'likelihood_obs_{i}',
-                               likelihood(obs_model(pars)),
-                               obs=obs.observed_counts)
+        # Instantiate Bayesian model
+        bayesian_model = self.numpyro_model(prior_distributions)
 
         chain_kwargs = {
             'num_warmup': num_warmup,
@@ -129,10 +131,12 @@ class BayesianModel(ForwardModelFit):
             'num_chains': num_chains
         }
 
-        kernel = kernel(bayesian_model, **kernel_kwargs)
+        kernel = NUTS(bayesian_model, max_tree_depth=7)
         mcmc = MCMC(kernel, **(chain_kwargs | mcmc_kwargs))
 
         mcmc.run(random.PRNGKey(rng_key))
+
+        self.samples = mcmc.get_samples()
 
         if return_inference_data:
 
@@ -140,4 +144,4 @@ class BayesianModel(ForwardModelFit):
 
         else:
 
-            return mcmc.get_samples()
+            return self.samples
