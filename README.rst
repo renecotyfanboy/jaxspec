@@ -21,3 +21,5 @@ For the moment, this package is not referenced on Pypi, so it must be installed 
 .. code-block::
 
     pip install git+https://github.com/renecotyfanboy/jaxspec
+
+This will be deployed on pip at v0.0.1
