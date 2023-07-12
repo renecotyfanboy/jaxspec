@@ -57,12 +57,13 @@ class Powerlaw(AdditiveComponent):
     A power law model
 
     .. math::
-        \mathcal{M}\left( E \right) = K E^{-\alpha}
+        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_0} \right)^{-\alpha}
 
     Parameters
     ----------
         * :math:`\alpha` : Photon index of the power law :math:`\left[\text{dimensionless}\right]`
-        * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+        * :math:`E_0` : Reference energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
+        * :math:`K` : Normalization at 1 keV :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
     """
 
     def __call__(self, energy):
@@ -78,11 +79,12 @@ class AdditiveConstant(AdditiveComponent):
     A constant model
 
     .. math::
-        \mathcal{M}\left( E \right) = K
+        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_0} \right)
 
     Parameters
     ----------
-        * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+        * :math:`E_0` : Reference energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
+        * :math:`K` : Normalization at 1 keV :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
     """
 
     def __call__(self, energy):
@@ -317,3 +319,27 @@ class APEC(AdditiveComponent):
                                                          jax_slice(self.pc_ref, idx, 2)))
 
         return (continuum + pseudo) * 1e14 * norm
+
+class Cutoffpl(AdditiveComponent):
+    r"""
+    A power law model with high energy exponenential cutoff
+
+    .. math::
+        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_0} \right)^{-\alpha} \exp(-E/\beta)
+
+    Parameters
+    ----------
+        * :math:`\alpha` : Photon index of the power law :math:`\left[\text{dimensionless}\right]`
+        * :math:`\beta` : Folding energy of the exponential cutoff :math:`\left[\text{keV}\right]`
+        * :math:`E_0` : Reference energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
+        * :math:`K` : Normalization at 1 keV :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+    """
+
+    def __call__(self, energy):
+
+        alpha = hk.get_parameter('alpha', [], init=HaikuConstant(1.3))
+        beta = hk.get_parameter('beta', [], init=HaikuConstant(15))
+        norm = hk.get_parameter('norm', [], init=HaikuConstant(1e-4))
+
+        return norm*energy**(-alpha)*jnp.exp(-energy/beta)
+    
