@@ -79,12 +79,11 @@ class AdditiveConstant(AdditiveComponent):
     A constant model
 
     .. math::
-        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_0} \right)
+        \mathcal{M}\left( E \right) = K
 
     Parameters
     ----------
-        * :math:`E_0` : Reference energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
-        * :math:`K` : Normalization at 1 keV :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+        * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
     """
 
     def __call__(self, energy):
