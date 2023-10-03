@@ -292,4 +292,4 @@ class ModelComponent(hk.Module, ABC, metaclass=ComponentMetaClass):
         """
         Return the model evaluated at a given energy
         """
-        pass
+        ...

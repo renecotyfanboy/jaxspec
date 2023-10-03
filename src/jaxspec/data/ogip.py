@@ -54,19 +54,16 @@ class DataPHA:
     @classmethod
     def from_file(cls, pha_file):
 
-        data = QTable.read(pha_file,'SPECTRUM')
-        header = fits.getheader(pha_file,'SPECTRUM')
-
-        kwargs = {}
+        data = QTable.read(pha_file, 'SPECTRUM')
+        header = fits.getheader(pha_file, 'SPECTRUM')
 
         # Grouping and quality parameters are in binned PHA dataset
-        kwargs['grouping'] = data['GROUPING'] if 'GROUPING' in data.colnames else None
-        kwargs['quality'] = data['QUALITY'] if 'QUALITY' in data.colnames else None
-
         # Backfile, respfile and ancrfile are in primary header
-        kwargs['backfile'] = header['BACKFILE'] if len(header['BACKFILE']) > 0 else None
-        kwargs['respfile'] = header['RESPFILE'] if len(header['RESPFILE']) > 0 else None
-        kwargs['ancrfile'] = header['ANCRFILE'] if len(header['ANCRFILE']) > 0 else None
+        kwargs = {'grouping': data['GROUPING'] if 'GROUPING' in data.colnames else None,
+                  'quality': data['QUALITY'] if 'QUALITY' in data.colnames else None,
+                  'backfile': header['BACKFILE'] if len(header['BACKFILE']) > 0 else None,
+                  'respfile': header['RESPFILE'] if len(header['RESPFILE']) > 0 else None,
+                  'ancrfile': header['ANCRFILE'] if len(header['ANCRFILE']) > 0 else None}
 
         return cls(data['CHANNEL'], data['COUNTS'], header['EXPOSURE'], **kwargs)
 
