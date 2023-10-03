@@ -138,41 +138,34 @@ class SpectralModel:
         Build a model from a single component
         """
 
-        # This is bad, for unknown reason, sometimes, the spectral models are not recognized
-        # Ex: Tbabs*(Powerlaw + Gaussian)
-        if inspect.isclass(component):
+        graph = nx.DiGraph()
 
-            graph = nx.DiGraph()
+        # Add the component node
+        # Random static node id to keep it trackable in the graph
+        node_id = str(uuid4())
 
-            # Add the component node
-            # Random static node id to keep it trackable in the graph
-            node_id = str(uuid4())
+        node_properties = {
+            'type': 'component',
+            'component_type': component.type,
+            'name': component.__name__.lower(),
+            'component': component,
+            'params': hk.transform(lambda e: component()(e)).init(None, jnp.ones(1)),
+            'fine_structure': False,
+            'kwargs': kwargs,
+            'depth': 0
+        }
 
-            node_properties = {
-                'type': 'component',
-                'component_type': component.type,
-                'name': component.__name__.lower(),
-                'component': component,
-                'params': hk.transform(lambda e: component()(e)).init(None, jnp.ones(1)),
-                'fine_structure': False,
-                'kwargs': kwargs,
-                'depth': 0
-            }
+        graph.add_node(node_id, **node_properties)
 
-            graph.add_node(node_id, **node_properties)
+        # Add the output node
+        labels = {node_id: component.__name__.lower(), 'out': 'out'}
 
-            # Add the output node
-            labels = {node_id: component.__name__.lower(), 'out': 'out'}
+        graph.add_node('out', type='out', depth=1)
+        graph.add_edge(node_id, 'out')
 
-            graph.add_node('out', type='out', depth=1)
-            graph.add_edge(node_id, 'out')
+        return cls(graph, labels)
 
-            return cls(graph, labels)
-
-        else:
-            return component
-
-    def compose(self, other: SpectralModel, operation=None, function=None, name=None) ->SpectralModel:
+    def compose(self, other: SpectralModel, operation=None, function=None, name=None) -> SpectralModel:
         """
         This function operate a composition between the operation graph of two models
         1) It fuses the two graphs using which joins at the 'out' nodes
@@ -216,14 +209,12 @@ class SpectralModel:
 
         return SpectralModel(graph, labels)
 
-    def __add__(self, other: SpectralModel | ComponentMetaClass) -> SpectralModel:
+    def __add__(self, other: SpectralModel) -> SpectralModel:
 
-        other = SpectralModel.from_component(other)
         return self.compose(other, operation='add', function=lambda x, y: x + y, name='+')
 
-    def __mul__(self, other: SpectralModel | ComponentMetaClass) -> SpectralModel:
+    def __mul__(self, other: SpectralModel) -> SpectralModel:
 
-        other = SpectralModel.from_component(other)
         return self.compose(other, operation='mul', function=lambda x, y: x * y, name=r'$\times$')
 
     def plot(self, figsize=(8, 8)):
@@ -255,14 +246,6 @@ class ComponentMetaClass(type(hk.Module)):
     This metaclass enable the construction of model from components with a simple syntax while style enabling
     the components to be used as haiku modules
     """
-
-    def __add__(self, other) -> SpectralModel:
-
-        return SpectralModel.from_component(self) + SpectralModel.from_component(other)
-
-    def __mul__(self, other) -> SpectralModel:
-
-        return SpectralModel.from_component(self) * SpectralModel.from_component(other)
 
     def __call__(self, *args, **kwargs):
         """
