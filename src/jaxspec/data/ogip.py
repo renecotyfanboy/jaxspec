@@ -9,7 +9,7 @@ class DataPHA:
     r"""
     Class to handle PHA data defined with OGIP standards.
 
-    References
+    references
     ----------
 
     * `THE OGIP STANDARD PHA FILE FORMAT <https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html>`_
@@ -81,7 +81,7 @@ class DataARF:
     r"""
     Class to handle ARF data defined with OGIP standards.
 
-    References
+    references
     ----------
 
     * `The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats) <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html>`_
@@ -120,7 +120,7 @@ class DataRMF:
     r"""
     Class to handle RMF data defined with OGIP standards.
 
-    References
+    references
     ----------
 
     * `The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats) <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html>`_
