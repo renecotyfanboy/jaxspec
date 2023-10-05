@@ -217,6 +217,11 @@ class SpectralModel:
 
         return self.compose(other, operation='mul', function=lambda x, y: x * y, name=r'$\times$')
 
+    def __pow__(self, power: float) -> SpectralModel:
+
+        # TODO : Implement convolution as an overloading of power operator
+        return self.compose(self, operation='pow', function=lambda x, y: print('Not Implemented yet'), name='*')
+
     def plot(self, figsize=(8, 8)):
 
         import matplotlib.pyplot as plt
@@ -247,7 +252,7 @@ class ComponentMetaClass(type(hk.Module)):
     the components to be used as haiku modules
     """
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, **kwargs):
         """
         This method enable to use model components as haiku modules when folded in a haiku transform
         function and also to instantiate them as SpectralModel when out of a haiku transform
@@ -258,7 +263,8 @@ class ComponentMetaClass(type(hk.Module)):
             return SpectralModel.from_component(self, **kwargs)
 
         else:
-            return super().__call__(*args, **kwargs)
+
+            return super().__call__(**kwargs)
 
 
 class ModelComponent(hk.Module, ABC, metaclass=ComponentMetaClass):
