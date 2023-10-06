@@ -9,7 +9,7 @@ class DataPHA:
     r"""
     Class to handle PHA data defined with OGIP standards.
 
-    References
+    references
     ----------
 
     * `THE OGIP STANDARD PHA FILE FORMAT <https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html>`_
@@ -54,19 +54,16 @@ class DataPHA:
     @classmethod
     def from_file(cls, pha_file):
 
-        data = QTable.read(pha_file,'SPECTRUM')
-        header = fits.getheader(pha_file,'SPECTRUM')
-
-        kwargs = {}
+        data = QTable.read(pha_file, 'SPECTRUM')
+        header = fits.getheader(pha_file, 'SPECTRUM')
 
         # Grouping and quality parameters are in binned PHA dataset
-        kwargs['grouping'] = data['GROUPING'] if 'GROUPING' in data.colnames else None
-        kwargs['quality'] = data['QUALITY'] if 'QUALITY' in data.colnames else None
-
         # Backfile, respfile and ancrfile are in primary header
-        kwargs['backfile'] = header['BACKFILE'] if len(header['BACKFILE']) > 0 else None
-        kwargs['respfile'] = header['RESPFILE'] if len(header['RESPFILE']) > 0 else None
-        kwargs['ancrfile'] = header['ANCRFILE'] if len(header['ANCRFILE']) > 0 else None
+        kwargs = {'grouping': data['GROUPING'] if 'GROUPING' in data.colnames else None,
+                  'quality': data['QUALITY'] if 'QUALITY' in data.colnames else None,
+                  'backfile': header['BACKFILE'] if len(header['BACKFILE']) > 0 else None,
+                  'respfile': header['RESPFILE'] if len(header['RESPFILE']) > 0 else None,
+                  'ancrfile': header['ANCRFILE'] if len(header['ANCRFILE']) > 0 else None}
 
         return cls(data['CHANNEL'], data['COUNTS'], header['EXPOSURE'], **kwargs)
 
@@ -84,7 +81,7 @@ class DataARF:
     r"""
     Class to handle ARF data defined with OGIP standards.
 
-    References
+    references
     ----------
 
     * `The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats) <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html>`_
@@ -123,7 +120,7 @@ class DataRMF:
     r"""
     Class to handle RMF data defined with OGIP standards.
 
-    References
+    references
     ----------
 
     * `The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats) <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html>`_

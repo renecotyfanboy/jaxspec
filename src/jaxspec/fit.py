@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from jax import random
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
+from .analysis.results import ChainResult
 from .model.abc import SpectralModel
 from .data.observation import Observation
 from numpyro.infer import MCMC, NUTS
@@ -119,8 +120,7 @@ class BayesianModel(ForwardModelFit):
             num_warmup: int = 1000,
             num_samples: int = 1000,
             jit_model: bool = False,
-            mcmc_kwargs: dict = {},
-            return_inference_data: bool = True):
+            mcmc_kwargs: dict = {}):
 
         # Instantiate Bayesian model
         bayesian_model = self.numpyro_model(prior_distributions)
@@ -136,12 +136,4 @@ class BayesianModel(ForwardModelFit):
 
         mcmc.run(random.PRNGKey(rng_key))
 
-        self.samples = mcmc.get_samples()
-
-        if return_inference_data:
-
-            return az.from_numpyro(posterior=mcmc)
-
-        else:
-
-            return self.samples
+        return ChainResult(mcmc)

@@ -1,13 +1,5 @@
 """
-I am trying to build some doc automatically here, tell me if this works ! =D
-
-.. currentmodule:: jaxspec
-
-Model
-^^^^^
-
-.. automodule:: model
-    :members:
+This is the root of JAXspec's module. TODO: clear this up.
 """
 
 __version__ = "0.1.0"

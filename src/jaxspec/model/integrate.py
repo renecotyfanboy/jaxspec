@@ -15,7 +15,7 @@ class IntegrateDEQUAD(IntegrateABC):
     Module for integrating a model between two energies. It relies on double exponential quadrature for
     finite intervals to compute an approximation of the integral of a model.
 
-    References
+    references
     ----------
     * `Takahasi and Mori (1974) <https://ems.press/journals/prims/articles/2686>`_
     * `Mori and Sugihara (2001) <https://doi.org/10.1016/S0377-0427(00)00501-X>`_

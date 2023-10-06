@@ -21,14 +21,14 @@ class Expfac(MultiplicativeComponent):
     r"""
     An exponential modification of a spectrum.
 
-    .. math::
-        \mathcal{M}(E) = \begin{cases}1 + A \exp \left(-fE\right) & \text{if $E>E_c$}\\1 & \text{if $E<E_c$}\end{cases}
+    $$
+    \mathcal{M}(E) = \begin{cases}1 + A \exp \left(-fE\right) & \text{if $E>E_c$}\\1 & \text{if $E<E_c$}\end{cases}
+    $$
 
-    Parameters
-    ----------
-        * :math:`A` : amplitude of the modification :math:`\left[\text{dimensionless}\right]`
-        * :math:`f` : exponential factor :math:`\left[\text{keV}^{-1}\right]`
-        * :math:`E_c` : start energy of modification :math:`\left[\text{keV}\right]`
+    ??? abstract "Parameters"
+        * $A$ : amplitude of the modification $\left[\text{dimensionless}\right]$
+        * $f$ : exponential factor $\left[\text{keV}^{-1}\right]$
+        * $E_c$ : start energy of modification $\left[\text{keV}\right]$
 
     """
 
@@ -45,9 +45,8 @@ class Tbabs(MultiplicativeComponent):
     r"""
     The Tuebingen-Boulder ISM absorption model.
 
-    Parameters
-    ----------
-        * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
+    ??? abstract "Parameters"
+        * $N_H$ : equivalent hydrogen column density $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
 
     """
 
@@ -69,9 +68,8 @@ class Phabs(MultiplicativeComponent):
     r"""
     A photoelectric absorption model.
 
-    Parameters
-    ----------
-        * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
+    ??? abstract "Parameters"
+        * $N_H$ : equivalent hydrogen column density $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
 
     """
 
@@ -93,9 +91,8 @@ class Wabs(MultiplicativeComponent):
     r"""
     A photo-electric absorption using Wisconsin (Morrison & McCammon 1983) cross-sections.
 
-    Parameters
-    ----------
-        * :math:`N_H` : equivalent hydrogen column density :math:`\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]`
+    ??? abstract "Parameters"
+        * $N_H$ : equivalent hydrogen column density $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
 
     """
 
@@ -117,17 +114,18 @@ class Gabs(MultiplicativeComponent):
     r"""
     A Gaussian absorption model.
 
-    .. math::
-        \mathcal{M}(E) = \exp \left( - \frac{\tau}{\sqrt{2 \pi} \sigma} \exp \left( -\frac{\left(E-E_0\right)^2}{2 \sigma^2} \right) \right)
+    $$
+        \mathcal{M}(E) = \exp \left( - \frac{\tau}{\sqrt{2 \pi} \sigma} \exp
+        \left( -\frac{\left(E-E_0\right)^2}{2 \sigma^2} \right) \right)
+    $$
 
-    .. note::
-        The optical depth at line center is :math:`\tau/(\sqrt{2 \pi} \sigma)`.
+    ??? abstract "Parameters"
+        * $\tau$ : absorption strength $\left[\text{dimensionless}\right]$
+        * $\sigma$ : absorption width $\left[\text{keV}\right]$
+        * $E_0$ : absorption center $\left[\text{keV}\right]$
 
-    Parameters
-    ----------
-        * :math:`\tau` : absorption strength :math:`\left[\text{dimensionless}\right]`
-        * :math:`\sigma` : absorption width :math:`\left[\text{keV}\right]`
-        * :math:`E_0` : absorption center :math:`\left[\text{keV}\right]`
+    !!! note
+        The optical depth at line center is $\tau/(\sqrt{2 \pi} \sigma)$.
 
     """
 
@@ -144,13 +142,13 @@ class Highecut(MultiplicativeComponent):
     r"""
     A high-energy cutoff model.
 
-    .. math::
+    $$
         \mathcal{M}(E) = \begin{cases} \exp \left( \frac{E_c - E}{E_f} \right)& \text{if $E > E_c$}\\ 1 & \text{if $E < E_c$}\end{cases}
+    $$
 
-    Parameters
-    ----------
-        * :math:`E_c` : cutoff energy :math:`\left[\text{keV}\right]`
-        * :math:`E_f` : e-folding energy :math:`\left[\text{keV}\right]`
+    ??? abstract "Parameters"
+        * $E_c$ : cutoff energy $\left[\text{keV}\right]$
+        * $E_f$ : e-folding energy $\left[\text{keV}\right]$
     """
 
     def __call__(self, energy):
@@ -165,14 +163,15 @@ class Zedge(MultiplicativeComponent):
     r"""
     A redshifted absorption edge model.
 
-    .. math::
-        \mathcal{M}(E) = \begin{cases} \exp \left( -D \left(\frac{E(1+z)}{E_c}\right^3 \right)& \text{if $E > E_c$}\\ 1 & \text{if $E < E_c$}\end{cases}
+    $$
+        \mathcal{M}(E) = \begin{cases} \exp \left( -D \left(\frac{E(1+z)}{E_c}\right)^3 \right)
+        & \text{if $E > E_c$}\\ 1 & \text{if $E < E_c$}\end{cases}
+    $$
 
-    Parameters
-    ----------
-        * :math:`E_c` : threshold energy
-        * :math:`E_f` : absorption depth at the threshold
-        * :math:`z` : redshift
+    ??? abstract "Parameters"
+        * $E_c$ : threshold energy
+        * $E_f$ : absorption depth at the threshold
+        * $z$ : redshift
     """
 
     def __call__(self, energy):

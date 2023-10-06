@@ -32,11 +32,11 @@ class AdditiveComponent(ModelComponent, ABC):
         Method for integrating an additive model between two energies. It relies on double exponential quadrature for
         finite intervals to compute an approximation of the integral of a model.
 
-        References
+        references
         ----------
-        * `Takahasi and Mori (1974) <https://ems.press/journals/prims/articles/2686>`_
-        * `Mori and Sugihara (2001) <https://doi.org/10.1016/S0377-0427(00)00501-X>`_
-        * `Tanh-sinh quadrature <https://en.wikipedia.org/wiki/Tanh-sinh_quadrature>`_ from Wikipedia
+        * $Takahasi and Mori (1974) <https://ems.press/journals/prims/articles/2686>$_
+        * $Mori and Sugihara (2001) <https://doi.org/10.1016/S0377-0427(00)00501-X>$_
+        * $Tanh-sinh quadrature <https://en.wikipedia.org/wiki/Tanh-sinh_quadrature>$_ from Wikipedia
 
         """
 
@@ -56,14 +56,12 @@ class Powerlaw(AdditiveComponent):
     r"""
     A power law model
 
-    .. math::
-        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_0} \right)^{-\alpha}
+    $$\mathcal{M}\left( E \right) = K \left( \frac{E}{E_0} \right)^{-\alpha}$$
 
-    Parameters
-    ----------
-        * :math:`\alpha` : Photon index of the power law :math:`\left[\text{dimensionless}\right]`
-        * :math:`E_0` : Reference energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
-        * :math:`K` : Normalization at 1 keV :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+    ??? abstract "Parameters"
+        * $\alpha$ : Photon index of the power law $\left[\text{dimensionless}\right]$
+        * $E_0$ : Reference energy fixed at 1 keV $\left[ \mathrm{keV}\right]$
+        * $K$ : Normalization at 1 keV $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
     def __call__(self, energy):
@@ -78,12 +76,10 @@ class AdditiveConstant(AdditiveComponent):
     r"""
     A constant model
 
-    .. math::
-        \mathcal{M}\left( E \right) = K
+    $$\mathcal{M}\left( E \right) = K$$
 
-    Parameters
-    ----------
-        * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+    ??? abstract "Parameters"
+        * $K$ : Normalization $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
     def __call__(self, energy):
@@ -103,14 +99,12 @@ class Lorentz(AdditiveComponent):
     r"""
     A Lorentzian line profile
 
-    .. math::
-        \mathcal{M}\left( E \right) = K\frac{\frac{\sigma}{2\pi}}{(E-E_L)^2 + \left(\frac{\sigma}{2}\right)^2}
+    $$\mathcal{M}\left( E \right) = K\frac{\frac{\sigma}{2\pi}}{(E-E_L)^2 + \left(\frac{\sigma}{2}\right)^2}$$
 
-    Parameters
-    ----------
-        * :math:`E_L` : Energy of the line :math:`\left[\text{keV}\right]`
-        * :math:`\sigma` : FWHM of the line :math:`\left[\text{keV}\right]`
-        * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+    ??? abstract "Parameters"
+        - $E_L$ : Energy of the line $\left[\text{keV}\right]$
+        - $\sigma$ : FWHM of the line $\left[\text{keV}\right]$
+        - $K$ : Normalization $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
     def fine_structure(self, e_min, e_max) -> (jax.Array, jax.Array):
@@ -139,15 +133,16 @@ class Logparabola(AdditiveComponent):
     r"""
     A LogParabola model
 
-    .. math::
-        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_{\text{Pivot}}} \right)^{-(\alpha + \beta ~ \log (E/E_{\text{Pivot}})) }
+    $$
+    \mathcal{M}\left( E \right) = K  \left( \frac{E}{E_{\text{Pivot}}} \right)
+    ^{-(\alpha + \beta ~ \log (E/E_{\text{Pivot}})) }
+    $$
 
-    Parameters
-    ----------
-        * :math:`a` : Slope of the LogParabola at the pivot energy :math:`\left[\text{dimensionless}\right]`
-        * :math:`b` : Curve parameter of the LogParabola :math:`\left[\text{dimensionless}\right]`
-        * :math:`K` : Normalization at the pivot energy :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
-        * :math:`E_{\text{Pivot}}` : Pivot energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
+    ??? abstract "Parameters"
+        * $a$ : Slope of the LogParabola at the pivot energy $\left[\text{dimensionless}\right]$
+        * $b$ : Curve parameter of the LogParabola $\left[\text{dimensionless}\right]$
+        * $K$ : Normalization at the pivot energy $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
+        * $E_{\text{Pivot}}$ : Pivot energy fixed at 1 keV $\left[ \mathrm{keV}\right]$
     """
 
     def __call__(self, energy):
@@ -163,13 +158,12 @@ class Blackbody(AdditiveComponent):
     r"""
     A black body model
 
-    .. math::
-        \mathcal{M}\left( E \right) = \frac{K \times 8.0525 E^{2}}{(k_B T)^{4}\left(\exp(E/k_BT)-1\right)}
+    $$\mathcal{M}\left( E \right) = \frac{K \times 8.0525 E^{2}}{(k_B T)^{4}\left(\exp(E/k_BT)-1\right)}$$
 
-    Parameters
-    ----------
-        * :math:`k_B T` : Temperature :math:`\left[\text{keV}\right]`
-        * :math:`K` : :math:`L_{39}/D_{10}^{2}`, where :math:`L_{39}` is the source luminosity in units of :math:`10^{39}` erg/s and :math:`D_{10}` is the distance to the source in units of 10 kpc
+    ??? abstract "Parameters"
+        * $k_B T$ : Temperature $\left[\text{keV}\right]$
+        * $K$ : $L_{39}/D_{10}^{2}$, where $L_{39}$ is the source luminosity in units of $10^{39}$ erg/s
+        and $D_{10}$ is the distance to the source in units of 10 kpc
     """
 
     def __call__(self, energy):
@@ -184,13 +178,12 @@ class Blackbodyrad(AdditiveComponent):
     r"""
     A black body model in radius normalization
 
-    .. math::
-        \mathcal{M}\left( E \right) = \frac{K \times 1.0344\times 10^{-3} E^{2}}{left(\exp(E/k_BT)-1\right)}
+    $$\mathcal{M}\left( E \right) = \frac{K \times 1.0344\times 10^{-3} E^{2}}{\left(\exp (E/k_BT)-1\right)}$$
 
-    Parameters
-    ----------
-        * :math:`k_B T` : Temperature :math:`\left[\text{keV}\right]`
-        * :math:`K` : :math:`R^2_{km}/D_{10}^{2}`, where :math:`R_{km}` is the source radius in km and :math:`D_{10}` is the distance to the source in units of 10 kpc
+    ??? abstract "Parameters"
+        * $k_B T$ : Temperature $\left[\text{keV}\right]$
+        * $K$ : $R^2_{km}/D_{10}^{2}$, where $R_{km}$ is the source radius in km
+        and $D_{10}$ is the distance to the source in units of 10 kpc [dimensionless]
     """
 
     def __call__(self, energy):
@@ -205,24 +198,19 @@ class Gauss(AdditiveComponent):
     r"""
     A Gaussian line profile
 
-    .. math::
-        \mathcal{M}\left( E \right) = \frac{K}{\sqrt{2\pi\sigma^2}}\exp\left(\frac{-(E-E_L)^2}{2\sigma^2}\right)
+    $$\mathcal{M}\left( E \right) = \frac{K}{\sqrt{2\pi\sigma^2}}\exp\left(\frac{-(E-E_L)^2}{2\sigma^2}\right)$$
 
     The primitive is defined as :
 
-    .. math::
-        \int \mathcal{M}\left( E \right) \text{d}E = \frac{K}{2}\left( 1+\text{erf} \frac{(E-E_L)}{\sqrt{2}\sigma} \right)
+    $$
+    \int \mathcal{M}\left( E \right) \text{d}E =
+    \frac{K}{2}\left( 1+\text{erf} \frac{(E-E_L)}{\sqrt{2}\sigma} \right)
+    $$
 
-    The primitive is defined as :
-
-    .. math::
-        \int \mathcal{M}\left( E \right) \diff E = K\frac{1}{2}\left( 1+\erf frac{(E-E_L)}{\sqrt{2}\sigma} \right)
-
-    Parameters
-    ----------
-        * :math:`E_L` : Energy of the line :math:`\left[\text{keV}\right]`
-        * :math:`\sigma` : Width of the line :math:`\left[\text{keV}\right]`
-        * :math:`K` : Normalization :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+    ??? abstract "Parameters"
+        * $E_L$ : Energy of the line $\left[\text{keV}\right]$
+        * $\sigma$ : Width of the line $\left[\text{keV}\right]$
+        * $K$ : Normalization $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
     def fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
@@ -321,17 +309,15 @@ class APEC(AdditiveComponent):
 
 class Cutoffpl(AdditiveComponent):
     r"""
-    A power law model with high energy exponenential cutoff
+    A power law model with high energy exponential cutoff
 
-    .. math::
-        \mathcal{M}\left( E \right) = K \left( \frac{E}{E_0} \right)^{-\alpha} \exp(-E/\beta)
+    $$\mathcal{M}\left( E \right) = K \left( \frac{E}{E_0} \right)^{-\alpha} \exp(-E/\beta)$$
 
-    Parameters
-    ----------
-        * :math:`\alpha` : Photon index of the power law :math:`\left[\text{dimensionless}\right]`
-        * :math:`\beta` : Folding energy of the exponential cutoff :math:`\left[\text{keV}\right]`
-        * :math:`E_0` : Reference energy fixed at 1 keV :math:`\left[ \mathrm{keV}\right]`
-        * :math:`K` : Normalization at 1 keV :math:`\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]`
+    ??? abstract "Parameters"
+        * $\alpha$ : Photon index of the power law $\left[\text{dimensionless}\right]$
+        * $\beta$ : Folding energy of the exponential cutoff $\left[\text{keV}\right]$
+        * $E_0$ : Reference energy fixed at 1 keV $\left[ \mathrm{keV}\right]$
+        * $K$ : Normalization at 1 keV $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
     def __call__(self, energy):

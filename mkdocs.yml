@@ -1,0 +1,75 @@
+site_name: JAXspec
+
+nav:
+  - Home: 'index.md'
+  - Tutorial:
+    - 'tutorial/index.md'
+    - Basic fitting workflow : 'tutorial/basic_fit.ipynb'
+    - Build custom component : 'tutorial/build_custom_component.ipynb'
+    - Mock a spectrum : 'tutorial/basic_fit.ipynb'
+  - API Reference:
+    - Additive models: 'references/additive.md'
+    - Multiplicative models: 'references/multiplicative.md'
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - content.code.select
+#    - navigation.instant
+    - navigation.tabs
+    - navigation.indexes
+  icon:
+    logo: material/library-shelves
+
+  palette:
+    # Palette toggle for dark mode
+    - scheme: slate
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to light mode
+
+    # Palette toggle for light mode
+    - scheme: default
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to dark mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [src]
+          options:
+            members_order: alphabetical
+
+  - mkdocs-jupyter:
+      #theme: dark
+      include_source: true
+      execute: false
+      include_requirejs: true
+      remove_tag_config:
+        remove_input_tags:
+          - hide_code
+
+#Render MathJax equations
+markdown_extensions:
+  - pymdownx.arithmatex:
+      generic: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - attr_list
+  - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+watch: [mkdocs.yml, src/jaxspec]
