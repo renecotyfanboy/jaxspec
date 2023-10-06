@@ -5,6 +5,7 @@ nav:
   - Tutorial:
     - 'tutorial/index.md'
     - Basic fitting workflow : 'tutorial/basic_fit.ipynb'
+    - Build custom component : 'tutorial/build_custom_component.ipynb'
     - Mock a spectrum : 'tutorial/basic_fit.ipynb'
   - API Reference:
     - Additive models: 'references/additive.md'

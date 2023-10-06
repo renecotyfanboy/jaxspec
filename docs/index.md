@@ -21,3 +21,7 @@ Basically, the use of **JAX** as backend allows our models to be differentiable 
 allows for easy parameters tracking when assembling complex models from the various components we propose, and **numpyro** 
 gives access to appropriate samplers such as the No U-Turn Sampler (NUTS) and Hamiltonian Monte Carlo (HMC).
 
+## References
+
+* [Statistical Aspects of X-ray Spectral Analysis](https://ui.adsabs.harvard.edu/abs/2023arXiv230905705B/abstract) by Johannes Buchner & Peter Boorman
+* [Bayesian Modeling and Computation](https://bayesiancomputationbook.com/welcome.html) by Osvaldo A Martin , Ravin Kumar & Junpeng Lao 
