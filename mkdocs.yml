@@ -1,7 +1,26 @@
-site_name: jaxspec
+site_name: JAXspec
+
+nav:
+  - Home: 'index.md'
+  - Tutorial:
+    - 'tutorial/index.md'
+    - Basic fitting workflow : 'tutorial/basic_fit.ipynb'
+    - Mock a spectrum : 'tutorial/basic_fit.ipynb'
+  - API Reference:
+    - Additive models: 'references/additive.md'
+    - Multiplicative models: 'references/multiplicative.md'
 
 theme:
   name: material
+  features:
+    - content.code.copy
+    - content.code.select
+#    - navigation.instant
+    - navigation.tabs
+    - navigation.indexes
+  icon:
+    logo: material/library-shelves
+
   palette:
     # Palette toggle for dark mode
     - scheme: slate
@@ -26,7 +45,7 @@ plugins:
             members_order: alphabetical
 
   - mkdocs-jupyter:
-      theme: dark
+      #theme: dark
       include_source: true
       execute: false
       include_requirejs: true
@@ -41,6 +60,11 @@ markdown_extensions:
   - admonition
   - pymdownx.details
   - pymdownx.superfences
+  - attr_list
+  - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 extra_javascript:
   - javascripts/mathjax.js
