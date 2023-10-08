@@ -53,6 +53,8 @@ plugins:
       remove_tag_config:
         remove_input_tags:
           - hide_code
+  - social
+  - typeset
 
 #Render MathJax equations
 markdown_extensions:
