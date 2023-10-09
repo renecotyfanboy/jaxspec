@@ -39,7 +39,7 @@ jobs:
       run: |
         pytest --cov jaxspec
     - name: "Upload coverage to Codecov"
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4.0.0-beta.3
       with:
         fail_ci_if_error: true
         verbose: true
