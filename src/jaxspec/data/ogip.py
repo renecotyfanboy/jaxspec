@@ -9,11 +9,8 @@ class DataPHA:
     r"""
     Class to handle PHA data defined with OGIP standards.
 
-    references
-    ----------
-
-    * `THE OGIP STANDARD PHA FILE FORMAT <https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html>`_
-
+    ??? info "References"
+        * [THE OGIP STANDARD PHA FILE FORMAT](https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html)
     """
 
     def __init__(self, channel, counts, exposure,
@@ -68,25 +65,13 @@ class DataPHA:
         return cls(data['CHANNEL'], data['COUNTS'], header['EXPOSURE'], **kwargs)
 
 
-    #def plot(self):
-    #   import matplotlib.pyplot as plt
-    #   plt.figure()
-    #   plt.plot(self.channel, self.counts/self.exposure)
-    #   plt.xlabel(f'Channel')
-    #   plt.ylabel(f'Countrate [cts/s]')
-    #   plt.show()
-
-
 class DataARF:
     r"""
     Class to handle ARF data defined with OGIP standards.
 
-    references
-    ----------
-
-    * `The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats) <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html>`_
-    * `The Calibration Requirements for Spectral Analysis Addendum: Changes log <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html>`_
-
+    ??? info "References"
+        * [The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats)](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html)
+        * [The Calibration Requirements for Spectral Analysis Addendum: Changes log](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html)
     """
 
     def __init__(self, energ_lo, energ_hi, specresp):
@@ -104,27 +89,14 @@ class DataARF:
                    arf_table['ENERG_HI'],
                    arf_table['SPECRESP'])
 
-    # def plot(self):
-    #
-    #     import matplotlib.pyplot as plt
-    #
-    #     plt.figure()
-    #     plt.plot((self.energ_lo + self.energ_hi)/2, self.specresp)
-    #     plt.xlabel(f'Energy [{self.energ_lo.unit.to_string("latex")}]')
-    #     plt.ylabel(f'Spectral Response [{self.specresp.unit.to_string("latex")}]')
-    #     plt.semilogx()
-    #     plt.show()
-
 
 class DataRMF:
     r"""
     Class to handle RMF data defined with OGIP standards.
 
-    references
-    ----------
-
-    * `The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats) <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html>`_
-    * `The Calibration Requirements for Spectral Analysis Addendum: Changes log <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html>`_
+    ??? info "References"
+        * [The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats)](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html)
+        * [The Calibration Requirements for Spectral Analysis Addendum: Changes log](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html)
 
     """
 
@@ -184,26 +156,3 @@ class DataRMF:
                    ebounds_table['CHANNEL'],
                    ebounds_table['E_MIN'],
                    ebounds_table['E_MAX'])
-
-
-    def plot(self):
-
-        import cmasher as cmr
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots()
-
-        energy_in = np.array(self.energ_lo+self.energ_hi)/2
-        energy_out = np.array(self.e_min+self.e_max)/2
-        mappable = ax.pcolormesh(energy_out, energy_in, self.full_matrix.T, shading='flat', cmap=cmr.cosmic)
-        plt.xlabel(r'$E_{spectrum}$')
-        plt.ylabel(r'$E_{instrument}$')
-        plt.colorbar(mappable=mappable)
-        plt.loglog()
-        e = np.linspace(-6, 2, 1000)
-        plt.plot(e, e)
-        plt.xlim(left=min(energy_out), right=max(energy_out))
-        plt.ylim(bottom=min(energy_in), top=max(energy_in))
-        plt.show()
-
-        return fig

@@ -10,7 +10,7 @@ from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
 from .analysis.results import ChainResult
 from .model.abc import SpectralModel
-from .data.observation import Observation
+from .data.instrument import Instrument
 from numpyro.infer import MCMC, NUTS
 from numpyro.infer.mcmc import MCMCKernel
 from numpyro.distributions import Distribution, Poisson
@@ -20,6 +20,10 @@ from typing import Union
 def build_prior(prior):
     """
     Build the prior distribution for the model parameters.
+
+    to_set is supposed to be a numpyro distribution.
+
+    It turns the distribution into a numpyro sample.
     """
 
     parameters = hk.data_structures.to_haiku_dict(prior)
@@ -37,11 +41,11 @@ class CountForwardModel(hk.Module):
     A haiku module which allows to build the function that simulates the measured counts
     """
 
-    def __init__(self, model: SpectralModel, observation: Observation):
+    def __init__(self, model: SpectralModel, instrument: Instrument):
         super().__init__()
         self.model = model
-        self.energies = jnp.asarray(observation.in_energies)
-        self.transfer_matrix = jnp.asarray(observation.transfer_matrix)
+        self.energies = jnp.asarray(instrument.in_energies)
+        self.transfer_matrix = jnp.asarray(instrument.transfer_matrix)
 
     def __call__(self, parameters):
         """
@@ -59,14 +63,14 @@ class ForwardModelFit(ABC):
     """
 
     model: SpectralModel
-    observation: Union[Observation, list[Observation]]
+    observation: Union[Instrument, list[Instrument]]
     count_function: hk.Transformed
     pars: dict
 
-    def __init__(self, model: SpectralModel, observation: Union[Observation, list[Observation]]):
+    def __init__(self, model: SpectralModel, observation: Union[Instrument, list[Instrument]]):
 
         self.model = model
-        self.observation = [observation] if isinstance(observation, Observation) else observation
+        self.observation = [observation] if isinstance(observation, Instrument) else observation
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
 
     @abstractmethod
