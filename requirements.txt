@@ -8,3 +8,4 @@ numpy
 networkx
 numpyro
 matplotlib
+arviz
