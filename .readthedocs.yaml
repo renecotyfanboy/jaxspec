@@ -10,6 +10,15 @@ build:
   os: ubuntu-20.04
   tools:
     python: "3.9"
+  # These packages are needed to build docs with image optimization
+  apt_packages:
+    - libcairo2-dev
+    - libfreetype6-dev
+    - libffi-dev
+    - libjpeg-dev
+    - libpng-dev
+    - libz-dev
+    - pngquant
 
 mkdocs:
   configuration: mkdocs.yml

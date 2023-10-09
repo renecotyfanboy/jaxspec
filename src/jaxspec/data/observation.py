@@ -2,19 +2,20 @@ import os
 import numpy as np
 from typing import Union
 from .ogip import DataPHA, DataARF, DataRMF
+from .instrument import Instrument
 
 
-class Observation:
+class Observation(Instrument):
     """
     Class to store the data of an observation, including the PHA, ARF and RMF files.
+
+    Note:
+        This inherits from the [`Instrument`][jaxspec.data.instrument.Instrument] class, it includes every attribute from
+        an instrumental setup, including the energy band, exposure time and grouping. It can be used in replacement of
+        [`Instrument`][jaxspec.data.instrument.Instrument] in any function taking an instrumental setup as an argument.
     """
 
-    arf: DataARF
-    rmf: DataRMF
     pha: DataPHA
-    exposure: float
-    in_energies: np.ndarray
-    transfer_matrix: np.ndarray
     observed_counts: np.ndarray
 
     def __init__(self,
@@ -24,41 +25,19 @@ class Observation:
                  low_energy: float = np.finfo(float).eps,
                  high_energy: float = np.inf):
 
-        self.arf = arf
-        self.rmf = rmf
         self.pha = pha
-        self.exposure = pha.exposure
-        self.low_energy = low_energy
-        self.high_energy = high_energy
-        grouping = pha.grouping
-
-        # Out energies considering grouping
-        e_min = np.nanmin(np.where(grouping > 0, grouping, np.nan) * rmf.e_min.value[None, :], axis=1)
-        e_max = np.nanmax(np.where(grouping > 0, grouping, np.nan) * rmf.e_max.value[None, :], axis=1)
-
-        row_idx = np.ones(grouping.shape[0], dtype=bool)
-        row_idx *= (e_min >= low_energy) & (e_max <= high_energy)
-
-        col_idx = np.ones(rmf.energ_lo.shape, dtype=bool)
-        col_idx *= rmf.energ_lo.value > 0.  # Exclude channels with 0. as lower energy bound
-        col_idx *= rmf.full_matrix.sum(axis=0) > 0  # Exclude channels with no contribution
-
-        # In energy grid for the model, we integrate it using trapezoid evaluated on edges (2 points)
-        in_energies = np.stack((np.asarray(rmf.energ_lo, dtype=np.float64), np.asarray(rmf.energ_hi, dtype=np.float64)))
-
-        # Transfer matrix computation considering grouping
-        transfer_matrix = pha.grouping @ (rmf.full_matrix * arf.specresp * pha.exposure)
-
-        # Selecting only the channels that are not masked
-        self.in_energies = in_energies[:, col_idx]
-        self.out_energies = np.stack((e_min[row_idx], e_max[row_idx]))
-        self.transfer_matrix = transfer_matrix[row_idx, :][:, col_idx]
-        self.observed_counts = (grouping @ np.asarray(pha.counts.value, dtype=np.int64))[row_idx]
+        super().__init__(
+            arf,
+            rmf,
+            pha.exposure,
+            pha.grouping,
+            low_energy=low_energy,
+            high_energy=high_energy)
 
     @classmethod
     def from_pha_file(cls, pha_file: Union[str, os.PathLike], **kwargs):
         """
-        Build an Observation object from a PHA file.
+        Build an Instrument object from a PHA file.
         PHA file must contain the ARF and RMF filenames in the header.
         PHA, ARF and RMF files are expected to be in the same directory.
 
@@ -82,31 +61,8 @@ class Observation:
         return f"obs_{self.pha.id}"
 
     def rebin(self, grouping):
-        arf = self.arf
-        rmf = self.rmf
-        pha = self.pha
-        low_energy = self.low_energy
-        high_energy = self.high_energy
 
-        # Out energies considering grouping
-        e_min = np.nanmin(np.where(grouping > 0, grouping, np.nan) * rmf.e_min.value[None, :], axis=1)
-        e_max = np.nanmax(np.where(grouping > 0, grouping, np.nan) * rmf.e_max.value[None, :], axis=1)
+        super().rebin(grouping)
 
-        row_idx = np.ones(grouping.shape[0], dtype=bool)
-        row_idx *= (e_min >= low_energy) & (e_max <= high_energy)
-
-        col_idx = np.ones(rmf.energ_lo.shape, dtype=bool)
-        col_idx *= rmf.energ_lo.value > 0.  # Exclude channels with 0. as lower energy bound
-        col_idx *= rmf.full_matrix.sum(axis=0) > 0  # Exclude channels with no contribution
-
-        # In energy grid for the model, we integrate it using trapezoid evaluated on edges (2 points)
-        in_energies = np.stack((np.asarray(rmf.energ_lo, dtype=np.float64), np.asarray(rmf.energ_hi, dtype=np.float64)))
-
-        # Transfer matrix computation considering grouping
-        transfer_matrix = pha.grouping @ (rmf.full_matrix * arf.specresp * pha.exposure)
-
-        # Selecting only the channels that are not masked
-        self.in_energies = in_energies[:, col_idx]
-        self.out_energies = np.stack((e_min[row_idx], e_max[row_idx]))
-        self.transfer_matrix = transfer_matrix[row_idx, :][:, col_idx]
-        self.observed_counts = (grouping @ np.asarray(pha.counts.value, dtype=np.int64))[row_idx]
+        # We also need to rebin the observed counts when there is an observation attached to the instrumental setup
+        self.observed_counts = (grouping @ np.asarray(self.pha.counts.value, dtype=np.int64))[self._row_idx]

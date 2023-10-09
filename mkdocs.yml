@@ -8,6 +8,7 @@ nav:
     - Build custom component : 'tutorial/build_custom_component.ipynb'
     - Mock a spectrum : 'tutorial/basic_fit.ipynb'
   - API Reference:
+    - Data containers: 'references/data.md'
     - Additive models: 'references/additive.md'
     - Multiplicative models: 'references/multiplicative.md'
 
@@ -37,6 +38,9 @@ theme:
 
 plugins:
   - search
+  - projects
+  - optimize
+  - autorefs
   - mkdocstrings:
       default_handler: python
       handlers:
@@ -44,6 +48,9 @@ plugins:
           paths: [src]
           options:
             members_order: alphabetical
+            docstring_section_style: table
+            docstring_style: google
+
 
   - mkdocs-jupyter:
       #theme: dark
