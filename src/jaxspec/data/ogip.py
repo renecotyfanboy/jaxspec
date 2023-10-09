@@ -1,5 +1,6 @@
 import numpy as np
 import jax.numpy as jnp
+import astropy.units as u
 from astropy.table import QTable
 from astropy.io import fits
 from jax.experimental import sparse
@@ -87,7 +88,7 @@ class DataARF:
 
         return cls(arf_table['ENERG_LO'],
                    arf_table['ENERG_HI'],
-                   arf_table['SPECRESP'])
+                   arf_table['SPECRESP'].to(u.cm**2).value)
 
 
 class DataRMF:
@@ -123,8 +124,11 @@ class DataRMF:
 
             if np.size(self.f_chan[i]) == 1:
 
-                low = int(self.f_chan[i])
-                high = min(int(self.f_chan[i] + self.n_chan[i]), self.full_matrix.shape[1])
+                # ravel()[0] allows to get the value of the array without triggering numpy's conversion from
+                # multidimensional array to scalar
+                low = int(self.f_chan[i].ravel()[0])
+                high = min(int(self.f_chan[i].ravel()[0] + self.n_chan[i].ravel()[0]), self.full_matrix.shape[1])
+
                 self.full_matrix[i, low:high] = self.matrix_entry[i][0:high - low]
 
             else:
