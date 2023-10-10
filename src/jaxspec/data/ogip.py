@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import jax.numpy as jnp
 import astropy.units as u
 from astropy.table import QTable
@@ -11,7 +12,7 @@ class DataPHA:
     Class to handle PHA data defined with OGIP standards.
 
     ??? info "References"
-        * [THE OGIP STANDARD PHA FILE FORMAT](https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html)
+        * [The OGIP standard PHA file format](https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html)
     """
 
     def __init__(self, channel, counts, exposure,
@@ -19,8 +20,7 @@ class DataPHA:
                  quality=None,
                  backfile=None,
                  respfile=None,
-                 ancrfile=None,
-                 id=None):
+                 ancrfile=None):
 
         self.channel = channel
         self.counts = counts
@@ -50,7 +50,13 @@ class DataPHA:
         self.grouping = grp_matrix
 
     @classmethod
-    def from_file(cls, pha_file):
+    def from_file(cls, pha_file: str | os.PathLike):
+        """
+        Load the data from a PHA file.
+
+        Parameters:
+            pha_file: The PHA file path.
+        """
 
         data = QTable.read(pha_file, 'SPECTRUM')
         header = fits.getheader(pha_file, 'SPECTRUM')
@@ -82,7 +88,13 @@ class DataARF:
         self.energ_hi = energ_hi
 
     @classmethod
-    def from_file(cls, arf_file):
+    def from_file(cls, arf_file: str | os.PathLike):
+        """
+        Load the data from an ARF file.
+
+        Parameters:
+            arf_file: The ARF file path.
+        """
 
         arf_table = QTable.read(arf_file)
 
@@ -146,7 +158,13 @@ class DataRMF:
         #self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
 
     @classmethod
-    def from_file(cls, rmf_file):
+    def from_file(cls, rmf_file: str | os.PathLike):
+        """
+        Load the data from an RMF file.
+
+        Parameters:
+            rmf_file: The RMF file path.
+        """
 
         matrix_table = QTable.read(rmf_file, 'MATRIX')
         ebounds_table = QTable.read(rmf_file, 'EBOUNDS')

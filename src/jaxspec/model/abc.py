@@ -73,7 +73,7 @@ class SpectralModel:
             if node and node['type'] == 'component':
 
                 runtime_modules[node_id] = node['component'](name=node['name'], **node['kwargs'])
-                continuum[node_id] = runtime_modules[node_id](energies)
+                continuum[node_id] = runtime_modules[node_id].continuum(energies)
 
             elif node and node['type'] == 'operation':
 
@@ -95,7 +95,7 @@ class SpectralModel:
             path = nx.shortest_path(self.graph, source=root_node_id, target='out')
             nodes_id_in_path = [node_id for node_id in path]
 
-            flux_from_component, mean_energy = runtime_modules[root_node_id].fine_structure(e_low, e_high)
+            flux_from_component, mean_energy = runtime_modules[root_node_id].emission_lines(e_low, e_high)
 
             multiplicative_nodes = []
 
@@ -104,7 +104,7 @@ class SpectralModel:
                 multiplicative_nodes.extend([node_id for node_id in self.find_multiplicative_components(node_id)])
 
             for mul_node in multiplicative_nodes:
-                flux_from_component *= runtime_modules[mul_node](mean_energy)
+                flux_from_component *= runtime_modules[mul_node].continuum(mean_energy)
 
             fine_structures_flux += flux_from_component
 
@@ -149,7 +149,8 @@ class SpectralModel:
             'component_type': component.type,
             'name': component.__name__.lower(),
             'component': component,
-            'params': hk.transform(lambda e: component()(e)).init(None, jnp.ones(1)),
+            #TODO : Warning, this does not take into account the params defined in emission lines
+            'params': hk.transform(lambda e: component().continuum(e)).init(None, jnp.ones(1)),
             'fine_structure': False,
             'kwargs': kwargs,
             'depth': 0
@@ -275,10 +276,3 @@ class ModelComponent(hk.Module, ABC, metaclass=ComponentMetaClass):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-    @abstractmethod
-    def __call__(self, energy):
-        """
-        Return the model evaluated at a given energy
-        """
-        ...

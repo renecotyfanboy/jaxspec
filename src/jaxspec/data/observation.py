@@ -22,8 +22,20 @@ class Observation(Instrument):
                  pha: DataPHA,
                  arf: DataARF,
                  rmf: DataRMF,
-                 low_energy: float = np.finfo(float).eps,
-                 high_energy: float = np.inf):
+                 low_energy: float = 1e-20,
+                 high_energy: float = 1e20):
+        """
+        This is the basic constructor for an observation.
+        It is recommended to build the [`Observation`][jaxspec.data.observation.Observation] object using the
+        [`from_pha_file`][jaxspec.data.observation.Observation.from_pha_file] constructor.
+
+        Parameters:
+            pha: The PHA data.
+            arf: The ARF data.
+            rmf: The RMF data.
+            low_energy: The lower energy bound.
+            high_energy: The higher energy bound.
+        """
 
         self.pha = pha
         super().__init__(
@@ -35,13 +47,14 @@ class Observation(Instrument):
             high_energy=high_energy)
 
     @classmethod
-    def from_pha_file(cls, pha_file: Union[str, os.PathLike], **kwargs):
+    def from_pha_file(cls, pha_file: str | os.PathLike, **kwargs):
         """
         Build an Instrument object from a PHA file.
         PHA file must contain the ARF and RMF filenames in the header.
         PHA, ARF and RMF files are expected to be in the same directory.
 
-        :param pha_file: PHA file path
+        Parameters:
+            pha_file: PHA file path
 
         """
 
