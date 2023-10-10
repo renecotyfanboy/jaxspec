@@ -38,8 +38,6 @@ theme:
 
 plugins:
   - search
-  - projects
-  - optimize
   - autorefs
   - mkdocstrings:
       default_handler: python
@@ -50,6 +48,13 @@ plugins:
             members_order: alphabetical
             docstring_section_style: table
             docstring_style: google
+  - group:
+      enabled: !ENV INSIDERS
+      plugins:
+        - optimize
+        - privacy
+        - projects
+
 
 
   - mkdocs-jupyter:
