@@ -1,5 +1,7 @@
 import numpy as np
+import os
 import jax.numpy as jnp
+import astropy.units as u
 from astropy.table import QTable
 from astropy.io import fits
 from jax.experimental import sparse
@@ -9,11 +11,8 @@ class DataPHA:
     r"""
     Class to handle PHA data defined with OGIP standards.
 
-    references
-    ----------
-
-    * `THE OGIP STANDARD PHA FILE FORMAT <https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html>`_
-
+    ??? info "References"
+        * [The OGIP standard PHA file format](https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html)
     """
 
     def __init__(self, channel, counts, exposure,
@@ -21,8 +20,7 @@ class DataPHA:
                  quality=None,
                  backfile=None,
                  respfile=None,
-                 ancrfile=None,
-                 id=None):
+                 ancrfile=None):
 
         self.channel = channel
         self.counts = counts
@@ -52,7 +50,13 @@ class DataPHA:
         self.grouping = grp_matrix
 
     @classmethod
-    def from_file(cls, pha_file):
+    def from_file(cls, pha_file: str | os.PathLike):
+        """
+        Load the data from a PHA file.
+
+        Parameters:
+            pha_file: The PHA file path.
+        """
 
         data = QTable.read(pha_file, 'SPECTRUM')
         header = fits.getheader(pha_file, 'SPECTRUM')
@@ -68,25 +72,13 @@ class DataPHA:
         return cls(data['CHANNEL'], data['COUNTS'], header['EXPOSURE'], **kwargs)
 
 
-    #def plot(self):
-    #   import matplotlib.pyplot as plt
-    #   plt.figure()
-    #   plt.plot(self.channel, self.counts/self.exposure)
-    #   plt.xlabel(f'Channel')
-    #   plt.ylabel(f'Countrate [cts/s]')
-    #   plt.show()
-
-
 class DataARF:
     r"""
     Class to handle ARF data defined with OGIP standards.
 
-    references
-    ----------
-
-    * `The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats) <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html>`_
-    * `The Calibration Requirements for Spectral Analysis Addendum: Changes log <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html>`_
-
+    ??? info "References"
+        * [The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats)](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html)
+        * [The Calibration Requirements for Spectral Analysis Addendum: Changes log](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html)
     """
 
     def __init__(self, energ_lo, energ_hi, specresp):
@@ -96,35 +88,28 @@ class DataARF:
         self.energ_hi = energ_hi
 
     @classmethod
-    def from_file(cls, arf_file):
+    def from_file(cls, arf_file: str | os.PathLike):
+        """
+        Load the data from an ARF file.
+
+        Parameters:
+            arf_file: The ARF file path.
+        """
 
         arf_table = QTable.read(arf_file)
 
         return cls(arf_table['ENERG_LO'],
                    arf_table['ENERG_HI'],
-                   arf_table['SPECRESP'])
-
-    # def plot(self):
-    #
-    #     import matplotlib.pyplot as plt
-    #
-    #     plt.figure()
-    #     plt.plot((self.energ_lo + self.energ_hi)/2, self.specresp)
-    #     plt.xlabel(f'Energy [{self.energ_lo.unit.to_string("latex")}]')
-    #     plt.ylabel(f'Spectral Response [{self.specresp.unit.to_string("latex")}]')
-    #     plt.semilogx()
-    #     plt.show()
+                   arf_table['SPECRESP'].to(u.cm**2).value)
 
 
 class DataRMF:
     r"""
     Class to handle RMF data defined with OGIP standards.
 
-    references
-    ----------
-
-    * `The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats) <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html>`_
-    * `The Calibration Requirements for Spectral Analysis Addendum: Changes log <https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html>`_
+    ??? info "References"
+        * [The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats)](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html)
+        * [The Calibration Requirements for Spectral Analysis Addendum: Changes log](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html)
 
     """
 
@@ -151,8 +136,11 @@ class DataRMF:
 
             if np.size(self.f_chan[i]) == 1:
 
-                low = int(self.f_chan[i])
-                high = min(int(self.f_chan[i] + self.n_chan[i]), self.full_matrix.shape[1])
+                # ravel()[0] allows to get the value of the array without triggering numpy's conversion from
+                # multidimensional array to scalar
+                low = int(self.f_chan[i].ravel()[0])
+                high = min(int(self.f_chan[i].ravel()[0] + self.n_chan[i].ravel()[0]), self.full_matrix.shape[1])
+
                 self.full_matrix[i, low:high] = self.matrix_entry[i][0:high - low]
 
             else:
@@ -170,7 +158,13 @@ class DataRMF:
         #self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
 
     @classmethod
-    def from_file(cls, rmf_file):
+    def from_file(cls, rmf_file: str | os.PathLike):
+        """
+        Load the data from an RMF file.
+
+        Parameters:
+            rmf_file: The RMF file path.
+        """
 
         matrix_table = QTable.read(rmf_file, 'MATRIX')
         ebounds_table = QTable.read(rmf_file, 'EBOUNDS')
@@ -184,26 +178,3 @@ class DataRMF:
                    ebounds_table['CHANNEL'],
                    ebounds_table['E_MIN'],
                    ebounds_table['E_MAX'])
-
-
-    def plot(self):
-
-        import cmasher as cmr
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots()
-
-        energy_in = np.array(self.energ_lo+self.energ_hi)/2
-        energy_out = np.array(self.e_min+self.e_max)/2
-        mappable = ax.pcolormesh(energy_out, energy_in, self.full_matrix.T, shading='flat', cmap=cmr.cosmic)
-        plt.xlabel(r'$E_{spectrum}$')
-        plt.ylabel(r'$E_{instrument}$')
-        plt.colorbar(mappable=mappable)
-        plt.loglog()
-        e = np.linspace(-6, 2, 1000)
-        plt.plot(e, e)
-        plt.xlim(left=min(energy_out), right=max(energy_out))
-        plt.ylim(bottom=min(energy_in), top=max(energy_in))
-        plt.show()
-
-        return fig

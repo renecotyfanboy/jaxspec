@@ -23,5 +23,6 @@ gives access to appropriate samplers such as the No U-Turn Sampler (NUTS) and Ha
 
 ## References
 
+* [The No-U-Turn Sampler](https://jmlr.org/papers/volume15/hoffman14a/hoffman14a.pdf) by Matthew D. Hoffman & Andrew Gelman
 * [Statistical Aspects of X-ray Spectral Analysis](https://ui.adsabs.harvard.edu/abs/2023arXiv230905705B/abstract) by Johannes Buchner & Peter Boorman
 * [Bayesian Modeling and Computation](https://bayesiancomputationbook.com/welcome.html) by Osvaldo A Martin , Ravin Kumar & Junpeng Lao 
