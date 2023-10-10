@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from abc import ABC
+from abc import ABC, abstractmethod
 
 import haiku as hk
 import jax.numpy as jnp
@@ -14,7 +14,9 @@ from . import ModelComponent
 class MultiplicativeComponent(ModelComponent, ABC):
     type = 'multiplicative'
 
-    pass
+    @abstractmethod
+    def continuum(self, energy):
+        ...
 
 
 class Expfac(MultiplicativeComponent):
@@ -32,7 +34,7 @@ class Expfac(MultiplicativeComponent):
 
     """
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         amplitude = hk.get_parameter('A', [], init=HaikuConstant(1))
         factor = hk.get_parameter('f', [], init=HaikuConstant(1))
@@ -56,7 +58,7 @@ class Tbabs(MultiplicativeComponent):
     energy = jnp.asarray(np.array(table['ENERGY']), dtype=np.float32)
     sigma = jnp.asarray(np.array(table['SIGMA']), dtype=np.float32)
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         nh = hk.get_parameter('N_H', [], init=HaikuConstant(1))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.)
@@ -79,7 +81,7 @@ class Phabs(MultiplicativeComponent):
     energy = jnp.asarray(np.array(table['ENERGY']), dtype=np.float32)
     sigma = jnp.asarray(np.array(table['SIGMA']), dtype=np.float32)
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         nh = hk.get_parameter('N_H', [], init=HaikuConstant(1))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=jnp.inf, right=0.)
@@ -102,7 +104,7 @@ class Wabs(MultiplicativeComponent):
     energy = jnp.asarray(np.array(table['ENERGY']), dtype=np.float32)
     sigma = jnp.asarray(np.array(table['SIGMA']), dtype=np.float32)
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         nh = hk.get_parameter('N_H', [], init=HaikuConstant(1))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.)
@@ -129,7 +131,7 @@ class Gabs(MultiplicativeComponent):
 
     """
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         tau = hk.get_parameter('tau', [], init=HaikuConstant(1))
         sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
@@ -151,7 +153,7 @@ class Highecut(MultiplicativeComponent):
         * $E_f$ : e-folding energy $\left[\text{keV}\right]$
     """
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         cutoff = hk.get_parameter('E_c', [], init=HaikuConstant(1))
         folding = hk.get_parameter('E_f', [], init=HaikuConstant(1))
@@ -174,7 +176,7 @@ class Zedge(MultiplicativeComponent):
         * $z$ : redshift
     """
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         E_c = hk.get_parameter('E_c', [], init=HaikuConstant(1))
         D = hk.get_parameter('D', [], init=HaikuConstant(1))

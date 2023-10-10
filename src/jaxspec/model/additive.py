@@ -17,11 +17,20 @@ from haiku.initializers import Constant as HaikuConstant
 class AdditiveComponent(ModelComponent, ABC):
     type = 'additive'
 
-    def fine_structure(self, e_min, e_max) -> (jax.Array, jax.Array):
+    def continuum(self, energy):
+        """
+        Method for computing the continuum associated to the model.
+        By default, this is set to 0, which means that the model has no continuum.
+        This should be overloaded by the user if the model has a continuum.
+        """
+
+        return jnp.zeros_like(energy)
+
+    def emission_lines(self, e_min, e_max) -> (jax.Array, jax.Array):
         """
         Method for computing the fine structure of an additive model between two energies.
         By default, this is set to 0, which means that the model has no emission lines.
-        This should be surcharged by the user if the model has a fine structure.
+        This should be overloaded by the user if the model has a fine structure.
         """
 
         return jnp.zeros_like(e_min), (e_min+e_max)/2
@@ -64,7 +73,7 @@ class Powerlaw(AdditiveComponent):
         * $K$ : Normalization at 1 keV $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         alpha = hk.get_parameter('alpha', [], init=HaikuConstant(1.3))
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1e-4))
@@ -82,7 +91,7 @@ class AdditiveConstant(AdditiveComponent):
         * $K$ : Normalization $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
 
@@ -107,7 +116,7 @@ class Lorentz(AdditiveComponent):
         - $K$ : Normalization $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
-    def fine_structure(self, e_min, e_max) -> (jax.Array, jax.Array):
+    def emission_lines(self, e_min, e_max) -> (jax.Array, jax.Array):
 
         #return the primitive of a lorentzian
         line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
@@ -120,7 +129,7 @@ class Lorentz(AdditiveComponent):
 
         return primitive(e_max) - primitive(e_min), (e_min + e_max)/2
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
         sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
@@ -145,7 +154,7 @@ class Logparabola(AdditiveComponent):
         * $E_{\text{Pivot}}$ : Pivot energy fixed at 1 keV $\left[ \mathrm{keV}\right]$
     """
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         a = hk.get_parameter('a', [], init=HaikuConstant(11 / 3))
         b = hk.get_parameter('b', [], init=HaikuConstant(0.2))
@@ -166,7 +175,7 @@ class Blackbody(AdditiveComponent):
         and $D_{10}$ is the distance to the source in units of 10 kpc
     """
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         kT = hk.get_parameter('kT', [], init=HaikuConstant(11 / 3))
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
@@ -186,7 +195,7 @@ class Blackbodyrad(AdditiveComponent):
         and $D_{10}$ is the distance to the source in units of 10 kpc [dimensionless]
     """
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         kT = hk.get_parameter('kT', [], init=HaikuConstant(11 / 3))
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
@@ -213,7 +222,7 @@ class Gauss(AdditiveComponent):
         * $K$ : Normalization $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
-    def fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
+    def emission_lines(self, e_low, e_high) -> (jax.Array, jax.Array):
         line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
         sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
@@ -223,7 +232,7 @@ class Gauss(AdditiveComponent):
 
         return norm * (f_high - f_low), (e_low + e_high)/2
 
-    def __call__(self, energy):
+    def continuum(self, energy):
         return jnp.zeros_like(energy)
 
 
@@ -282,7 +291,7 @@ class APEC(AdditiveComponent):
 
         return jnp.interp(kT, jax_slice(self.kT_ref, idx, 2), flux_at_edges) * 1e14 * norm, (e_low + e_high)/2
 
-    def fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
+    def emission_lines(self, e_low, e_high) -> (jax.Array, jax.Array):
         #Compute the fine structure lines with e_low and e_high as array, mapping the mono_fine_structure function
         #over the various axes of e_low and e_high
 
@@ -291,7 +300,7 @@ class APEC(AdditiveComponent):
         #return jnp.zeros_like(e_low), (e_low + e_high)/2
 
     @partial(jnp.vectorize, excluded=(0,))
-    def __call__(self, energy):
+    def continuum(self, energy):
         norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
         kT = hk.get_parameter('kT', [], init=HaikuConstant(1))
         Z = hk.get_parameter('Z', [], init=HaikuConstant(1))
@@ -320,7 +329,7 @@ class Cutoffpl(AdditiveComponent):
         * $K$ : Normalization at 1 keV $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
-    def __call__(self, energy):
+    def continuum(self, energy):
 
         alpha = hk.get_parameter('alpha', [], init=HaikuConstant(1.3))
         beta = hk.get_parameter('beta', [], init=HaikuConstant(15))
