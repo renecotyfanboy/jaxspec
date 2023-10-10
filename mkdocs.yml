@@ -45,6 +45,8 @@ plugins:
       handlers:
         python:
           paths: [src]
+          import:
+            - https://docs.python.org/3/objects.inv
           options:
             members_order: alphabetical
             docstring_section_style: table
@@ -55,9 +57,6 @@ plugins:
         - optimize
         - privacy
         - projects
-
-
-
   - mkdocs-jupyter:
       #theme: dark
       include_source: true
