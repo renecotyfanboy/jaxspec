@@ -3,4 +3,4 @@ mkdocs-material
 mkdocstrings
 mkdocstrings[python]
 mkdocs-jupyter
-git+https://${{ secrets.INS_TOKEN }}@github.com/squidfunk/mkdocs-material-insiders.git
+git+https://${{ secrets.INS_TOKEN }}:renecotyfanboy@github.com/squidfunk/mkdocs-material-insiders.git

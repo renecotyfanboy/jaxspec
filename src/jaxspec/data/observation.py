@@ -50,15 +50,13 @@ class Observation(Instrument):
         pha = DataPHA.from_file(pha_file)
 
         if pha.ancrfile is None or pha.respfile is None:
+            # It should be handled in a better way at some point
             raise ValueError("PHA file must contain the ARF and RMF filenames in the header.")
 
         arf = DataARF.from_file(os.path.join(directory, pha.ancrfile))
         rmf = DataRMF.from_file(os.path.join(directory, pha.respfile))
 
         return cls(pha, arf, rmf, **kwargs)
-
-    def __str__(self):
-        return f"obs_{self.pha.id}"
 
     def rebin(self, grouping):
 
