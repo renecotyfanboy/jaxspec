@@ -81,6 +81,11 @@ markdown_extensions:
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 repo_url: https://github.com/renecotyfanboy/jaxspec
+repo_name: jaxspec
+
+extra_css:
+  - css/material.css
+  - css/mkdocstrings.css
 
 extra_javascript:
   - javascripts/mathjax.js
