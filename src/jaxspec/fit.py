@@ -113,7 +113,7 @@ class BayesianModel(ForwardModelFit):
                         obs=obs.observed_counts
                     )
 
-            return prior_params
+            return prior_params # This could be removed ?
 
         return model
 
@@ -140,4 +140,4 @@ class BayesianModel(ForwardModelFit):
 
         mcmc.run(random.PRNGKey(rng_key))
 
-        return ChainResult(mcmc)
+        return ChainResult(mcmc, self.model.params)
