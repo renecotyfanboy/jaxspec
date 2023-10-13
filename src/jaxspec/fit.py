@@ -10,7 +10,7 @@ from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
 from .analysis.results import ChainResult
 from .model.abc import SpectralModel
-from .data.observation import Observation
+from .data.instrument import Instrument
 from numpyro.infer import MCMC, NUTS
 from numpyro.infer.mcmc import MCMCKernel
 from numpyro.distributions import Distribution, Poisson
@@ -41,11 +41,11 @@ class CountForwardModel(hk.Module):
     A haiku module which allows to build the function that simulates the measured counts
     """
 
-    def __init__(self, model: SpectralModel, observation: Observation):
+    def __init__(self, model: SpectralModel, instrument: Instrument):
         super().__init__()
         self.model = model
-        self.energies = jnp.asarray(observation.in_energies)
-        self.transfer_matrix = jnp.asarray(observation.transfer_matrix)
+        self.energies = jnp.asarray(instrument.in_energies)
+        self.transfer_matrix = jnp.asarray(instrument.transfer_matrix)
 
     def __call__(self, parameters):
         """

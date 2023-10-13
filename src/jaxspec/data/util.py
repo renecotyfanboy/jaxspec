@@ -77,6 +77,7 @@ def fakeit(instrument: Instrument | list[Instrument],
 
     return fakeits[0] if len(fakeits) == 1 else fakeits
 
+
 def fakeit_for_multiple_parameters(instrument: Instrument | list[Instrument],
            model: SpectralModel,
            parameters: Mapping[K, V],
