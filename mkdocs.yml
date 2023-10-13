@@ -61,14 +61,12 @@ plugins:
         - social
         - typeset
   - mkdocs-jupyter:
-      #theme: dark
       include_source: true
       execute: false
       include_requirejs: true
       remove_tag_config:
         remove_input_tags:
           - hide_code
-
 
 #Render MathJax equations
 markdown_extensions:
