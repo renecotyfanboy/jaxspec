@@ -12,6 +12,8 @@ model_simple = Tbabs()*Powerlaw()
 
 <!---
 ```python
+import os 
+print(os.listdir())
 model_simple.export_to_mermaid(file='../docs/runtime/various_model_graphs/model_simple.txt')
 ```
 -->
