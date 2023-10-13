@@ -1,7 +1,6 @@
 import pathlib
 import os
 import sys
-
 from unittest import TestCase
 """
 import chex
@@ -17,9 +16,12 @@ sys.path.append(source_dir)
 
 class TestDOC(TestCase):
 
-    def test_tutorial(self):
+    tutorial_path = source_dir / pathlib.Path("docs") / "tutorial"
 
-        fpath = source_dir / pathlib.Path("docs") / "tutorial"
-        # Assumes that cell-blocks depend on each other.
-        check_md_file(fpath=fpath / "basic_fit.md", memory=True)
-        check_md_file(fpath=fpath / "build_a_model.md", memory=True)
+    def test_basic_fit(self):
+
+        check_md_file(fpath=self.tutorial_path / "basic_fit.md", memory=True)
+
+    def test_model_building(self):
+
+        check_md_file(fpath=self.tutorial_path / "build_a_model.md", memory=True)

@@ -12,8 +12,6 @@ model_simple = Tbabs()*Powerlaw()
 
 <!---
 ```python
-import os 
-print(os.listdir())
 model_simple.export_to_mermaid(file='../docs/runtime/various_model_graphs/model_simple.txt')
 ```
 -->
@@ -32,8 +30,6 @@ model_complex = Tbabs()*(Powerlaw() + Phabs()*Blackbody()) + Blackbody()
 
 <!---
 ```python
-import os 
-print(os.listdir())
 model_complex.export_to_mermaid(file='../docs/runtime/various_model_graphs/model_complex.txt')
 ```
 -->

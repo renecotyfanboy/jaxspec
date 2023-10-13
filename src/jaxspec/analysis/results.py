@@ -48,17 +48,10 @@ class ChainResult(ResultContainer):
 
         super().__init__(model, structure)
 
-
         self.inference_data = az.from_numpyro(mcmc)
         self.observations = observations
         self.samples = mcmc.get_samples()
-        self.params = {}
-
-        for module, parameter, value in traverse(structure):
-            if self.params.get(module, None) is None:
-                self.params[module] = {}
-            self.params[module][parameter] = self.samples[f'{module}_{parameter}']
-
+        self._structure = structure
 
     @property
     def params(self):
