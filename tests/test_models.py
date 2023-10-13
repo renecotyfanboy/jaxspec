@@ -1,7 +1,7 @@
 import os
 import sys
 import chex
-chex.set_n_cpu_devices(n=2)
+chex.set_n_cpu_devices(n=4)
 
 import jax.numpy as jnp
 import haiku as hk

@@ -5,6 +5,7 @@ import networkx as nx
 import inspect
 from haiku._src import base
 from uuid import uuid4
+from jax.scipy.integrate import trapezoid
 from abc import ABC, abstractmethod
 
 
@@ -83,7 +84,7 @@ class SpectralModel:
 
         flux_1D = continuum[list(self.graph.in_edges('out'))[0][0]]
         flux = jnp.stack((flux_1D[:-1], flux_1D[1:]))
-        continuum_flux = jnp.trapz(flux*energies_to_integrate, x=jnp.log(energies_to_integrate), axis=0)
+        continuum_flux = trapezoid(flux*energies_to_integrate, x=jnp.log(energies_to_integrate), axis=0)
 
         # Iterate from the root nodes to the output node and compute the fine structure contribution for each component
 
@@ -218,10 +219,37 @@ class SpectralModel:
 
         return self.compose(other, operation='mul', function=lambda x, y: x * y, name=r'$\times$')
 
-    def __pow__(self, power: float) -> SpectralModel:
+    def export_to_mermaid(self, file=None):
 
-        # TODO : Implement convolution as an overloading of power operator
-        return self.compose(self, operation='pow', function=lambda x, y: print('Not Implemented yet'), name='*')
+        mermaid_code = "graph LR\n"  # LR = left to right
+
+        # Add nodes
+        for node, attributes in self.graph.nodes(data=True):
+
+            if attributes['type'] == 'component':
+                name, number = attributes["name"].split("_")
+                mermaid_code += f'    {node}("{name.capitalize()} ({number})")\n'
+
+            if attributes['type'] == 'operation':
+
+                if attributes['operation_type'] == 'add':
+                    mermaid_code += f'    {node}{{+}}\n'
+
+                if attributes['operation_type'] == 'mul':
+                    mermaid_code += f'    {node}{{x}}\n'
+
+            if attributes['type'] == 'out':
+                mermaid_code += f'    {node}("Output")\n'
+
+        # Draw connexion between nodes
+        for source, target in self.graph.edges():
+            mermaid_code += f'    {source} --> {target}\n'
+
+        if file is None:
+            return mermaid_code
+        else:
+            with open(file, 'w') as f:
+                f.write(mermaid_code)
 
     def plot(self, figsize=(8, 8)):
 
