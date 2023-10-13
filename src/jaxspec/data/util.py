@@ -3,6 +3,7 @@ import numpyro
 import jax
 import numpy as np
 import haiku as hk
+from numpy.typing import ArrayLike
 from collections.abc import Mapping
 from typing import TypeVar
 from .observation import Observation
@@ -26,7 +27,7 @@ example_observations = {
 def fakeit(instrument: Instrument | list[Instrument],
            model: SpectralModel,
            parameters: Mapping[K, V],
-           rng_key: int = 0) -> np.array | list[np.array]:
+           rng_key: int = 0) -> ArrayLike | list[ArrayLike]:
     """
     This function is a convenience function that allows to simulate spectra from a given model and a set of parameters.
     It requires an instrumental setup, and unlike in
@@ -76,7 +77,7 @@ def fakeit(instrument: Instrument | list[Instrument],
 
     return fakeits[0] if len(fakeits) == 1 else fakeits
 
-def fakeits(instrument: Instrument | list[Instrument],
+def fakeit_for_multiple_parameters(instrument: Instrument | list[Instrument],
            model: SpectralModel,
            parameters: Mapping[K, V],
            rng_key: int = 0):

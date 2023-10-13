@@ -10,7 +10,7 @@ from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
 from .analysis.results import ChainResult
 from .model.abc import SpectralModel
-from .data.instrument import Instrument
+from .data.observation import Observation
 from numpyro.infer import MCMC, NUTS
 from numpyro.infer.mcmc import MCMCKernel
 from numpyro.distributions import Distribution, Poisson
@@ -41,11 +41,11 @@ class CountForwardModel(hk.Module):
     A haiku module which allows to build the function that simulates the measured counts
     """
 
-    def __init__(self, model: SpectralModel, instrument: Instrument):
+    def __init__(self, model: SpectralModel, observation: Observation):
         super().__init__()
         self.model = model
-        self.energies = jnp.asarray(instrument.in_energies)
-        self.transfer_matrix = jnp.asarray(instrument.transfer_matrix)
+        self.energies = jnp.asarray(observation.in_energies)
+        self.transfer_matrix = jnp.asarray(observation.transfer_matrix)
 
     def __call__(self, parameters):
         """
@@ -63,14 +63,14 @@ class ForwardModelFit(ABC):
     """
 
     model: SpectralModel
-    observation: Union[Instrument, list[Instrument]]
+    observations: list[Observation]
     count_function: hk.Transformed
     pars: dict
 
-    def __init__(self, model: SpectralModel, observation: Union[Instrument, list[Instrument]]):
+    def __init__(self, model: SpectralModel, observations: Observation | list[Observation]):
 
         self.model = model
-        self.observation = [observation] if isinstance(observation, Instrument) else observation
+        self.observations = [observations] if isinstance(observations, Observation) else observations
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
 
     @abstractmethod
@@ -88,8 +88,8 @@ class BayesianModel(ForwardModelFit):
 
     samples: dict = {}
 
-    def __init__(self, model, observation):
-        super().__init__(model, observation)
+    def __init__(self, model, observations):
+        super().__init__(model, observations)
 
     def numpyro_model(self, prior_distributions):
 
@@ -97,7 +97,7 @@ class BayesianModel(ForwardModelFit):
 
             prior_params = build_prior(prior_distributions)
 
-            for i, obs in enumerate(self.observation):
+            for i, obs in enumerate(self.observations):
 
                 transformed_model = hk.without_apply_rng(
                     hk.transform(lambda par: CountForwardModel(self.model, obs)(par))
@@ -112,8 +112,6 @@ class BayesianModel(ForwardModelFit):
                         Poisson(obs_model(prior_params)),
                         obs=obs.observed_counts
                     )
-
-            return prior_params # This could be removed ?
 
         return model
 
@@ -140,4 +138,4 @@ class BayesianModel(ForwardModelFit):
 
         mcmc.run(random.PRNGKey(rng_key))
 
-        return ChainResult(mcmc, self.model.params)
+        return ChainResult(self.model, self.observations, mcmc, self.model.params)

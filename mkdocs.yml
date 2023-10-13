@@ -4,9 +4,10 @@ nav:
   - Home: 'index.md'
   - Tutorial:
     - 'tutorial/index.md'
-    - Basic fitting workflow : 'tutorial/basic_fit.ipynb'
-    - Build custom component : 'tutorial/build_custom_component.ipynb'
-    - Mock a spectrum : 'tutorial/basic_fit.ipynb'
+    - Basic fitting workflow : 'tutorial/basic_fit.md'
+    - Build a model : 'tutorial/build_a_model.md'
+    #- Build custom component : 'tutorial/build_custom_component.ipynb'
+    #- Mock a spectrum : 'tutorial/basic_fit.ipynb'
   - API Reference:
     - Data containers: 'references/data.md'
     - Additive models: 'references/additive.md'
@@ -16,7 +17,7 @@ theme:
   name: material
   features:
     - content.code.copy
-    - content.code.select
+#    - content.code.select
 #    - navigation.instant
     - navigation.tabs
     - navigation.indexes
@@ -74,7 +75,17 @@ markdown_extensions:
       generic: true
   - admonition
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
   - attr_list
   - md_in_html
   - pymdownx.emoji:

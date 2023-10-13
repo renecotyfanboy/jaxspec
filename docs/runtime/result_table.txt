@@ -1,0 +1,18 @@
+graph LR
+    24ddbd08-c53f-4d3c-b9cd-d4c4b4e99c6c("tbabs_1")
+    d91c421b-51ed-43c9-90f7-a6b61f27c5c7("powerlaw_1")
+    0b4dfbb5-7b7d-43f0-baac-5042ec9d5ce3(+)
+    6824c7da-c02b-4726-96a3-bc7e62b8e59d("powerlaw_2")
+    a0a346c3-8f3e-4d1c-ac9d-4f94c76dc425(+)
+    70145a03-8689-462a-a595-82ebcf620445("phabs_1")
+    3cf2b8d3-a9d8-43ab-a50e-c6e6c9bc0b80("blackbody_1")
+    out("out")
+    24ddbd08-c53f-4d3c-b9cd-d4c4b4e99c6c --> 091d3e96-f3f1-4ab1-965c-11dbf84daf52
+    091d3e96-f3f1-4ab1-965c-11dbf84daf52 --> out
+    d91c421b-51ed-43c9-90f7-a6b61f27c5c7 --> 0b4dfbb5-7b7d-43f0-baac-5042ec9d5ce3
+    0b4dfbb5-7b7d-43f0-baac-5042ec9d5ce3 --> a0a346c3-8f3e-4d1c-ac9d-4f94c76dc425
+    6824c7da-c02b-4726-96a3-bc7e62b8e59d --> 0b4dfbb5-7b7d-43f0-baac-5042ec9d5ce3
+    a0a346c3-8f3e-4d1c-ac9d-4f94c76dc425 --> 091d3e96-f3f1-4ab1-965c-11dbf84daf52
+    70145a03-8689-462a-a595-82ebcf620445 --> cf4a40f7-9aa2-4cd6-b855-aded2bd70b44
+    cf4a40f7-9aa2-4cd6-b855-aded2bd70b44 --> a0a346c3-8f3e-4d1c-ac9d-4f94c76dc425
+    3cf2b8d3-a9d8-43ab-a50e-c6e6c9bc0b80 --> cf4a40f7-9aa2-4cd6-b855-aded2bd70b44
