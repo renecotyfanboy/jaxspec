@@ -1,5 +1,6 @@
 import arviz as az
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from ..data.observation import Observation
 from ..model.abc import SpectralModel
@@ -8,9 +9,32 @@ from collections.abc import Mapping
 from typing import TypeVar, Tuple
 from numpyro.infer import MCMC
 from haiku.data_structures import traverse
+from chainconsumer import ChainConsumer, Chain, PlotConfig
 
 K = TypeVar("K")
 V = TypeVar("V")
+
+
+def format_parameters(parameter_name):
+    if parameter_name == 'weight':
+        # ChainConsumer add a weight column to the samples
+        return parameter_name
+
+    # Find second occurrence of the character '_'
+    first_occurrence = parameter_name.find('_')
+    second_occurrence = parameter_name.find('_', first_occurrence + 1)
+    module = parameter_name[:second_occurrence]
+    parameter = parameter_name[second_occurrence + 1:]
+
+    name, number = module.split('_')
+    module = rf'[{name.capitalize()} ({number})]'
+
+    if parameter == "norm":
+        return rf'\text{Norm}' + ' ' + module
+
+    else:
+
+        return rf'{parameter}' + ' ' + module
 
 
 class ResultContainer(ABC):
@@ -51,6 +75,10 @@ class ChainResult(ResultContainer):
         self.inference_data = az.from_numpyro(mcmc)
         self.observations = observations
         self.samples = mcmc.get_samples()
+        self.consumer = ChainConsumer()
+
+        self.chain = Chain.from_numpyro(mcmc, "Model", kde=1)
+        self.chain.samples.columns = [format_parameters(parameter) for parameter in self.chain.samples.columns]
         self._structure = structure
 
     @property
@@ -83,16 +111,32 @@ class ChainResult(ResultContainer):
             ax.set_axis_off()
 
         for count, observation, ax in zip(counts, self.observations, axs.flatten()):
+
             ax.set_axis_on()
-            ax.step(observation.out_energies[0], observation.observed_counts, where="pre", label="data")
-            ax.fill_between(observation.out_energies[0], *np.percentile(count, percentile, axis=0), alpha=0.3, step='pre',
+
+            ax.step(observation.out_energies[0],
+                    observation.observed_counts,
+                    where="pre",
+                    label="data")
+
+            ax.fill_between(observation.out_energies[0],
+                            *np.percentile(count, percentile, axis=0),
+                            alpha=0.3,
+                            step='pre',
                             label="posterior predictive")
             ax.set_xlabel('Energy [keV]')
             ax.set_ylabel('Counts')
             ax.loglog()
 
-    @property
     def table(self):
 
-        for module, parameter, value in traverse(self.params):
-            print(f'{module}_{parameter} : {value.mean()} +/- {value.std()}')
+        return self.consumer.analysis.get_latex_table(caption="Results of the fit", label="tab:results")
+
+    def plot_corner(self, **kwargs):
+
+        consumer = ChainConsumer()
+        consumer.set_plot_config(PlotConfig(usetex=True))
+        consumer.add_chain(self.chain)
+
+        consumer.plotter.plot(**kwargs)
+
