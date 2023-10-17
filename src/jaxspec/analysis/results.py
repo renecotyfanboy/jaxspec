@@ -30,11 +30,11 @@ def format_parameters(parameter_name):
     module = rf'[{name.capitalize()} ({number})]'
 
     if parameter == "norm":
-        return rf'\text{Norm}' + ' ' + module
+        return r'\text{Norm' + ' ' + module + r'}'
 
     else:
 
-        return rf'{parameter}' + ' ' + module
+        return rf'{parameter}' + ' ' + r'\text{' + module + r'}'
 
 
 class ResultContainer(ABC):
@@ -61,9 +61,9 @@ class ResultContainer(ABC):
 
 
 class ChainResult(ResultContainer):
-    #TODO : Add docstring
-    #TODO : Add type hints
-    #TODO : Add proper separation between params and samples, cf from haiku and numpyro
+    # TODO : Add docstring
+    # TODO : Add type hints
+    # TODO : Add proper separation between params and samples, cf from haiku and numpyro
     def __init__(self,
                  model: SpectralModel,
                  observations: list[Observation],
@@ -96,37 +96,49 @@ class ChainResult(ResultContainer):
 
         return params
 
-    def plot_ppc(self, percentile: Tuple[int, int] = (14, 86)):
+    def plot_ppc(self, index: int, percentile: Tuple[int, int] = (14, 86)):
 
         from ..data.util import fakeit_for_multiple_parameters
 
-        counts = fakeit_for_multiple_parameters(self.observations, self.model, self.params)
-        n_graphs = len(self.observations)
-        n_cols = int(np.ceil(np.sqrt(n_graphs)))
-        n_rows = int(np.ceil(n_graphs / n_cols))
+        count = fakeit_for_multiple_parameters(self.observations[0], self.model, self.params)
 
-        fig, axs = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 4))
+        with plt.style.context('default'):
+            fig, axs = plt.subplots(2, 1, figsize=(8, 8), sharex=True, height_ratios=[0.8, 0.2])
 
-        for ax in axs.flatten():
-            ax.set_axis_off()
+            observation = self.observations[index]
 
-        for count, observation, ax in zip(counts, self.observations, axs.flatten()):
+            axs[0].step(observation.out_energies[0],
+                        observation.observed_counts,
+                        where="post",
+                        label="data")
 
-            ax.set_axis_on()
+            axs[0].fill_between(observation.out_energies[0],
+                                *np.percentile(count, percentile, axis=0),
+                                alpha=0.3,
+                                step='post',
+                                label="posterior predictive")
 
-            ax.step(observation.out_energies[0],
-                    observation.observed_counts,
-                    where="pre",
-                    label="data")
+            axs[0].set_ylabel('Counts')
+            axs[0].loglog()
 
-            ax.fill_between(observation.out_energies[0],
-                            *np.percentile(count, percentile, axis=0),
-                            alpha=0.3,
-                            step='pre',
-                            label="posterior predictive")
-            ax.set_xlabel('Energy [keV]')
-            ax.set_ylabel('Counts')
-            ax.loglog()
+            residuals = np.percentile((observation.observed_counts - count)
+                                      / np.diff(np.percentile(count, percentile, axis=0), axis=0), percentile, axis=0)
+
+            max_residuals = np.max(np.abs(residuals))
+
+            axs[1].fill_between(observation.out_energies[0],
+                                *residuals,
+                                alpha=0.3,
+                                step='post',
+                                label="posterior predictive")
+
+            axs[1].set_ylim(-max_residuals, +max_residuals)
+            axs[1].set_ylabel('Residuals')
+            axs[1].set_xlabel('Energy [keV]')
+            axs[1].axhline(0, color='k', ls='--')
+
+            axs[0].set_xlim(observation.low_energy, observation.high_energy)
+            plt.subplots_adjust(hspace=0.0)
 
     def table(self):
 
@@ -135,8 +147,9 @@ class ChainResult(ResultContainer):
     def plot_corner(self, **kwargs):
 
         consumer = ChainConsumer()
-        consumer.set_plot_config(PlotConfig(usetex=True))
+        consumer.set_plot_config(PlotConfig(usetex=False))
         consumer.add_chain(self.chain)
 
-        consumer.plotter.plot(**kwargs)
-
+        # Context for default mpl style
+        with plt.style.context('default'):
+            consumer.plotter.plot(**kwargs)
