@@ -103,7 +103,7 @@ class ChainResult(ResultContainer):
         count = fakeit_for_multiple_parameters(self.observations[0], self.model, self.params)
 
         with plt.style.context('default'):
-            fig, axs = plt.subplots(2, 1, figsize=(8, 8), sharex=True, height_ratios=[0.8, 0.2])
+            fig, axs = plt.subplots(2, 1, figsize=(8, 5), sharex=True, height_ratios=[0.6, 0.4])
 
             observation = self.observations[index]
 

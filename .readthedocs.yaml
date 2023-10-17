@@ -11,6 +11,17 @@ build:
   tools:
     python: "3.10"
   # These packages are needed to build docs with image optimization
+  jobs:
+    post_create_environment:
+      # Install poetry
+      # https://python-poetry.org/docs/#installing-manually
+      - pip install poetry
+      # Tell poetry to not use a virtual environment
+      - poetry config virtualenvs.create false
+    post_install:
+      # Install dependencies with 'docs' dependency group
+      # https://python-poetry.org/docs/managing-dependencies/#dependency-groups
+      - poetry install --with docs
   apt_packages:
     - libcairo2-dev
     - libfreetype6-dev
@@ -26,10 +37,3 @@ mkdocs:
 # If using Sphinx, optionally build your docs in additional formats such as PDF
 formats:
   - pdf
-
-python:
-  # Install our python package before building the docs
-  install:
-    - method: pip
-      path: .
-    - requirements: docs/requirements.txt
