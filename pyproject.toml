@@ -18,6 +18,7 @@ dm-haiku = "^0.0.10"
 networkx = "^3.1"
 matplotlib = "^3.8.0"
 arviz = "^0.16.1"
+chainconsumer = "^1.0.0"
 
 
 [tool.poetry.group.docs.dependencies]
