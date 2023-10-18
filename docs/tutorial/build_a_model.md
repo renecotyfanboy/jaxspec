@@ -20,7 +20,7 @@ except:
 ```
 -->
 
-Here is a graphical representation for this 
+Here is a graphical representation for this
 
 ``` mermaid
 --8<-- "docs/runtime/various_model_graphs/model_simple.txt"

@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from typing import Union
-from .ogip import DataPHA, DataARF, DataRMF
+from .ogip import DataARF, DataRMF
 
 
 class Instrument:
@@ -16,13 +16,15 @@ class Instrument:
     in_energies: np.ndarray
     transfer_matrix: np.ndarray
 
-    def __init__(self,
-                 arf: DataARF,
-                 rmf: DataRMF,
-                 exposure: float,
-                 grouping: np.ndarray,
-                 low_energy: float = 1e-20,
-                 high_energy: float = 1e+20):
+    def __init__(
+        self,
+        arf: DataARF,
+        rmf: DataRMF,
+        exposure: float,
+        grouping: np.ndarray,
+        low_energy: float = 1e-20,
+        high_energy: float = 1e20,
+    ):
         """
         This is the basic constructor for an instrumental setup.
         It is recommended to build the Instrument object using the
@@ -52,12 +54,14 @@ class Instrument:
         self.rebin(grouping)
 
     @classmethod
-    def from_ogip_file(cls,
-                       arf_file: Union[str, os.PathLike],
-                       rmf_file: Union[str, os.PathLike],
-                       exposure: float,
-                       grouping: np.ndarray | None = None,
-                       **kwargs):
+    def from_ogip_file(
+        cls,
+        arf_file: Union[str, os.PathLike],
+        rmf_file: Union[str, os.PathLike],
+        exposure: float,
+        grouping: np.ndarray | None = None,
+        **kwargs
+    ):
         """
         Load the data from OGIP files.
 
@@ -75,11 +79,7 @@ class Instrument:
         if grouping is None:
             grouping = np.eye(len(rmf.channel))
 
-        return cls(arf,
-                   rmf,
-                   exposure,
-                   grouping,
-                   **kwargs)
+        return cls(arf, rmf, exposure, grouping, **kwargs)
 
     def rebin(self, grouping: np.ndarray):
         """
@@ -102,18 +102,31 @@ class Instrument:
         high_energy = self.high_energy
 
         # Out energies considering grouping
-        e_min = np.nanmin(np.where(grouping > 0, grouping, np.nan) * rmf.e_min.value[None, :], axis=1)
-        e_max = np.nanmax(np.where(grouping > 0, grouping, np.nan) * rmf.e_max.value[None, :], axis=1)
+        e_min = np.nanmin(
+            np.where(grouping > 0, grouping, np.nan) * rmf.e_min.value[None, :], axis=1
+        )
+        e_max = np.nanmax(
+            np.where(grouping > 0, grouping, np.nan) * rmf.e_max.value[None, :], axis=1
+        )
 
         row_idx = np.ones(grouping.shape[0], dtype=bool)
         row_idx *= (e_min >= low_energy) & (e_max <= high_energy)
 
         col_idx = np.ones(rmf.energ_lo.shape, dtype=bool)
-        col_idx *= rmf.energ_lo.value > 0.  # Exclude channels with 0. as lower energy bound
-        col_idx *= rmf.full_matrix.sum(axis=0) > 0  # Exclude channels with no contribution
+        col_idx *= (
+            rmf.energ_lo.value > 0.0
+        )  # Exclude channels with 0. as lower energy bound
+        col_idx *= (
+            rmf.full_matrix.sum(axis=0) > 0
+        )  # Exclude channels with no contribution
 
         # In energy grid for the model, we integrate it using trapezoid evaluated on edges (2 points)
-        in_energies = np.stack((np.asarray(rmf.energ_lo, dtype=np.float64), np.asarray(rmf.energ_hi, dtype=np.float64)))
+        in_energies = np.stack(
+            (
+                np.asarray(rmf.energ_lo, dtype=np.float64),
+                np.asarray(rmf.energ_hi, dtype=np.float64),
+            )
+        )
 
         # Transfer matrix computation considering grouping
         transfer_matrix = grouping @ (rmf.full_matrix * arf.specresp * self.exposure)

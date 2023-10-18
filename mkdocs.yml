@@ -10,6 +10,7 @@ nav:
     #- Mock a spectrum : 'tutorial/basic_fit.ipynb'
   - API Reference:
     - Data containers: 'references/data.md'
+    - Result containers: 'references/results.md'
     - Additive models: 'references/additive.md'
     - Multiplicative models: 'references/multiplicative.md'
 
@@ -50,6 +51,7 @@ plugins:
           paths: [src]
           import:
             - https://docs.python.org/3/objects.inv
+            - https://docs.astropy.org/en/stable/objects.inv
           options:
             members_order: alphabetical
             docstring_section_style: table

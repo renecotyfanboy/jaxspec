@@ -2,11 +2,10 @@ from __future__ import annotations
 import haiku as hk
 import jax.numpy as jnp
 import networkx as nx
-import inspect
 from haiku._src import base
 from uuid import uuid4
 from jax.scipy.integrate import trapezoid
-from abc import ABC, abstractmethod
+from abc import ABC
 
 
 class SpectralModel:
@@ -21,16 +20,35 @@ class SpectralModel:
     n_parameters: int
 
     def __init__(self, internal_graph, labels):
-
         self.raw_graph = internal_graph
         self.labels = labels
         self.graph = self.build_namespace()
 
-        func = hk.without_apply_rng(hk.transform(lambda e_low, e_high : self.flux(e_low, e_high)))
-
-        self.params = func.init(None, jnp.ones(10),  jnp.ones(10))
-        self.flux_func = func.apply
         self.n_parameters = hk.data_structures.tree_size(self.params)
+
+    @property
+    def transformed_func_photon(self):
+        return hk.without_apply_rng(
+            hk.transform(lambda e_low, e_high: self.flux(e_low, e_high))
+        )
+
+    @property
+    def transformed_func_energy(self):
+        return hk.without_apply_rng(
+            hk.transform(
+                lambda e_low, e_high: self.flux(e_low, e_high, energy_flux=True)
+            )
+        )
+
+    @property
+    def params(self):
+        return self.transformed_func_photon.init(None, jnp.ones(10), jnp.ones(10))
+
+    def photon_flux(self, *args, **kwargs):
+        return self.transformed_func_photon.apply(*args, **kwargs)
+
+    def energy_flux(self, *args, **kwargs):
+        return self.transformed_func_energy.apply(*args, **kwargs)
 
     def build_namespace(self):
         """
@@ -43,18 +61,21 @@ class SpectralModel:
         for node_id in nx.dag.topological_sort(new_graph):
             node = new_graph.nodes[node_id]
 
-            if node and node['type'] == 'component':
-                name_space.append(node['name'])
-                n = name_space.count(node['name'])
-                nx.set_node_attributes(new_graph, {node_id: name_space[-1] + f'_{n}'}, 'name')
+            if node and node["type"] == "component":
+                name_space.append(node["name"])
+                n = name_space.count(node["name"])
+                nx.set_node_attributes(
+                    new_graph, {node_id: name_space[-1] + f"_{n}"}, "name"
+                )
 
         return new_graph
 
-    def flux(self, e_low, e_high):
+    def flux(self, e_low, e_high, energy_flux=False):
         """
         This method return the expected counts between e_low and e_high by integrating the model.
         It contains most of the "usine à gaz" which makes jaxspec works.
-        It evaluates the graph of operations and returns the result. It should be transformed using haiku
+        It evaluates the graph of operations and returns the result.
+        It should be transformed using haiku.
         """
 
         energies = jnp.hstack((e_low, e_high[-1]))
@@ -64,50 +85,83 @@ class SpectralModel:
         runtime_modules = {}
         continuum = {}
 
-        # Iterate through the graph in topological order and compute the continuum contribution for each component
+        # Iterate through the graph in topological order and
+        # compute the continuum contribution for each component
 
         for node_id in nx.dag.topological_sort(self.graph):
-
             node = self.graph.nodes[node_id]
 
             # Instantiate the haiku modules
-            if node and node['type'] == 'component':
-
-                runtime_modules[node_id] = node['component'](name=node['name'], **node['kwargs'])
+            if node and node["type"] == "component":
+                runtime_modules[node_id] = node["component"](
+                    name=node["name"], **node["kwargs"]
+                )
                 continuum[node_id] = runtime_modules[node_id].continuum(energies)
 
-            elif node and node['type'] == 'operation':
-
+            elif node and node["type"] == "operation":
                 component_1 = list(self.graph.in_edges(node_id))[0][0]
                 component_2 = list(self.graph.in_edges(node_id))[1][0]
-                continuum[node_id] = node['function'](continuum[component_1], continuum[component_2])
+                continuum[node_id] = node["function"](
+                    continuum[component_1], continuum[component_2]
+                )
 
-        flux_1D = continuum[list(self.graph.in_edges('out'))[0][0]]
+        flux_1D = continuum[list(self.graph.in_edges("out"))[0][0]]
         flux = jnp.stack((flux_1D[:-1], flux_1D[1:]))
-        continuum_flux = trapezoid(flux*energies_to_integrate, x=jnp.log(energies_to_integrate), axis=0)
 
-        # Iterate from the root nodes to the output node and compute the fine structure contribution for each component
+        if energy_flux:
+            continuum_flux = trapezoid(
+                flux * energies_to_integrate**2,
+                x=jnp.log(energies_to_integrate),
+                axis=0,
+            )
 
-        root_nodes = [node_id for node_id, in_degree in self.graph.in_degree(self.graph.nodes) if in_degree == 0
-                      and self.graph.nodes[node_id].get('component_type') == 'additive']
+        else:
+            continuum_flux = trapezoid(
+                flux * energies_to_integrate, x=jnp.log(energies_to_integrate), axis=0
+            )
+
+        # Iterate from the root nodes to the output node and
+        # compute the fine structure contribution for each component
+
+        root_nodes = [
+            node_id
+            for node_id, in_degree in self.graph.in_degree(self.graph.nodes)
+            if in_degree == 0
+            and self.graph.nodes[node_id].get("component_type") == "additive"
+        ]
 
         for root_node_id in root_nodes:
-
-            path = nx.shortest_path(self.graph, source=root_node_id, target='out')
+            path = nx.shortest_path(self.graph, source=root_node_id, target="out")
             nodes_id_in_path = [node_id for node_id in path]
 
-            flux_from_component, mean_energy = runtime_modules[root_node_id].emission_lines(e_low, e_high)
+            flux_from_component, mean_energy = runtime_modules[
+                root_node_id
+            ].emission_lines(e_low, e_high)
 
             multiplicative_nodes = []
 
-            # Search all multiplicative components connected to this node and apply them at mean energy
+            # Search all multiplicative components connected to this node
+            # and apply them at mean energy
             for node_id in nodes_id_in_path[::-1]:
-                multiplicative_nodes.extend([node_id for node_id in self.find_multiplicative_components(node_id)])
+                multiplicative_nodes.extend(
+                    [
+                        node_id
+                        for node_id in self.find_multiplicative_components(node_id)
+                    ]
+                )
 
             for mul_node in multiplicative_nodes:
                 flux_from_component *= runtime_modules[mul_node].continuum(mean_energy)
 
-            fine_structures_flux += flux_from_component
+            if energy_flux:
+                fine_structures_flux += trapezoid(
+                    flux_from_component * energies_to_integrate,
+                    x=jnp.log(energies_to_integrate),
+                    axis=0,
+                )
+
+            else:
+                fine_structures_flux += flux_from_component
 
         return continuum_flux + fine_structures_flux
 
@@ -118,20 +172,21 @@ class SpectralModel:
         node = self.graph.nodes[node_id]
         multiplicative_nodes = []
 
-        if node.get('operation_type') == 'mul':
+        if node.get("operation_type") == "mul":
             # Recursively find all the multiplicative components using the predecessors
             predecessors = self.graph.pred[node_id]
             for node_id in predecessors:
-                if self.graph.nodes[node_id].get('component_type') == 'multiplicative':
+                if self.graph.nodes[node_id].get("component_type") == "multiplicative":
                     multiplicative_nodes.append(node_id)
-                elif self.graph.nodes[node_id].get('operation_type') == 'mul':
-                    multiplicative_nodes.extend(self.find_multiplicative_components(node_id))
+                elif self.graph.nodes[node_id].get("operation_type") == "mul":
+                    multiplicative_nodes.extend(
+                        self.find_multiplicative_components(node_id)
+                    )
 
         return multiplicative_nodes
 
     def __call__(self, pars, e_low, e_high):
-
-        return self.flux_func(pars, e_low, e_high)
+        return self.photon_flux(pars, e_low, e_high)
 
     @classmethod
     def from_component(cls, component, **kwargs) -> SpectralModel:
@@ -146,28 +201,32 @@ class SpectralModel:
         node_id = str(uuid4())
 
         node_properties = {
-            'type': 'component',
-            'component_type': component.type,
-            'name': component.__name__.lower(),
-            'component': component,
-            #TODO : Warning, this does not take into account the params defined in emission lines
-            'params': hk.transform(lambda e: component().continuum(e)).init(None, jnp.ones(1)),
-            'fine_structure': False,
-            'kwargs': kwargs,
-            'depth': 0
+            "type": "component",
+            "component_type": component.type,
+            "name": component.__name__.lower(),
+            "component": component,
+            # TODO : Warning, this does not take into account the params defined in emission lines
+            "params": hk.transform(lambda e: component().continuum(e)).init(
+                None, jnp.ones(1)
+            ),
+            "fine_structure": False,
+            "kwargs": kwargs,
+            "depth": 0,
         }
 
         graph.add_node(node_id, **node_properties)
 
         # Add the output node
-        labels = {node_id: component.__name__.lower(), 'out': 'out'}
+        labels = {node_id: component.__name__.lower(), "out": "out"}
 
-        graph.add_node('out', type='out', depth=1)
-        graph.add_edge(node_id, 'out')
+        graph.add_node("out", type="out", depth=1)
+        graph.add_edge(node_id, "out")
 
         return cls(graph, labels)
 
-    def compose(self, other: SpectralModel, operation=None, function=None, name=None) -> SpectralModel:
+    def compose(
+        self, other: SpectralModel, operation=None, function=None, name=None
+    ) -> SpectralModel:
         """
         This function operate a composition between the operation graph of two models
         1) It fuses the two graphs using which joins at the 'out' nodes
@@ -178,96 +237,120 @@ class SpectralModel:
         # Compose the two graphs with their output as common node
         # and add the operation node by overwriting the 'out' node
         node_id = str(uuid4())
-        graph = nx.relabel_nodes(nx.compose(self.raw_graph, other.raw_graph), {'out': node_id})
-        nx.set_node_attributes(graph, {node_id: 'operation'}, 'type')
-        nx.set_node_attributes(graph, {node_id: operation}, 'operation_type')
-        nx.set_node_attributes(graph, {node_id: function}, 'function')
-        nx.set_node_attributes(graph, {node_id: name}, 'operation_label')
+        graph = nx.relabel_nodes(
+            nx.compose(self.raw_graph, other.raw_graph), {"out": node_id}
+        )
+        nx.set_node_attributes(graph, {node_id: "operation"}, "type")
+        nx.set_node_attributes(graph, {node_id: operation}, "operation_type")
+        nx.set_node_attributes(graph, {node_id: function}, "function")
+        nx.set_node_attributes(graph, {node_id: name}, "operation_label")
 
-        if node_id in self.labels.keys() or node_id in other.labels.keys() \
-                and not set(other.labels.keys()) & set(self.labels.keys()):
+        if (
+            node_id in self.labels.keys()
+            or node_id in other.labels.keys()
+            and not set(other.labels.keys()) & set(self.labels.keys())
+        ):
             # Check that no node ID is duplicated
             # This should never happen, but if it does, it's a bad luck
             # However it's a good occasion to play lotto tonight
-            class BadLuckError(Exception): pass
-            raise BadLuckError('Congratulation, you may have experienced an uuid4 collision, this has ~50% '
-                               'chance to happen if you generate an uuid4 every second for a century. If '
-                               'rerunning this code fixes this issue, consider playing lotto tonight and open '
-                               'an issue in the JAXSPEC repository. ')
+            class BadLuckError(Exception):
+                pass
+
+            raise BadLuckError(
+                "Congratulation, you may have experienced an uuid4 collision, this has ~50% "
+                "chance to happen if you generate an uuid4 every second for a century. If "
+                "rerunning this code fixes this issue, consider playing lotto tonight and open "
+                "an issue in the JAXSPEC repository. "
+            )
 
         # Merge label dictionaries
         labels = self.labels | other.labels
         labels[node_id] = operation
 
         # Now add the output node and link it to the operation node
-        graph.add_node('out', type='out')
-        graph.add_edge(node_id, 'out')
+        graph.add_node("out", type="out")
+        graph.add_edge(node_id, "out")
 
         # Compute the new depth of each node
         longest_path = nx.dag_longest_path_length(graph)
 
         for node in graph.nodes:
-            nx.set_node_attributes(graph, {node: longest_path-nx.shortest_path_length(graph, node, 'out')}, 'depth')
+            nx.set_node_attributes(
+                graph,
+                {node: longest_path - nx.shortest_path_length(graph, node, "out")},
+                "depth",
+            )
 
         return SpectralModel(graph, labels)
 
     def __add__(self, other: SpectralModel) -> SpectralModel:
-
-        return self.compose(other, operation='add', function=lambda x, y: x + y, name='+')
+        return self.compose(
+            other, operation="add", function=lambda x, y: x + y, name="+"
+        )
 
     def __mul__(self, other: SpectralModel) -> SpectralModel:
-
-        return self.compose(other, operation='mul', function=lambda x, y: x * y, name=r'$\times$')
+        return self.compose(
+            other, operation="mul", function=lambda x, y: x * y, name=r"$\times$"
+        )
 
     def export_to_mermaid(self, file=None):
-
         mermaid_code = "graph LR\n"  # LR = left to right
 
         # Add nodes
         for node, attributes in self.graph.nodes(data=True):
-
-            if attributes['type'] == 'component':
+            if attributes["type"] == "component":
                 name, number = attributes["name"].split("_")
                 mermaid_code += f'    {node}("{name.capitalize()} ({number})")\n'
 
-            if attributes['type'] == 'operation':
+            if attributes["type"] == "operation":
+                if attributes["operation_type"] == "add":
+                    mermaid_code += f"    {node}{{+}}\n"
 
-                if attributes['operation_type'] == 'add':
-                    mermaid_code += f'    {node}{{+}}\n'
+                if attributes["operation_type"] == "mul":
+                    mermaid_code += f"    {node}{{x}}\n"
 
-                if attributes['operation_type'] == 'mul':
-                    mermaid_code += f'    {node}{{x}}\n'
-
-            if attributes['type'] == 'out':
+            if attributes["type"] == "out":
                 mermaid_code += f'    {node}("Output")\n'
 
         # Draw connexion between nodes
         for source, target in self.graph.edges():
-            mermaid_code += f'    {source} --> {target}\n'
+            mermaid_code += f"    {source} --> {target}\n"
 
         if file is None:
             return mermaid_code
         else:
-            with open(file, 'w') as f:
+            with open(file, "w") as f:
                 f.write(mermaid_code)
 
     def plot(self, figsize=(8, 8)):
-
         import matplotlib.pyplot as plt
 
         plt.figure(figsize=figsize)
 
         pos = nx.multipartite_layout(self.graph, subset_key="depth", scale=1)
 
-        nodes_out = [x for x, y in self.graph.nodes(data=True) if y['type'] == 'out']
-        nx.draw_networkx_nodes(self.graph, pos, nodelist=nodes_out, node_color="tab:green")
+        nodes_out = [x for x, y in self.graph.nodes(data=True) if y["type"] == "out"]
+        nx.draw_networkx_nodes(
+            self.graph, pos, nodelist=nodes_out, node_color="tab:green"
+        )
         nx.draw_networkx_edges(self.graph, pos, width=1.0)
 
-        nx.draw_networkx_labels(self.graph, pos, labels=nx.get_node_attributes(self.graph, 'name'), font_size=12,
-                                font_color="black", bbox={"fc": "tab:red", 'boxstyle': 'round', 'pad': 0.3})
-        nx.draw_networkx_labels(self.graph, pos, labels=nx.get_node_attributes(self.graph, 'operation_label'),
-                                font_size=12, font_color="black",
-                                bbox={"fc": "tab:blue", 'boxstyle': 'circle', 'pad': 0.3})
+        nx.draw_networkx_labels(
+            self.graph,
+            pos,
+            labels=nx.get_node_attributes(self.graph, "name"),
+            font_size=12,
+            font_color="black",
+            bbox={"fc": "tab:red", "boxstyle": "round", "pad": 0.3},
+        )
+        nx.draw_networkx_labels(
+            self.graph,
+            pos,
+            labels=nx.get_node_attributes(self.graph, "operation_label"),
+            font_size=12,
+            font_color="black",
+            bbox={"fc": "tab:blue", "boxstyle": "circle", "pad": 0.3},
+        )
 
         plt.axis("equal")
         plt.axis("off")
@@ -277,8 +360,8 @@ class SpectralModel:
 
 class ComponentMetaClass(type(hk.Module)):
     """
-    This metaclass enable the construction of model from components with a simple syntax while style enabling
-    the components to be used as haiku modules
+    This metaclass enable the construction of model from components with a simple
+    syntax while style enabling the components to be used as haiku modules.
     """
 
     def __call__(self, **kwargs):
@@ -288,11 +371,9 @@ class ComponentMetaClass(type(hk.Module)):
         """
 
         if not base.frame_stack:
-
             return SpectralModel.from_component(self, **kwargs)
 
         else:
-
             return super().__call__(**kwargs)
 
 
@@ -300,6 +381,7 @@ class ModelComponent(hk.Module, ABC, metaclass=ComponentMetaClass):
     """
     Abstract class for model components
     """
+
     type: str
 
     def __init__(self, *args, **kwargs):

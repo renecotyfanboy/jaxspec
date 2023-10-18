@@ -1,10 +1,8 @@
 import numpy as np
 import os
-import jax.numpy as jnp
 import astropy.units as u
 from astropy.table import QTable
 from astropy.io import fits
-from jax.experimental import sparse
 
 
 class DataPHA:
@@ -15,13 +13,17 @@ class DataPHA:
         * [The OGIP standard PHA file format](https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html)
     """
 
-    def __init__(self, channel, counts, exposure,
-                 grouping=None,
-                 quality=None,
-                 backfile=None,
-                 respfile=None,
-                 ancrfile=None):
-
+    def __init__(
+        self,
+        channel,
+        counts,
+        exposure,
+        grouping=None,
+        quality=None,
+        backfile=None,
+        respfile=None,
+        ancrfile=None,
+    ):
         self.channel = channel
         self.counts = counts
         self.exposure = exposure
@@ -30,7 +32,7 @@ class DataPHA:
         self.backfile = backfile
         self.respfile = respfile
         self.ancrfile = ancrfile
-        
+
         if grouping is not None:
             # Indices array of beginning of each group
             b_grp = np.where(grouping == 1)[0]
@@ -40,11 +42,9 @@ class DataPHA:
             grp_matrix = np.zeros((len(b_grp), len(channel)), dtype=bool)
 
             for i in range(len(b_grp)):
-
-                grp_matrix[i, b_grp[i]:e_grp[i]] = 1
+                grp_matrix[i, b_grp[i] : e_grp[i]] = 1
 
         else:
-
             grp_matrix = np.eye(len(channel))
 
         self.grouping = grp_matrix
@@ -58,18 +58,20 @@ class DataPHA:
             pha_file: The PHA file path.
         """
 
-        data = QTable.read(pha_file, 'SPECTRUM')
-        header = fits.getheader(pha_file, 'SPECTRUM')
+        data = QTable.read(pha_file, "SPECTRUM")
+        header = fits.getheader(pha_file, "SPECTRUM")
 
         # Grouping and quality parameters are in binned PHA dataset
         # Backfile, respfile and ancrfile are in primary header
-        kwargs = {'grouping': data['GROUPING'] if 'GROUPING' in data.colnames else None,
-                  'quality': data['QUALITY'] if 'QUALITY' in data.colnames else None,
-                  'backfile': header['BACKFILE'] if len(header['BACKFILE']) > 0 else None,
-                  'respfile': header['RESPFILE'] if len(header['RESPFILE']) > 0 else None,
-                  'ancrfile': header['ANCRFILE'] if len(header['ANCRFILE']) > 0 else None}
+        kwargs = {
+            "grouping": data["GROUPING"] if "GROUPING" in data.colnames else None,
+            "quality": data["QUALITY"] if "QUALITY" in data.colnames else None,
+            "backfile": header["BACKFILE"] if len(header["BACKFILE"]) > 0 else None,
+            "respfile": header["RESPFILE"] if len(header["RESPFILE"]) > 0 else None,
+            "ancrfile": header["ANCRFILE"] if len(header["ANCRFILE"]) > 0 else None,
+        }
 
-        return cls(data['CHANNEL'], data['COUNTS'], header['EXPOSURE'], **kwargs)
+        return cls(data["CHANNEL"], data["COUNTS"], header["EXPOSURE"], **kwargs)
 
 
 class DataARF:
@@ -82,7 +84,6 @@ class DataARF:
     """
 
     def __init__(self, energ_lo, energ_hi, specresp):
-
         self.specresp = specresp
         self.energ_lo = energ_lo
         self.energ_hi = energ_hi
@@ -98,9 +99,11 @@ class DataARF:
 
         arf_table = QTable.read(arf_file)
 
-        return cls(arf_table['ENERG_LO'],
-                   arf_table['ENERG_HI'],
-                   arf_table['SPECRESP'].to(u.cm**2).value)
+        return cls(
+            arf_table["ENERG_LO"],
+            arf_table["ENERG_HI"],
+            arf_table["SPECRESP"].to(u.cm**2).value,
+        )
 
 
 class DataRMF:
@@ -113,12 +116,13 @@ class DataRMF:
 
     """
 
-    def __init__(self, energ_lo, energ_hi, n_grp, f_chan, n_chan, matrix, channel, e_min, e_max):
-
+    def __init__(
+        self, energ_lo, energ_hi, n_grp, f_chan, n_chan, matrix, channel, e_min, e_max
+    ):
         # RMF stuff
-        self.energ_lo = energ_lo # "Entry" energies
-        self.energ_hi = energ_hi # "Entry" energies
-        self.n_grp = n_grp # "Entry" energies
+        self.energ_lo = energ_lo  # "Entry" energies
+        self.energ_hi = energ_hi  # "Entry" energies
+        self.n_grp = n_grp  # "Entry" energies
         self.f_chan = f_chan
         self.n_chan = n_chan
         self.matrix_entry = matrix
@@ -131,31 +135,35 @@ class DataRMF:
         self.full_matrix = np.zeros(self.n_grp.shape + self.channel.shape)
 
         for i, n_grp in enumerate(self.n_grp):
-
             base = 0
 
             if np.size(self.f_chan[i]) == 1:
-
                 # ravel()[0] allows to get the value of the array without triggering numpy's conversion from
                 # multidimensional array to scalar
                 low = int(self.f_chan[i].ravel()[0])
-                high = min(int(self.f_chan[i].ravel()[0] + self.n_chan[i].ravel()[0]), self.full_matrix.shape[1])
+                high = min(
+                    int(self.f_chan[i].ravel()[0] + self.n_chan[i].ravel()[0]),
+                    self.full_matrix.shape[1],
+                )
 
-                self.full_matrix[i, low:high] = self.matrix_entry[i][0:high - low]
+                self.full_matrix[i, low:high] = self.matrix_entry[i][0 : high - low]
 
             else:
-
                 for j in range(n_grp):
                     low = self.f_chan[i][j]
-                    high = min(self.f_chan[i][j] + self.n_chan[i][j], self.full_matrix.shape[1])
+                    high = min(
+                        self.f_chan[i][j] + self.n_chan[i][j], self.full_matrix.shape[1]
+                    )
 
-                    self.full_matrix[i, low:high] = self.matrix_entry[i][base:base + self.n_chan[i][j]]
+                    self.full_matrix[i, low:high] = self.matrix_entry[i][
+                        base : base + self.n_chan[i][j]
+                    ]
 
                     base += self.n_chan[i][j]
 
         # Transposed matrix so that we just have to multiply by the spectrum
         self.full_matrix = self.full_matrix.T
-        #self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
+        # self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
 
     @classmethod
     def from_file(cls, rmf_file: str | os.PathLike):
@@ -166,15 +174,17 @@ class DataRMF:
             rmf_file: The RMF file path.
         """
 
-        matrix_table = QTable.read(rmf_file, 'MATRIX')
-        ebounds_table = QTable.read(rmf_file, 'EBOUNDS')
+        matrix_table = QTable.read(rmf_file, "MATRIX")
+        ebounds_table = QTable.read(rmf_file, "EBOUNDS")
 
-        return cls(matrix_table['ENERG_LO'],
-                   matrix_table['ENERG_HI'],
-                   matrix_table['N_GRP'],
-                   matrix_table['F_CHAN'],
-                   matrix_table['N_CHAN'],
-                   matrix_table['MATRIX'],
-                   ebounds_table['CHANNEL'],
-                   ebounds_table['E_MIN'],
-                   ebounds_table['E_MAX'])
+        return cls(
+            matrix_table["ENERG_LO"],
+            matrix_table["ENERG_HI"],
+            matrix_table["N_GRP"],
+            matrix_table["F_CHAN"],
+            matrix_table["N_CHAN"],
+            matrix_table["MATRIX"],
+            ebounds_table["CHANNEL"],
+            ebounds_table["E_MIN"],
+            ebounds_table["E_MAX"],
+        )

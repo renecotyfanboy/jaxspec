@@ -8,26 +8,38 @@ from collections.abc import Mapping
 from typing import TypeVar
 from .observation import Observation
 from .instrument import Instrument
-from .ogip import DataPHA
 from ..model.abc import SpectralModel
 from ..fit import CountForwardModel
 from numpyro import handlers
-import astropy.units as u
 
 K = TypeVar("K")
 V = TypeVar("V")
 
 example_observations = {
-    'PN': Observation.from_pha_file(importlib.resources.files('jaxspec') / 'data/example_data/PN.pha', low_energy=0.3, high_energy=12),
-    'MOS1': Observation.from_pha_file(importlib.resources.files('jaxspec') / 'data/example_data/MOS1.pha', low_energy=0.3, high_energy=7),
-    'MOS2': Observation.from_pha_file(importlib.resources.files('jaxspec') / 'data/example_data/MOS2.pha', low_energy=0.3, high_energy=7)
+    "PN": Observation.from_pha_file(
+        importlib.resources.files("jaxspec") / "data/example_data/PN.pha",
+        low_energy=0.3,
+        high_energy=12,
+    ),
+    "MOS1": Observation.from_pha_file(
+        importlib.resources.files("jaxspec") / "data/example_data/MOS1.pha",
+        low_energy=0.3,
+        high_energy=7,
+    ),
+    "MOS2": Observation.from_pha_file(
+        importlib.resources.files("jaxspec") / "data/example_data/MOS2.pha",
+        low_energy=0.3,
+        high_energy=7,
+    ),
 }
 
 
-def fakeit(instrument: Instrument | list[Instrument],
-           model: SpectralModel,
-           parameters: Mapping[K, V],
-           rng_key: int = 0) -> ArrayLike | list[ArrayLike]:
+def fakeit(
+    instrument: Instrument | list[Instrument],
+    model: SpectralModel,
+    parameters: Mapping[K, V],
+    rng_key: int = 0,
+) -> ArrayLike | list[ArrayLike]:
     """
     This function is a convenience function that allows to simulate spectra from a given model and a set of parameters.
     It requires an instrumental setup, and unlike in
@@ -49,12 +61,13 @@ def fakeit(instrument: Instrument | list[Instrument],
             hk.transform(lambda par: CountForwardModel(model, instrument)(par))
         )
 
-        obs_model = lambda p: transformed_model.apply(None, p)
+        def obs_model(p):
+            return transformed_model.apply(None, p)
 
         with handlers.seed(rng_seed=rng_key):
             counts = numpyro.sample(
-                f'likelihood_obs_{i}',
-                numpyro.distributions.Poisson(obs_model(parameters))
+                f"likelihood_obs_{i}",
+                numpyro.distributions.Poisson(obs_model(parameters)),
             )
 
         """
@@ -78,10 +91,12 @@ def fakeit(instrument: Instrument | list[Instrument],
     return fakeits[0] if len(fakeits) == 1 else fakeits
 
 
-def fakeit_for_multiple_parameters(instrument: Instrument | list[Instrument],
-           model: SpectralModel,
-           parameters: Mapping[K, V],
-           rng_key: int = 0):
+def fakeit_for_multiple_parameters(
+    instrument: Instrument | list[Instrument],
+    model: SpectralModel,
+    parameters: Mapping[K, V],
+    rng_key: int = 0,
+):
     """
     This function is a convenience function that allows to simulate spectra multiple spectra from a given model and a
     set of parameters.
@@ -103,12 +118,13 @@ def fakeit_for_multiple_parameters(instrument: Instrument | list[Instrument],
             hk.transform(lambda par: CountForwardModel(model, obs)(par))
         )
 
-        obs_model = lambda p: transformed_model.apply(None, p)
+        def obs_model(p):
+            return transformed_model.apply(None, p)
 
         with handlers.seed(rng_seed=rng_key):
             test = numpyro.sample(
-                f'likelihood_obs_{i}',
-                numpyro.distributions.Poisson(jax.vmap(obs_model)(parameters))
+                f"likelihood_obs_{i}",
+                numpyro.distributions.Poisson(jax.vmap(obs_model)(parameters)),
             )
 
         fakeits.append(test)
