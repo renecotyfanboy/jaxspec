@@ -12,7 +12,7 @@ Documentation : https://jaxspec.readthedocs.io/en/latest/
 This package is not yet referenced on Pypi, so it must be installed from this repository
 
 ```
-pip install git+https://github.com/renecotyfanboy/jaxspec --force-update
+pip install git+https://github.com/renecotyfanboy/jaxspec --upgrade
 ```
 
 This will be deployed when v0.0.1 is officialy released
