@@ -10,19 +10,22 @@ nav:
     #- Mock a spectrum : 'tutorial/basic_fit.ipynb'
   - API Reference:
     - Data containers: 'references/data.md'
+    - Result containers: 'references/results.md'
     - Additive models: 'references/additive.md'
     - Multiplicative models: 'references/multiplicative.md'
 
 theme:
   name: material
   features:
+    - content.tabs.link
     - content.code.copy
 #    - content.code.select
 #    - navigation.instant
     - navigation.tabs
     - navigation.indexes
+  favicon: logo/xifu_mini.svg
+  logo: logo/xifu_mini.svg
   icon:
-    logo: material/library-shelves
     repo: fontawesome/brands/github
 
   palette:
@@ -48,6 +51,8 @@ plugins:
           paths: [src]
           import:
             - https://docs.python.org/3/objects.inv
+            - https://docs.astropy.org/en/stable/objects.inv
+            - https://samreay.github.io/ChainConsumer/objects.inv
           options:
             members_order: alphabetical
             docstring_section_style: table
@@ -85,11 +90,14 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
   - attr_list
   - md_in_html
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
 
 repo_url: https://github.com/renecotyfanboy/jaxspec
 repo_name: jaxspec

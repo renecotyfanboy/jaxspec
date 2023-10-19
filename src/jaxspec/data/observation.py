@@ -1,6 +1,5 @@
 import os
 import numpy as np
-from typing import Union
 from .ogip import DataPHA, DataARF, DataRMF
 from .instrument import Instrument
 
@@ -18,12 +17,14 @@ class Observation(Instrument):
     pha: DataPHA
     observed_counts: np.ndarray
 
-    def __init__(self,
-                 pha: DataPHA,
-                 arf: DataARF,
-                 rmf: DataRMF,
-                 low_energy: float = 1e-20,
-                 high_energy: float = 1e20):
+    def __init__(
+        self,
+        pha: DataPHA,
+        arf: DataARF,
+        rmf: DataRMF,
+        low_energy: float = 1e-20,
+        high_energy: float = 1e20,
+    ):
         """
         This is the basic constructor for an observation.
         It is recommended to build the [`Observation`][jaxspec.data.observation.Observation] object using the
@@ -44,7 +45,8 @@ class Observation(Instrument):
             pha.exposure,
             pha.grouping,
             low_energy=low_energy,
-            high_energy=high_energy)
+            high_energy=high_energy,
+        )
 
     @classmethod
     def from_pha_file(cls, pha_file: str | os.PathLike, **kwargs):
@@ -64,7 +66,9 @@ class Observation(Instrument):
 
         if pha.ancrfile is None or pha.respfile is None:
             # It should be handled in a better way at some point
-            raise ValueError("PHA file must contain the ARF and RMF filenames in the header.")
+            raise ValueError(
+                "PHA file must contain the ARF and RMF filenames in the header."
+            )
 
         arf = DataARF.from_file(os.path.join(directory, pha.ancrfile))
         rmf = DataRMF.from_file(os.path.join(directory, pha.respfile))
@@ -72,8 +76,9 @@ class Observation(Instrument):
         return cls(pha, arf, rmf, **kwargs)
 
     def rebin(self, grouping):
-
         super().rebin(grouping)
 
         # We also need to rebin the observed counts when there is an observation attached to the instrumental setup
-        self.observed_counts = (grouping @ np.asarray(self.pha.counts.value, dtype=np.int64))[self._row_idx]
+        self.observed_counts = (
+            grouping @ np.asarray(self.pha.counts.value, dtype=np.int64)
+        )[self._row_idx]

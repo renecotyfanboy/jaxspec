@@ -12,7 +12,7 @@ from . import ModelComponent
 
 
 class MultiplicativeComponent(ModelComponent, ABC):
-    type = 'multiplicative'
+    type = "multiplicative"
 
     @abstractmethod
     def continuum(self, energy):
@@ -24,7 +24,8 @@ class Expfac(MultiplicativeComponent):
     An exponential modification of a spectrum.
 
     $$
-    \mathcal{M}(E) = \begin{cases}1 + A \exp \left(-fE\right) & \text{if $E>E_c$}\\1 & \text{if $E<E_c$}\end{cases}
+    \mathcal{M}(E) = \begin{cases}1 + A \exp \left(-fE\right) &
+    \text{if $E>E_c$}\\1 & \text{if $E<E_c$}\end{cases}
     $$
 
     ??? abstract "Parameters"
@@ -35,12 +36,13 @@ class Expfac(MultiplicativeComponent):
     """
 
     def continuum(self, energy):
+        amplitude = hk.get_parameter("A", [], init=HaikuConstant(1))
+        factor = hk.get_parameter("f", [], init=HaikuConstant(1))
+        pivot = hk.get_parameter("E_c", [], init=HaikuConstant(1))
 
-        amplitude = hk.get_parameter('A', [], init=HaikuConstant(1))
-        factor = hk.get_parameter('f', [], init=HaikuConstant(1))
-        pivot = hk.get_parameter('E_c', [], init=HaikuConstant(1))
-
-        return jnp.where(energy >= pivot, 1. + amplitude*jnp.exp(-factor*energy), 1.)
+        return jnp.where(
+            energy >= pivot, 1.0 + amplitude * jnp.exp(-factor * energy), 1.0
+        )
 
 
 class Tbabs(MultiplicativeComponent):
@@ -48,22 +50,22 @@ class Tbabs(MultiplicativeComponent):
     The Tuebingen-Boulder ISM absorption model.
 
     ??? abstract "Parameters"
-        * $N_H$ : equivalent hydrogen column density $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
+        * $N_H$ : equivalent hydrogen column density
+            $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
 
     """
 
-    ref = importlib.resources.files('jaxspec') / 'tables/xsect_tbabs_wilm.fits'
+    ref = importlib.resources.files("jaxspec") / "tables/xsect_tbabs_wilm.fits"
     with importlib.resources.as_file(ref) as path:
         table = Table.read(path)
-    energy = jnp.asarray(np.array(table['ENERGY']), dtype=np.float32)
-    sigma = jnp.asarray(np.array(table['SIGMA']), dtype=np.float32)
+    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float32)
+    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float32)
 
     def continuum(self, energy):
+        nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))
+        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
 
-        nh = hk.get_parameter('N_H', [], init=HaikuConstant(1))
-        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.)
-
-        return jnp.exp(-nh*sigma)
+        return jnp.exp(-nh * sigma)
 
 
 class Phabs(MultiplicativeComponent):
@@ -71,22 +73,22 @@ class Phabs(MultiplicativeComponent):
     A photoelectric absorption model.
 
     ??? abstract "Parameters"
-        * $N_H$ : equivalent hydrogen column density $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
+        * $N_H$ : equivalent hydrogen column density
+            $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
 
     """
 
-    ref = importlib.resources.files('jaxspec') / 'tables/xsect_phabs_aspl.fits'
+    ref = importlib.resources.files("jaxspec") / "tables/xsect_phabs_aspl.fits"
     with importlib.resources.as_file(ref) as path:
         table = Table.read(path)
-    energy = jnp.asarray(np.array(table['ENERGY']), dtype=np.float32)
-    sigma = jnp.asarray(np.array(table['SIGMA']), dtype=np.float32)
+    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float32)
+    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float32)
 
     def continuum(self, energy):
+        nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))
+        sigma = jnp.interp(energy, self.energy, self.sigma, left=jnp.inf, right=0.0)
 
-        nh = hk.get_parameter('N_H', [], init=HaikuConstant(1))
-        sigma = jnp.interp(energy, self.energy, self.sigma, left=jnp.inf, right=0.)
-
-        return jnp.exp(-nh*sigma)
+        return jnp.exp(-nh * sigma)
 
 
 class Wabs(MultiplicativeComponent):
@@ -94,22 +96,22 @@ class Wabs(MultiplicativeComponent):
     A photo-electric absorption using Wisconsin (Morrison & McCammon 1983) cross-sections.
 
     ??? abstract "Parameters"
-        * $N_H$ : equivalent hydrogen column density $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
+        * $N_H$ : equivalent hydrogen column density
+            $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
 
     """
 
-    ref = importlib.resources.files('jaxspec') / 'tables/xsect_wabs_angr.fits'
+    ref = importlib.resources.files("jaxspec") / "tables/xsect_wabs_angr.fits"
     with importlib.resources.as_file(ref) as path:
         table = Table.read(path)
-    energy = jnp.asarray(np.array(table['ENERGY']), dtype=np.float32)
-    sigma = jnp.asarray(np.array(table['SIGMA']), dtype=np.float32)
+    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float32)
+    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float32)
 
     def continuum(self, energy):
+        nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))
+        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
 
-        nh = hk.get_parameter('N_H', [], init=HaikuConstant(1))
-        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.)
-
-        return jnp.exp(-nh*sigma)
+        return jnp.exp(-nh * sigma)
 
 
 class Gabs(MultiplicativeComponent):
@@ -132,12 +134,15 @@ class Gabs(MultiplicativeComponent):
     """
 
     def continuum(self, energy):
+        tau = hk.get_parameter("tau", [], init=HaikuConstant(1))
+        sigma = hk.get_parameter("sigma", [], init=HaikuConstant(1))
+        center = hk.get_parameter("E_0", [], init=HaikuConstant(1))
 
-        tau = hk.get_parameter('tau', [], init=HaikuConstant(1))
-        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
-        center = hk.get_parameter('E_0', [], init=HaikuConstant(1))
-
-        return jnp.exp(-tau/(jnp.sqrt(2*jnp.pi)*sigma)*jnp.exp(-0.5*((energy-center)/sigma)**2))
+        return jnp.exp(
+            -tau
+            / (jnp.sqrt(2 * jnp.pi) * sigma)
+            * jnp.exp(-0.5 * ((energy - center) / sigma) ** 2)
+        )
 
 
 class Highecut(MultiplicativeComponent):
@@ -145,7 +150,8 @@ class Highecut(MultiplicativeComponent):
     A high-energy cutoff model.
 
     $$
-        \mathcal{M}(E) = \begin{cases} \exp \left( \frac{E_c - E}{E_f} \right)& \text{if $E > E_c$}\\ 1 & \text{if $E < E_c$}\end{cases}
+        \mathcal{M}(E) = \begin{cases} \exp
+        \left( \frac{E_c - E}{E_f} \right)& \text{if $E > E_c$}\\ 1 & \text{if $E < E_c$}\end{cases}
     $$
 
     ??? abstract "Parameters"
@@ -154,11 +160,10 @@ class Highecut(MultiplicativeComponent):
     """
 
     def continuum(self, energy):
+        cutoff = hk.get_parameter("E_c", [], init=HaikuConstant(1))
+        folding = hk.get_parameter("E_f", [], init=HaikuConstant(1))
 
-        cutoff = hk.get_parameter('E_c', [], init=HaikuConstant(1))
-        folding = hk.get_parameter('E_f', [], init=HaikuConstant(1))
-
-        return jnp.where(energy <= cutoff, 1., jnp.exp((cutoff-energy)/folding))
+        return jnp.where(energy <= cutoff, 1.0, jnp.exp((cutoff - energy) / folding))
 
 
 class Zedge(MultiplicativeComponent):
@@ -177,9 +182,10 @@ class Zedge(MultiplicativeComponent):
     """
 
     def continuum(self, energy):
+        E_c = hk.get_parameter("E_c", [], init=HaikuConstant(1))
+        D = hk.get_parameter("D", [], init=HaikuConstant(1))
+        z = hk.get_parameter("z", [], init=HaikuConstant(0))
 
-        E_c = hk.get_parameter('E_c', [], init=HaikuConstant(1))
-        D = hk.get_parameter('D', [], init=HaikuConstant(1))
-        z = hk.get_parameter('z', [], init=HaikuConstant(0))
-
-        return jnp.where(energy <= E_c, 1., jnp.exp(-D*(energy*(1+z)/E_c)**3))
+        return jnp.where(
+            energy <= E_c, 1.0, jnp.exp(-D * (energy * (1 + z) / E_c) ** 3)
+        )

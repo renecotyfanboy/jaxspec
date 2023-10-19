@@ -15,7 +15,7 @@ from haiku.initializers import Constant as HaikuConstant
 
 
 class AdditiveComponent(ModelComponent, ABC):
-    type = 'additive'
+    type = "additive"
 
     def continuum(self, energy):
         """
@@ -33,13 +33,14 @@ class AdditiveComponent(ModelComponent, ABC):
         This should be overloaded by the user if the model has a fine structure.
         """
 
-        return jnp.zeros_like(e_min), (e_min+e_max)/2
+        return jnp.zeros_like(e_min), (e_min + e_max) / 2
 
     '''
     def integral(self, e_min, e_max):
         r"""
-        Method for integrating an additive model between two energies. It relies on double exponential quadrature for
-        finite intervals to compute an approximation of the integral of a model.
+        Method for integrating an additive model between two energies. It relies on
+        double exponential quadrature for finite intervals to compute an approximation
+        of the integral of a model.
 
         references
         ----------
@@ -74,11 +75,10 @@ class Powerlaw(AdditiveComponent):
     """
 
     def continuum(self, energy):
+        alpha = hk.get_parameter("alpha", [], init=HaikuConstant(1.3))
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1e-4))
 
-        alpha = hk.get_parameter('alpha', [], init=HaikuConstant(1.3))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1e-4))
-
-        return norm*energy**(-alpha)
+        return norm * energy ** (-alpha)
 
 
 class AdditiveConstant(AdditiveComponent):
@@ -92,16 +92,14 @@ class AdditiveConstant(AdditiveComponent):
     """
 
     def continuum(self, energy):
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
-
-        return norm*jnp.ones_like(energy)
+        return norm * jnp.ones_like(energy)
 
     def primitive(self, energy):
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
-
-        return norm*energy
+        return norm * energy
 
 
 class Lorentz(AdditiveComponent):
@@ -117,23 +115,25 @@ class Lorentz(AdditiveComponent):
     """
 
     def emission_lines(self, e_min, e_max) -> (jax.Array, jax.Array):
+        # return the primitive of a lorentzian
+        line_energy = hk.get_parameter("E_l", [], init=HaikuConstant(1))
+        sigma = hk.get_parameter("sigma", [], init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
-        #return the primitive of a lorentzian
-        line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
-        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
-
-        #This is AI generated for tests I should double check this at some point
+        # This is AI generated for tests I should double check this at some point
         def primitive(energy):
-            return norm*(sigma/(2*jnp.pi))*jnp.arctan((energy-line_energy)/(sigma/2))
+            return (
+                norm
+                * (sigma / (2 * jnp.pi))
+                * jnp.arctan((energy - line_energy) / (sigma / 2))
+            )
 
-        return primitive(e_max) - primitive(e_min), (e_min + e_max)/2
+        return primitive(e_max) - primitive(e_min), (e_min + e_max) / 2
 
     def continuum(self, energy):
-
-        line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
-        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
+        hk.get_parameter("E_l", [], init=HaikuConstant(1))
+        hk.get_parameter("sigma", [], init=HaikuConstant(1))
+        hk.get_parameter("norm", [], init=HaikuConstant(1))
 
         return jnp.zeros_like(energy)
 
@@ -155,12 +155,11 @@ class Logparabola(AdditiveComponent):
     """
 
     def continuum(self, energy):
+        a = hk.get_parameter("a", [], init=HaikuConstant(11 / 3))
+        b = hk.get_parameter("b", [], init=HaikuConstant(0.2))
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
-        a = hk.get_parameter('a', [], init=HaikuConstant(11 / 3))
-        b = hk.get_parameter('b', [], init=HaikuConstant(0.2))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
-
-        return norm*energy**(-(a + b*jnp.log(energy)))
+        return norm * energy ** (-(a + b * jnp.log(energy)))
 
 
 class Blackbody(AdditiveComponent):
@@ -176,11 +175,10 @@ class Blackbody(AdditiveComponent):
     """
 
     def continuum(self, energy):
+        kT = hk.get_parameter("kT", [], init=HaikuConstant(11 / 3))
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
-        kT = hk.get_parameter('kT', [], init=HaikuConstant(11 / 3))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
-
-        return norm*8.0525*energy**2/((kT**4)*(jnp.exp(energy/kT)-1))
+        return norm * 8.0525 * energy**2 / ((kT**4) * (jnp.exp(energy / kT) - 1))
 
 
 class Blackbodyrad(AdditiveComponent):
@@ -196,11 +194,10 @@ class Blackbodyrad(AdditiveComponent):
     """
 
     def continuum(self, energy):
+        kT = hk.get_parameter("kT", [], init=HaikuConstant(11 / 3))
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
-        kT = hk.get_parameter('kT', [], init=HaikuConstant(11 / 3))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
-
-        return norm*1.0344e-3*energy**2/(jnp.exp(energy/kT)-1)
+        return norm * 1.0344e-3 * energy**2 / (jnp.exp(energy / kT) - 1)
 
 
 class Gauss(AdditiveComponent):
@@ -223,41 +220,48 @@ class Gauss(AdditiveComponent):
     """
 
     def emission_lines(self, e_low, e_high) -> (jax.Array, jax.Array):
-        line_energy = hk.get_parameter('E_l', [], init=HaikuConstant(1))
-        sigma = hk.get_parameter('sigma', [], init=HaikuConstant(1))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
+        line_energy = hk.get_parameter("E_l", [], init=HaikuConstant(1))
+        sigma = hk.get_parameter("sigma", [], init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
         f_low = jsp.stats.norm.cdf(e_low, loc=line_energy, scale=sigma)
         f_high = jsp.stats.norm.cdf(e_high, loc=line_energy, scale=sigma)
 
-        return norm * (f_high - f_low), (e_low + e_high)/2
+        return norm * (f_high - f_low), (e_low + e_high) / 2
 
     def continuum(self, energy):
         return jnp.zeros_like(energy)
 
 
 class APEC(AdditiveComponent):
-
-    def __init__(self, name='apec'):
+    def __init__(self, name="apec"):
         super(APEC, self).__init__(name=name)
 
-        ref = importlib.resources.files('jaxspec') / 'tables/apec_tab.npz'
+        ref = importlib.resources.files("jaxspec") / "tables/apec_tab.npz"
         with importlib.resources.as_file(ref) as path:
             files = np.load(path)
 
-        self.kT_ref = files['kT_ref']
-        self.e_ref = np.nan_to_num(files['continuum_energy'], nan=1e6)
-        self.c_ref = np.nan_to_num(files['continuum_emissivity'])
-        self.pe_ref = np.nan_to_num(files['pseudo_energy'], nan=1e6)
-        self.pc_ref = np.nan_to_num(files['pseudo_emissivity'])
-        self.energy_lines = np.nan_to_num(files['lines_energy'], nan=1e6) # .astype(np.float32))
-        self.epsilon_lines = np.nan_to_num(files['lines_emissivity'])  # .astype(np.float32))
-        self.element_lines = np.nan_to_num(files['lines_element'])  # .astype(np.int32))
+        self.kT_ref = files["kT_ref"]
+        self.e_ref = np.nan_to_num(files["continuum_energy"], nan=1e6)
+        self.c_ref = np.nan_to_num(files["continuum_emissivity"])
+        self.pe_ref = np.nan_to_num(files["pseudo_energy"], nan=1e6)
+        self.pc_ref = np.nan_to_num(files["pseudo_emissivity"])
+        self.energy_lines = np.nan_to_num(
+            files["lines_energy"], nan=1e6
+        )  # .astype(np.float32))
+        self.epsilon_lines = np.nan_to_num(
+            files["lines_emissivity"]
+        )  # .astype(np.float32))
+        self.element_lines = np.nan_to_num(files["lines_element"])  # .astype(np.int32))
 
         del files
 
-        self.trace_elements = jnp.array([3, 4, 5, 9, 11, 15, 17, 19, 21, 22, 23, 24, 25, 27, 29, 30]) - 1
-        self.metals = np.array([6, 7, 8, 10, 12, 13, 14, 16, 18, 20, 26, 28]) - 1  # Element number to python index
+        self.trace_elements = (
+            jnp.array([3, 4, 5, 9, 11, 15, 17, 19, 21, 22, 23, 24, 25, 27, 29, 30]) - 1
+        )
+        self.metals = (
+            np.array([6, 7, 8, 10, 12, 13, 14, 16, 18, 20, 26, 28]) - 1
+        )  # Element number to python index
         self.metals_one_hot = np.zeros((30,))
         self.metals_one_hot[self.metals] = 1
 
@@ -265,56 +269,78 @@ class APEC(AdditiveComponent):
         # Changer en loginterp
         # Interpoler juste sur les points qui ne sont pas tabulés
         # Ajouter l'info de la taille max des données (à resortir dans la routine qui trie les fichier apec)
-        return jnp.vectorize(lambda ecube, ccube: jnp.interp(energy, ecube, ccube), signature='(k),(k)->()')(
-            energy_cube, continuum_cube)
+        return jnp.vectorize(
+            lambda ecube, ccube: jnp.interp(energy, ecube, ccube),
+            signature="(k),(k)->()",
+        )(energy_cube, continuum_cube)
 
     def reduction_with_elements(self, Z, energy, energy_cube, continuum_cube):
         return jnp.sum(
-            self.interp_on_cubes(energy, energy_cube, continuum_cube) * jnp.where(self.metals_one_hot, Z, 1.)[None, :],
-            axis=-1)
+            self.interp_on_cubes(energy, energy_cube, continuum_cube)
+            * jnp.where(self.metals_one_hot, Z, 1.0)[None, :],
+            axis=-1,
+        )
 
     def mono_fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        kT = hk.get_parameter("kT", [], init=HaikuConstant(1))
+        Z = hk.get_parameter("Z", [], init=HaikuConstant(1))
 
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
-        kT = hk.get_parameter('kT', [], init=HaikuConstant(1))
-        Z = hk.get_parameter('Z', [], init=HaikuConstant(1))
-
-        idx = jnp.searchsorted(self.kT_ref, kT, side='left') - 1
+        idx = jnp.searchsorted(self.kT_ref, kT, side="left") - 1
 
         energy = jax_slice(self.energy_lines, idx, 2)
         epsilon = jax_slice(self.epsilon_lines, idx, 2)
         element = jax_slice(self.element_lines, idx, 2) - 1
 
-        emissivity_in_bins = jnp.where((e_low < energy) & (energy < e_high), True, False) * epsilon
-        flux_at_edges = jnp.nansum(jnp.where(jnp.isin(element, self.metals), Z, 1) * emissivity_in_bins,
-                                   axis=-1)  # Coeff for metallicity
+        emissivity_in_bins = (
+            jnp.where((e_low < energy) & (energy < e_high), True, False) * epsilon
+        )
+        flux_at_edges = jnp.nansum(
+            jnp.where(jnp.isin(element, self.metals), Z, 1) * emissivity_in_bins,
+            axis=-1,
+        )  # Coeff for metallicity
 
-        return jnp.interp(kT, jax_slice(self.kT_ref, idx, 2), flux_at_edges) * 1e14 * norm, (e_low + e_high)/2
+        return (
+            jnp.interp(kT, jax_slice(self.kT_ref, idx, 2), flux_at_edges) * 1e14 * norm,
+            (e_low + e_high) / 2,
+        )
 
     def emission_lines(self, e_low, e_high) -> (jax.Array, jax.Array):
-        #Compute the fine structure lines with e_low and e_high as array, mapping the mono_fine_structure function
-        #over the various axes of e_low and e_high
+        # Compute the fine structure lines with e_low and e_high as array, mapping the mono_fine_structure function
+        # over the various axes of e_low and e_high
 
         return jnp.vectorize(self.mono_fine_structure)(e_low, e_high)
 
-        #return jnp.zeros_like(e_low), (e_low + e_high)/2
+        # return jnp.zeros_like(e_low), (e_low + e_high)/2
 
     @partial(jnp.vectorize, excluded=(0,))
     def continuum(self, energy):
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1))
-        kT = hk.get_parameter('kT', [], init=HaikuConstant(1))
-        Z = hk.get_parameter('Z', [], init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        kT = hk.get_parameter("kT", [], init=HaikuConstant(1))
+        Z = hk.get_parameter("Z", [], init=HaikuConstant(1))
 
-        idx = jnp.searchsorted(self.kT_ref, kT, side='left') - 1  # index of left value
+        idx = jnp.searchsorted(self.kT_ref, kT, side="left") - 1  # index of left value
 
-        continuum = jnp.interp(kT, jax_slice(self.kT_ref, idx, 2),
-                               self.reduction_with_elements(Z, energy, jax_slice(self.e_ref, idx, 2),
-                                                            jax_slice(self.c_ref, idx, 2)))
-        pseudo = jnp.interp(kT, jax_slice(self.kT_ref, idx, 2),
-                            self.reduction_with_elements(Z, energy, jax_slice(self.pe_ref, idx, 2),
-                                                         jax_slice(self.pc_ref, idx, 2)))
+        continuum = jnp.interp(
+            kT,
+            jax_slice(self.kT_ref, idx, 2),
+            self.reduction_with_elements(
+                Z, energy, jax_slice(self.e_ref, idx, 2), jax_slice(self.c_ref, idx, 2)
+            ),
+        )
+        pseudo = jnp.interp(
+            kT,
+            jax_slice(self.kT_ref, idx, 2),
+            self.reduction_with_elements(
+                Z,
+                energy,
+                jax_slice(self.pe_ref, idx, 2),
+                jax_slice(self.pc_ref, idx, 2),
+            ),
+        )
 
         return (continuum + pseudo) * 1e14 * norm
+
 
 class Cutoffpl(AdditiveComponent):
     r"""
@@ -330,10 +356,8 @@ class Cutoffpl(AdditiveComponent):
     """
 
     def continuum(self, energy):
+        alpha = hk.get_parameter("alpha", [], init=HaikuConstant(1.3))
+        beta = hk.get_parameter("beta", [], init=HaikuConstant(15))
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1e-4))
 
-        alpha = hk.get_parameter('alpha', [], init=HaikuConstant(1.3))
-        beta = hk.get_parameter('beta', [], init=HaikuConstant(15))
-        norm = hk.get_parameter('norm', [], init=HaikuConstant(1e-4))
-
-        return norm*energy**(-alpha)*jnp.exp(-energy/beta)
-    
+        return norm * energy ** (-alpha) * jnp.exp(-energy / beta)

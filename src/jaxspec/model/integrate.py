@@ -7,6 +7,7 @@ class IntegrateABC(hk.Module, ABC):
     """
     Abstract class for integration methods
     """
+
     pass
 
 
@@ -23,6 +24,7 @@ class IntegrateDEQUAD(IntegrateABC):
 
 
     """
+
     @staticmethod
     def phi(t):
         return jnp.tanh(jnp.pi / 2 * jnp.sinh(t))
@@ -39,12 +41,10 @@ class IntegrateDEQUAD(IntegrateABC):
         self.x = self.phi(self.t)
         self.dx = self.dphi(self.t)
 
-
     def __call__(self, E_min, E_max):
-
-        #Change of variables to turn the integral from E_min to E_max into an integral from -1 to 1
-        x = (E_max-E_min)/2 * self.x + (E_max+E_min)/2
-        dx = (E_max-E_min)/2 * self.dx
+        # Change of variables to turn the integral from E_min to E_max into an integral from -1 to 1
+        x = (E_max - E_min) / 2 * self.x + (E_max + E_min) / 2
+        dx = (E_max - E_min) / 2 * self.dx
 
         return jnp.trapz(self.model(x) * dx, x=self.t)
 
@@ -64,7 +64,6 @@ class IntegrateTRAPZ(IntegrateABC):
         self.n = n_points
 
     def __call__(self, E_min, E_max):
-
-        #Integrate in log space
+        # Integrate in log space
         x = jnp.linspace(E_min, E_max, self.n)
-        return jnp.trapz(self.model(x)*x, x=jnp.log(x))
+        return jnp.trapz(self.model(x) * x, x=jnp.log(x))

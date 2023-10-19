@@ -28,8 +28,7 @@ class _LazyModules(Mapping):
         return len(self._raw_dict)
 
 
-def build_model(model_string='expfac*lorentz'):
-
+def build_model(model_string="expfac*lorentz"):
     @hk.without_apply_rng
     @hk.transform
     def model_func(energy):
