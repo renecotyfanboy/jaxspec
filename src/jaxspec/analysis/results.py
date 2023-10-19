@@ -1,6 +1,6 @@
 import arviz as az
 import numpy as np
-import jax.numpy as jnp
+import pandas as pd
 from numpy.typing import ArrayLike
 import matplotlib.pyplot as plt
 from ..data.observation import Observation
@@ -8,6 +8,7 @@ from ..model.abc import SpectralModel
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from typing import TypeVar, Tuple
+from astropy.cosmology import Cosmology, Planck18
 from numpyro.infer import MCMC
 import astropy.units as u
 from astropy.units import Unit
@@ -20,9 +21,15 @@ V = TypeVar("V")
 
 
 def format_parameters(parameter_name):
+    computed_parameters = ["Photon flux", "Energy flux", "Luminosity"]
+
     if parameter_name == "weight":
         # ChainConsumer add a weight column to the samples
         return parameter_name
+
+    for parameter in computed_parameters:
+        if parameter in parameter_name:
+            return parameter_name
 
     # Find second occurrence of the character '_'
     first_occurrence = parameter_name.find("_")
@@ -34,10 +41,10 @@ def format_parameters(parameter_name):
     module = rf"[{name.capitalize()} ({number})]"
 
     if parameter == "norm":
-        return r"\text{Norm" + " " + module + r"}"
+        return r"Norm " + module
 
     else:
-        return rf"{parameter}" + " " + r"\text{" + module + r"}"
+        return rf"${parameter}$" + module
 
 
 class ResultContainer(ABC):
@@ -79,26 +86,21 @@ class ChainResult(ResultContainer):
         self.inference_data = az.from_numpyro(mcmc)
         self.observations = observations
         self.samples = mcmc.get_samples()
-        self.consumer = ChainConsumer()
-
-        self.chain = Chain.from_numpyro(mcmc, "Model", kde=1)
-        self.chain.samples.columns = [
-            format_parameters(parameter) for parameter in self.chain.samples.columns
-        ]
         self._structure = structure
 
     def photon_flux(
         self,
-        e_min: float | ArrayLike,
-        e_max: float | ArrayLike,
+        e_min: float,
+        e_max: float,
         unit: Unit = u.photon / u.cm**2 / u.s,
-    ):
+    ) -> ArrayLike:
         """
-        Compute the unfolded photon flux in a given energy band.
+        Compute the unfolded photon flux in a given energy band. The flux is then added to
+        the result parameters so covariance can be plotted.
 
         Parameters:
-            e_min: The lower bound of the energy band.
-            e_max: The upper bound of the energy band.
+            e_min: The lower bound of the energy band in observer frame.
+            e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the photon flux.
 
         !!! warning
@@ -106,22 +108,33 @@ class ChainResult(ResultContainer):
             [issue](https://github.com/renecotyfanboy/jaxspec/issues) in the GitHub repository.
         """
 
-        flux = jax.vmap(lambda p: self.model.photon_flux(p, e_min, e_max))(self.params)
+        flux = jax.vmap(
+            lambda p: self.model.photon_flux(
+                p, np.asarray([e_min]), np.asarray([e_max])
+            )
+        )(self.params)
 
-        return flux * (u.photon / u.cm**2 / u.s).to(unit)
+        conversion_factor = (u.photon / u.cm**2 / u.s).to(unit)
+
+        value = flux * conversion_factor
+
+        self.samples[rf"Photon flux ({e_min:.1f}-{e_max:.1f} keV)"] = value
+
+        return value
 
     def energy_flux(
         self,
-        e_min: float | ArrayLike,
-        e_max: float | ArrayLike,
+        e_min: float,
+        e_max: float,
         unit: Unit = u.erg / u.cm**2 / u.s,
-    ):
+    ) -> ArrayLike:
         """
-        Compute the unfolded energy flux in a given energy band.
+        Compute the unfolded energy flux in a given energy band. The flux is then added to
+        the result parameters so covariance can be plotted.
 
         Parameters:
-            e_min: The lower bound of the energy band.
-            e_max: The upper bound of the energy band.
+            e_min: The lower bound of the energy band in observer frame.
+            e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the energy flux.
 
         !!! warning
@@ -130,10 +143,74 @@ class ChainResult(ResultContainer):
         """
 
         flux = jax.vmap(
-            lambda p: self.model.energy_flux(p, jnp.asarray(e_min), jnp.asarray(e_max))
+            lambda p: self.model.energy_flux(
+                p, np.asarray([e_min]), np.asarray([e_max])
+            )
         )(self.params)
 
-        return flux * (u.keV / u.cm**2 / u.s).to(unit)
+        conversion_factor = (u.keV / u.cm**2 / u.s).to(unit)
+
+        value = flux * conversion_factor
+
+        self.samples[rf"Energy flux ({e_min:.1f}-{e_max:.1f} keV)"] = value
+
+        return value
+
+    def luminosity(
+        self,
+        e_min: float,
+        e_max: float,
+        redshift: float | ArrayLike = 0,
+        observer_frame: bool = True,
+        cosmology: Cosmology = Planck18,
+        unit: Unit = u.erg / u.s,
+    ):
+        """
+        Compute the luminosity of the source specifying its redshift. The luminosity is then added to
+        the result parameters so covariance can be plotted.
+
+        Parameters:
+            e_min: The lower bound of the energy band.
+            e_max: The upper bound of the energy band.
+            redshift: The redshift of the source. It can be a distribution of redshifts.
+            observer_frame: Whether the input bands are defined in observer frame or not.
+            cosmology: Chosen cosmology.
+            unit: The unit of the luminosity.
+        """
+
+        if not observer_frame:
+            raise NotImplementedError()
+
+        flux = self.energy_flux(e_min * (1 + redshift), e_max * (1 + redshift)) * (
+            u.erg / u.cm**2 / u.s
+        )
+
+        value = (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(
+            unit
+        )
+
+        self.samples[rf"Luminosity ({e_min:.1f}-{e_max:.1f} keV)"] = value
+
+        return value
+
+    @property
+    def chain(self) -> Chain:
+        df = pd.DataFrame.from_dict(
+            {key: np.ravel(value) for key, value in self.samples.items()}
+        )
+        chain = Chain(samples=df, name="Model")
+        chain.samples.columns = [
+            format_parameters(parameter) for parameter in chain.samples.columns
+        ]
+
+        return chain
+
+    @property
+    def consumer(self) -> ChainConsumer:
+        consumer = ChainConsumer()
+        consumer.add_chain(self.chain)
+
+        return consumer
 
     @property
     def params(self):
@@ -212,10 +289,23 @@ class ChainResult(ResultContainer):
             caption="Results of the fit", label="tab:results"
         )
 
-    def plot_corner(self, **kwargs):
-        consumer = ChainConsumer()
-        consumer.set_plot_config(PlotConfig(usetex=False))
-        consumer.add_chain(self.chain)
+    def plot_corner(
+        self,
+        config: PlotConfig = PlotConfig(
+            usetex=False, summarise=False, label_font_size=6
+        ),
+        **kwargs,
+    ):
+        """
+        Plot the corner plot of the posterior distribution of the parameters. This method uses the ChainConsumer.
+
+        Parameters:
+            config: The configuration of the plot.
+            **kwargs: Additional arguments passed to ChainConsumer.plotter.plot.
+        """
+
+        consumer = self.consumer
+        consumer.set_plot_config(config)
 
         # Context for default mpl style
         with plt.style.context("default"):

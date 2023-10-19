@@ -52,6 +52,7 @@ plugins:
           import:
             - https://docs.python.org/3/objects.inv
             - https://docs.astropy.org/en/stable/objects.inv
+            - https://samreay.github.io/ChainConsumer/objects.inv
           options:
             members_order: alphabetical
             docstring_section_style: table

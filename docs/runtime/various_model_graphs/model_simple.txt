@@ -1,8 +1,8 @@
 graph LR
-    6fa42968-cfa3-4b93-a25a-ada7571ffb46("Tbabs (1)")
-    3679ff8b-1662-4964-99d9-52c5d00cdfb3{x}
-    ebc8a3fe-2807-45bf-9b33-8558de1d46b3("Powerlaw (1)")
+    747dae85-5b1f-465b-9601-2c2b6dbc3f03("Tbabs (1)")
+    d26125b7-8ee0-4396-a4b9-0085d19028ad{x}
+    82d24e77-331f-4836-be5b-69989a3938e4("Powerlaw (1)")
     out("Output")
-    6fa42968-cfa3-4b93-a25a-ada7571ffb46 --> 3679ff8b-1662-4964-99d9-52c5d00cdfb3
-    3679ff8b-1662-4964-99d9-52c5d00cdfb3 --> out
-    ebc8a3fe-2807-45bf-9b33-8558de1d46b3 --> 3679ff8b-1662-4964-99d9-52c5d00cdfb3
+    747dae85-5b1f-465b-9601-2c2b6dbc3f03 --> d26125b7-8ee0-4396-a4b9-0085d19028ad
+    d26125b7-8ee0-4396-a4b9-0085d19028ad --> out
+    82d24e77-331f-4836-be5b-69989a3938e4 --> d26125b7-8ee0-4396-a4b9-0085d19028ad
