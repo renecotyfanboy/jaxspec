@@ -6,6 +6,7 @@ from haiku._src import base
 from uuid import uuid4
 from jax.scipy.integrate import trapezoid
 from abc import ABC
+from simpleeval import simple_eval
 
 
 class SpectralModel:
@@ -26,6 +27,67 @@ class SpectralModel:
 
         self.n_parameters = hk.data_structures.tree_size(self.params)
 
+    @classmethod
+    def from_string(cls, string: str) -> SpectralModel:
+        """
+        This constructor enable to build a model from a string. The string should be a valid python expression, with
+        the following constraints :
+
+        * The model components should be defined in the jaxspec.model.list module
+        * The model components should be separated by a * or a + (no convolution yet)
+        * The model components should be written with their parameters in parentheses
+
+        Parameters:
+            string : The string to parse
+
+        Examples:
+            An absorbed model with a powerlaw and a blackbody:
+
+            >>> model = SpectralModel.from_string("Tbabs()*(Powerlaw() + Blackbody())")
+        """
+
+        from .list import model_components
+
+        return simple_eval(string, functions=model_components)
+
+    def to_string(self) -> str:
+        """
+        This method return the string representation of the model.
+
+        Examples:
+            Build a model from a string and convert it back to a string:
+
+            >>> model = SpectralModel.from_string("Tbabs()*(Powerlaw() + Blackbody())")
+            >>> model.to_string()
+            "Tbabs()*(Powerlaw() + Blackbody())"
+        """
+
+        return str(self)
+
+    def __str__(self) -> SpectralModel:
+        def build_expression(node_id):
+            node = self.graph.nodes[node_id]
+            if node["type"] == "component":
+                string = node["component"].__name__
+
+                if node["kwargs"]:
+                    kwargs = ", ".join([f"{k}={v}" for k, v in node["kwargs"].items()])
+                    string += f"({kwargs})"
+                else:
+                    string += "()"
+                return string
+
+            elif node["type"] == "operation":
+                predecessors = list(self.graph.predecessors(node_id))
+                operands = [build_expression(pred) for pred in predecessors]
+                operation = node["operation_label"]
+                return f"({f' {operation} '.join(operands)})"
+            elif node["type"] == "out":
+                predecessors = list(self.graph.predecessors(node_id))
+                return build_expression(predecessors[0])
+
+        return build_expression("out")[1:-1]
+
     @property
     def transformed_func_photon(self):
         return hk.without_apply_rng(
@@ -45,9 +107,30 @@ class SpectralModel:
         return self.transformed_func_photon.init(None, jnp.ones(10), jnp.ones(10))
 
     def photon_flux(self, *args, **kwargs):
+        r"""
+        Compute the expected counts between $E_\min$ and $E_\max$ by integrating the model.
+
+        $$ \Phi_{\text{photon}}\left(E_\min, ~E_\max\right) =
+        \int _{E_\min}^{E_\max}\text{d}E ~ \mathcal{M}\left( E \right)
+        \quad \left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$$
+
+        !!! info
+            This method is internally used in the inference process and should not be used directly. See
+            [`photon_flux`](jaxspec.analysis.results.ChainResult.photon_flux) to compute
+            the photon flux associated with a set of fitted parameters in a
+            [`ChainResult`](jaxspec.analysis.results.ChainResult)
+            instead.
+        """
         return self.transformed_func_photon.apply(*args, **kwargs)
 
     def energy_flux(self, *args, **kwargs):
+        r"""
+        Compute the expected energy flux between $E_\min$ and $E_\max$ by integrating the model.
+
+        $$ \Phi_{\text{energy}}\left(E_\min, ~E_\max\right) =
+        \int _{E_\min}^{E_\max}\text{d}E ~ E ~ \mathcal{M}\left( E \right)
+        \quad \left[\frac{\text{keV}}{\text{cm}^2\text{s}}\right]$$
+        """
         return self.transformed_func_energy.apply(*args, **kwargs)
 
     def build_namespace(self):
@@ -200,15 +283,27 @@ class SpectralModel:
         # Random static node id to keep it trackable in the graph
         node_id = str(uuid4())
 
+        if component.type == "additive":
+
+            def lam_func(e):
+                return component().continuum(e) + component().emission_lines(e)
+
+        elif component.type == "multiplicative":
+
+            def lam_func(e):
+                return component().continuum(e)
+
+        else:
+
+            def lam_func(e):
+                return print("Some components are not working at this stage")
+
         node_properties = {
             "type": "component",
             "component_type": component.type,
             "name": component.__name__.lower(),
             "component": component,
-            # TODO : Warning, this does not take into account the params defined in emission lines
-            "params": hk.transform(lambda e: component().continuum(e)).init(
-                None, jnp.ones(1)
-            ),
+            "params": hk.transform(lam_func).init(None, jnp.ones(1)),
             "fine_structure": False,
             "kwargs": kwargs,
             "depth": 0,
@@ -245,24 +340,6 @@ class SpectralModel:
         nx.set_node_attributes(graph, {node_id: function}, "function")
         nx.set_node_attributes(graph, {node_id: name}, "operation_label")
 
-        if (
-            node_id in self.labels.keys()
-            or node_id in other.labels.keys()
-            and not set(other.labels.keys()) & set(self.labels.keys())
-        ):
-            # Check that no node ID is duplicated
-            # This should never happen, but if it does, it's a bad luck
-            # However it's a good occasion to play lotto tonight
-            class BadLuckError(Exception):
-                pass
-
-            raise BadLuckError(
-                "Congratulation, you may have experienced an uuid4 collision, this has ~50% "
-                "chance to happen if you generate an uuid4 every second for a century. If "
-                "rerunning this code fixes this issue, consider playing lotto tonight and open "
-                "an issue in the JAXSPEC repository. "
-            )
-
         # Merge label dictionaries
         labels = self.labels | other.labels
         labels[node_id] = operation
@@ -290,7 +367,7 @@ class SpectralModel:
 
     def __mul__(self, other: SpectralModel) -> SpectralModel:
         return self.compose(
-            other, operation="mul", function=lambda x, y: x * y, name=r"$\times$"
+            other, operation="mul", function=lambda x, y: x * y, name=r"*"
         )
 
     def export_to_mermaid(self, file=None):

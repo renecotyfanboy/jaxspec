@@ -9,10 +9,11 @@ nav:
     #- Build custom component : 'tutorial/build_custom_component.ipynb'
     #- Mock a spectrum : 'tutorial/basic_fit.ipynb'
   - API Reference:
-    - Data containers: 'references/data.md'
-    - Result containers: 'references/results.md'
+    - Spectral model base class: 'references/model.md'
     - Additive models: 'references/additive.md'
     - Multiplicative models: 'references/multiplicative.md'
+    - Data containers: 'references/data.md'
+    - Result containers: 'references/results.md'
 
 theme:
   name: material

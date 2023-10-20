@@ -45,3 +45,6 @@ except:
 ``` mermaid
 --8<-- "docs/runtime/various_model_graphs/model_complex.txt"
 ```
+
+Operations between model components can be used to build spectral models on the fly, encapsulated
+in a [SpectralModel]() instance.
