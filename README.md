@@ -1,7 +1,7 @@
 # JAXspec
 
-[![Documentation Status](https://readthedocs.org/projects/jaxspec/badge/?version=latest)](https://jaxspec.readthedocs.io/en/latest/?badge=latest)
-[![codecov](https://codecov.io/gh/renecotyfanboy/jaxspec/graph/badge.svg?token=UMYNO2YBCR)](https://codecov.io/gh/renecotyfanboy/jaxspec)
+![Read the Docs](https://img.shields.io/readthedocs/jaxspec?style=for-the-badge)
+![Codecov](https://img.shields.io/codecov/c/github/renecotyfanboy/jaxspec?style=for-the-badge)
 
 A library for fitting X-ray spectra with jax and numpyro
 
