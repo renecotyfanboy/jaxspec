@@ -116,9 +116,9 @@ class SpectralModel:
 
         !!! info
             This method is internally used in the inference process and should not be used directly. See
-            [`photon_flux`](jaxspec.analysis.results.ChainResult.photon_flux) to compute
+            [`photon_flux`](/references/results/#jaxspec.analysis.results.ChainResult.photon_flux) to compute
             the photon flux associated with a set of fitted parameters in a
-            [`ChainResult`](jaxspec.analysis.results.ChainResult)
+            [`ChainResult`](/references/results/#jaxspec.analysis.results.ChainResult)
             instead.
         """
         return self.transformed_func_photon.apply(*args, **kwargs)
@@ -130,6 +130,13 @@ class SpectralModel:
         $$ \Phi_{\text{energy}}\left(E_\min, ~E_\max\right) =
         \int _{E_\min}^{E_\max}\text{d}E ~ E ~ \mathcal{M}\left( E \right)
         \quad \left[\frac{\text{keV}}{\text{cm}^2\text{s}}\right]$$
+
+        !!! info
+            This method is internally used in the inference process and should not be used directly. See
+            [`energy_flux`](/references/results/#jaxspec.analysis.results.ChainResult.energy_flux) to compute
+            the energy flux associated with a set of fitted parameters in a
+            [`ChainResult`](/references/results/#jaxspec.analysis.results.ChainResult)
+            instead.
         """
         return self.transformed_func_energy.apply(*args, **kwargs)
 
@@ -286,7 +293,9 @@ class SpectralModel:
         if component.type == "additive":
 
             def lam_func(e):
-                return component().continuum(e) + component().emission_lines(e)
+                return (
+                    component().continuum(e) + component().emission_lines(e, e + 1)[0]
+                )
 
         elif component.type == "multiplicative":
 
@@ -398,6 +407,9 @@ class SpectralModel:
         else:
             with open(file, "w") as f:
                 f.write(mermaid_code)
+
+    def _repr_html_(self):
+        return "``` mermaid \n" + self.export_to_mermaid() + "\n```"
 
     def plot(self, figsize=(8, 8)):
         import matplotlib.pyplot as plt

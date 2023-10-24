@@ -5,7 +5,6 @@ from numpy.typing import ArrayLike
 import matplotlib.pyplot as plt
 from ..data.observation import Observation
 from ..model.abc import SpectralModel
-from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from typing import TypeVar, Tuple
 from astropy.cosmology import Cosmology, Planck18
@@ -47,30 +46,7 @@ def format_parameters(parameter_name):
         return rf"${parameter}$" + module
 
 
-class ResultContainer(ABC):
-    """
-    This class is a container for the results of a fit.
-
-    TODO : Add flux, luminosity, etc.
-    """
-
-    model: SpectralModel
-
-    def __init__(self, model: SpectralModel, structure: Mapping[K, V]):
-        self.model = model
-        self._structure = structure
-
-    @abstractmethod
-    def plot_ppc(self, index: int, percentile: Tuple[int, int] = (14, 86)):
-        ...
-
-    @property
-    @abstractmethod
-    def table(self):
-        ...
-
-
-class ChainResult(ResultContainer):
+class ChainResult:
     # TODO : Add docstring
     # TODO : Add type hints
     # TODO : Add proper separation between params and samples, cf from haiku and numpyro
@@ -81,12 +57,19 @@ class ChainResult(ResultContainer):
         mcmc: MCMC,
         structure: Mapping[K, V],
     ):
-        super().__init__(model, structure)
-
+        self.model = model
+        self._structure = structure
         self.inference_data = az.from_numpyro(mcmc)
         self.observations = observations
         self.samples = mcmc.get_samples()
         self._structure = structure
+
+        # Add the model used in fit to the metadata
+        for group in self.inference_data.groups():
+            group_name = group.split("/")[-1]
+            metadata = getattr(self.inference_data, group_name).attrs
+            metadata["model"] = str(model)
+            # TODO : Store metadata about observations used in the fitting process
 
     def photon_flux(
         self,

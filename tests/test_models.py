@@ -15,7 +15,7 @@ sys.path.append(source_dir)
 
 class TestModules(chex.TestCase):
     def setUp(self):
-        from jaxspec.model import (
+        from jaxspec.model.list import (
             model_components,
             additive_components,
         )

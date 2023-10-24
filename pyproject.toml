@@ -20,13 +20,14 @@ matplotlib = "^3.8.0"
 arviz = "^0.16.1"
 chainconsumer = "^1.0.0"
 simpleeval = "^0.9.13"
+cmasher = "^1.6.3"
 
 
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.5.3"
 mkdocs-material = "^9.4.6"
 mkdocstrings = {extras = ["python"], version = "^0.23.0"}
-mkdocs-jupyter = "^0.24.6"
+mkdocs-gallery = "^0.7.8"
 
 
 [tool.poetry.group.test.dependencies]
