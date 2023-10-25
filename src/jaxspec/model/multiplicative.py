@@ -8,7 +8,7 @@ import numpy as np
 import importlib.resources
 from haiku.initializers import Constant as HaikuConstant
 from astropy.table import Table
-from . import ModelComponent
+from .abc import ModelComponent
 
 
 class MultiplicativeComponent(ModelComponent, ABC):

@@ -1,10 +1,9 @@
-::: jaxspec.analysis.results.ChainResult
+::: jaxspec.model.abc.SpectralModel
     options:
       members:
         - photon_flux
         - energy_flux
-        - luminosity
-        - plot_ppc
-        - plot_corner
+        - from_string
+        - to_string
       show_root_heading: true
       show_root_toc_entry: false

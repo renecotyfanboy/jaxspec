@@ -10,7 +10,7 @@ import numpy as np
 import importlib.resources
 from jax.lax import dynamic_slice_in_dim as jax_slice
 from functools import partial
-from . import ModelComponent
+from .abc import ModelComponent
 from haiku.initializers import Constant as HaikuConstant
 
 

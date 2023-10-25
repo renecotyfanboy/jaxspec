@@ -2,6 +2,7 @@ import haiku as hk
 import jax.numpy as jnp
 import numpyro
 import jax
+from typing import Callable, Mapping
 from abc import ABC, abstractmethod
 from jax import random
 from jax.tree_util import tree_map
@@ -58,8 +59,11 @@ class ForwardModelFit(ABC):
     """
 
     model: SpectralModel
+    """The model to fit to the data."""
     observations: list[Observation]
+    """The observations to fit the model to."""
     count_function: hk.Transformed
+    """A function enabling the forward modelling of observations with the given instrumental setup."""
     pars: dict
 
     def __init__(
@@ -89,7 +93,17 @@ class BayesianModel(ForwardModelFit):
     def __init__(self, model, observations):
         super().__init__(model, observations)
 
-    def numpyro_model(self, prior_distributions):
+    def numpyro_model(
+        self, prior_distributions: Mapping[str, Mapping[str, Distribution]]
+    ) -> Callable:
+        """
+        Build the numpyro model for the Bayesian fit. It returns a callable which can be used
+        to fit the model using numpyro's various samplers.
+
+        Parameters:
+            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
+        """
+
         def model():
             prior_params = build_prior(prior_distributions)
 
@@ -111,14 +125,29 @@ class BayesianModel(ForwardModelFit):
 
     def fit(
         self,
-        prior_distributions,
+        prior_distributions: Mapping[str, Mapping[str, Distribution]],
         rng_key: int = 0,
         num_chains: int = 4,
         num_warmup: int = 1000,
         num_samples: int = 1000,
         jit_model: bool = False,
         mcmc_kwargs: dict = {},
-    ):
+    ) -> ChainResult:
+        """
+        Fit the model to the data using NUTS sampler from numpyro. This is the default sampler in JAXspec.
+
+        Parameters:
+            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
+            rng_key: the random key used to initialize the sampler.
+            num_chains: the number of chains to run.
+            num_warmup: the number of warmup steps.
+            num_samples: the number of samples to draw.
+            jit_model: whether to jit the model or not.
+            mcmc_kwargs: additional arguments to pass to the MCMC sampler. See [`MCMC`][numpyro.infer.mcmc.MCMC] for more details.
+
+        Returns:
+            A [`ChainResult`][jaxspec.analysis.results.ChainResult] instance containing the results of the fit.
+        """
         # Instantiate Bayesian model
         bayesian_model = self.numpyro_model(prior_distributions)
 

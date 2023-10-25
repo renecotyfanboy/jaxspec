@@ -2,17 +2,17 @@ site_name: JAXspec
 
 nav:
   - Home: 'index.md'
-  - Tutorial:
-    - 'tutorial/index.md'
-    - Basic fitting workflow : 'tutorial/basic_fit.md'
-    - Build a model : 'tutorial/build_a_model.md'
-    #- Build custom component : 'tutorial/build_custom_component.ipynb'
-    #- Mock a spectrum : 'tutorial/basic_fit.ipynb'
+  - Theory:
+    - 'theory/index.md'
+    - Instrument : 'theory/instrument.md'
+  - Examples: generated/gallery
   - API Reference:
-    - Data containers: 'references/data.md'
-    - Result containers: 'references/results.md'
+    - Spectral model base: 'references/model.md'
     - Additive models: 'references/additive.md'
     - Multiplicative models: 'references/multiplicative.md'
+    - Data containers: 'references/data.md'
+    - Fitting: 'references/fitting.md'
+    - Result containers: 'references/results.md'
 
 theme:
   name: material
@@ -23,20 +23,22 @@ theme:
 #    - navigation.instant
     - navigation.tabs
     - navigation.indexes
-  favicon: logo/xifu_mini.svg
-  logo: logo/xifu_mini.svg
+  favicon: logo/logo_small.svg
+  logo: logo/logo_small.svg
   icon:
     repo: fontawesome/brands/github
 
   palette:
     # Palette toggle for dark mode
     - scheme: slate
+      #primary: cyan
       toggle:
         icon: material/toggle-switch-off-outline
         name: Switch to light mode
 
     # Palette toggle for light mode
     - scheme: default
+      #primary: cyan
       toggle:
         icon: material/toggle-switch
         name: Switch to dark mode
@@ -44,6 +46,9 @@ theme:
 plugins:
   - search
   - autorefs
+  - gallery:
+      examples_dirs: docs/examples          # path to your example scripts
+      gallery_dirs: docs/generated/gallery  # where to save generated gallery
   - mkdocstrings:
       default_handler: python
       handlers:
@@ -53,6 +58,8 @@ plugins:
             - https://docs.python.org/3/objects.inv
             - https://docs.astropy.org/en/stable/objects.inv
             - https://samreay.github.io/ChainConsumer/objects.inv
+            - https://num.pyro.ai/en/stable/objects.inv
+            - https://dm-haiku.readthedocs.io/en/latest/objects.inv
           options:
             members_order: alphabetical
             docstring_section_style: table
@@ -65,39 +72,41 @@ plugins:
         - projects
         - social
         - typeset
-  - mkdocs-jupyter:
-      include_source: true
-      execute: false
-      include_requirejs: true
-      remove_tag_config:
-        remove_input_tags:
-          - hide_code
 
-#Render MathJax equations
+
 markdown_extensions:
+
+  # Python Markdown
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+
+  # Python Markdown Extensions
   - pymdownx.arithmatex:
       generic: true
-  - admonition
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
   - pymdownx.details
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
-  - pymdownx.highlight:
-      anchor_linenums: true
-      line_spans: __span
-      pygments_lang_class: true
-  - pymdownx.inlinehilite
-  - pymdownx.snippets
-  - pymdownx.tabbed:
-      alternate_style: true
-  - attr_list
-  - md_in_html
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
-  - tables
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
 
 repo_url: https://github.com/renecotyfanboy/jaxspec
 repo_name: jaxspec
