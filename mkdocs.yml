@@ -2,12 +2,9 @@ site_name: JAXspec
 
 nav:
   - Home: 'index.md'
-  - Tutorial:
-    - 'tutorial/index.md'
-    - Basic fitting workflow : 'tutorial/basic_fit.md'
-    - Build a model : 'tutorial/build_a_model.md'
-    #- Build custom component : 'tutorial/build_custom_component.ipynb'
-    #- Mock a spectrum : 'tutorial/basic_fit.ipynb'
+  - Theory:
+    - 'theory/index.md'
+    - Instrument : 'theory/instrument.md'
   - Examples: generated/gallery
   - API Reference:
     - Spectral model base: 'references/model.md'
