@@ -79,4 +79,4 @@ class CustomMultiplicativeComponent(MultiplicativeComponent):
             return jnp.abs(jnp.cos(energy/E0))
 
 # %% New cell
-# Weeeeee
+# These new components are easily foldable into existing models.

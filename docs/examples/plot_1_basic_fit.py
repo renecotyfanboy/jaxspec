@@ -49,8 +49,12 @@ result = forward.fit(prior,
                      mcmc_kwargs={'progress_bar': False})
 
 # %% New cell
-# The fourth step consists in defining the likelihood for the model parameters.
+# Finally, you can print the results, in a LaTeX table for example.
 print(result.table())
 
 # %% New cell
-# And that's it !
+# You can also plot the parameter covariances using the `plot_corner` method.
+result.plot_corner()
+
+# %% New cell
+# This is it!
