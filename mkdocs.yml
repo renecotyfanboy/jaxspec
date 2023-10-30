@@ -47,6 +47,7 @@ plugins:
   - search
   - autorefs
   - gallery:
+      conf_script: docs/conf.py
       examples_dirs: docs/examples          # path to your example scripts
       gallery_dirs: docs/generated/gallery  # where to save generated gallery
   - mkdocstrings:
@@ -60,6 +61,7 @@ plugins:
             - https://samreay.github.io/ChainConsumer/objects.inv
             - https://num.pyro.ai/en/stable/objects.inv
             - https://dm-haiku.readthedocs.io/en/latest/objects.inv
+            - https://python.arviz.org/en/stable/objects.inv
           options:
             members_order: alphabetical
             docstring_section_style: table
