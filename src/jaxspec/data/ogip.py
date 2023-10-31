@@ -116,9 +116,7 @@ class DataRMF:
 
     """
 
-    def __init__(
-        self, energ_lo, energ_hi, n_grp, f_chan, n_chan, matrix, channel, e_min, e_max
-    ):
+    def __init__(self, energ_lo, energ_hi, n_grp, f_chan, n_chan, matrix, channel, e_min, e_max):
         # RMF stuff
         self.energ_lo = energ_lo  # "Entry" energies
         self.energ_hi = energ_hi  # "Entry" energies
@@ -151,13 +149,9 @@ class DataRMF:
             else:
                 for j in range(n_grp):
                     low = self.f_chan[i][j]
-                    high = min(
-                        self.f_chan[i][j] + self.n_chan[i][j], self.full_matrix.shape[1]
-                    )
+                    high = min(self.f_chan[i][j] + self.n_chan[i][j], self.full_matrix.shape[1])
 
-                    self.full_matrix[i, low:high] = self.matrix_entry[i][
-                        base : base + self.n_chan[i][j]
-                    ]
+                    self.full_matrix[i, low:high] = self.matrix_entry[i][base : base + self.n_chan[i][j]]
 
                     base += self.n_chan[i][j]
 

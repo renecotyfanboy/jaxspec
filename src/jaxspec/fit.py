@@ -66,13 +66,9 @@ class ForwardModelFit(ABC):
     """A function enabling the forward modelling of observations with the given instrumental setup."""
     pars: dict
 
-    def __init__(
-        self, model: SpectralModel, observations: Observation | list[Observation]
-    ):
+    def __init__(self, model: SpectralModel, observations: Observation | list[Observation]):
         self.model = model
-        self.observations = (
-            [observations] if isinstance(observations, Observation) else observations
-        )
+        self.observations = [observations] if isinstance(observations, Observation) else observations
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
 
     @abstractmethod
@@ -93,9 +89,7 @@ class BayesianModel(ForwardModelFit):
     def __init__(self, model, observations):
         super().__init__(model, observations)
 
-    def numpyro_model(
-        self, prior_distributions: Mapping[str, Mapping[str, Distribution]]
-    ) -> Callable:
+    def numpyro_model(self, prior_distributions: Mapping[str, Mapping[str, Distribution]]) -> Callable:
         """
         Build the numpyro model for the Bayesian fit. It returns a callable which can be used
         to fit the model using numpyro's various samplers.
@@ -108,9 +102,7 @@ class BayesianModel(ForwardModelFit):
             prior_params = build_prior(prior_distributions)
 
             for i, obs in enumerate(self.observations):
-                transformed_model = hk.without_apply_rng(
-                    hk.transform(lambda par: CountForwardModel(self.model, obs)(par))
-                )
+                transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(self.model, obs)(par)))
 
                 obs_model = jax.jit(lambda p: transformed_model.apply(None, p))
 

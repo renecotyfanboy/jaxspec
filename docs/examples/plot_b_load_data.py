@@ -8,7 +8,7 @@ file. JAXspec provides a simple way to load this data using the `Observation.fro
 
 from jaxspec.data.observation import Observation
 
-#observation = Observation.from_pha_file("docs/examples/data/obs.pha")
+# observation = Observation.from_pha_file("docs/examples/data/obs.pha")
 
 # %% New cell
 # If you only want to load the instrument related data (i.e. the response matrix and the ancillary response file),
@@ -16,7 +16,7 @@ from jaxspec.data.observation import Observation
 
 from jaxspec.data.instrument import Instrument
 
-#instrument = Instrument.from_ogip_file("docs/examples/data/PN.arf", "docs/examples/data/PN.rmf")
+# instrument = Instrument.from_ogip_file("docs/examples/data/PN.arf", "docs/examples/data/PN.rmf")
 
-#%% New cell
+# %% New cell
 # This is basically the way you load data using JAXspec

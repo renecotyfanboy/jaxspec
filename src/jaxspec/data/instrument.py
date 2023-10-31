@@ -60,7 +60,7 @@ class Instrument:
         rmf_file: Union[str, os.PathLike],
         exposure: float,
         grouping: np.ndarray | None = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Load the data from OGIP files.
@@ -102,23 +102,15 @@ class Instrument:
         high_energy = self.high_energy
 
         # Out energies considering grouping
-        e_min = np.nanmin(
-            np.where(grouping > 0, grouping, np.nan) * rmf.e_min.value[None, :], axis=1
-        )
-        e_max = np.nanmax(
-            np.where(grouping > 0, grouping, np.nan) * rmf.e_max.value[None, :], axis=1
-        )
+        e_min = np.nanmin(np.where(grouping > 0, grouping, np.nan) * rmf.e_min.value[None, :], axis=1)
+        e_max = np.nanmax(np.where(grouping > 0, grouping, np.nan) * rmf.e_max.value[None, :], axis=1)
 
         row_idx = np.ones(grouping.shape[0], dtype=bool)
         row_idx *= (e_min >= low_energy) & (e_max <= high_energy)
 
         col_idx = np.ones(rmf.energ_lo.shape, dtype=bool)
-        col_idx *= (
-            rmf.energ_lo.value > 0.0
-        )  # Exclude channels with 0. as lower energy bound
-        col_idx *= (
-            rmf.full_matrix.sum(axis=0) > 0
-        )  # Exclude channels with no contribution
+        col_idx *= rmf.energ_lo.value > 0.0  # Exclude channels with 0. as lower energy bound
+        col_idx *= rmf.full_matrix.sum(axis=0) > 0  # Exclude channels with no contribution
 
         # In energy grid for the model, we integrate it using trapezoid evaluated on edges (2 points)
         in_energies = np.stack(

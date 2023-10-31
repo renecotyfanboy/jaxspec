@@ -91,11 +91,7 @@ class ChainResult:
             [issue](https://github.com/renecotyfanboy/jaxspec/issues) in the GitHub repository.
         """
 
-        flux = jax.vmap(
-            lambda p: self.model.photon_flux(
-                p, np.asarray([e_min]), np.asarray([e_max])
-            )
-        )(self.params)
+        flux = jax.vmap(lambda p: self.model.photon_flux(p, np.asarray([e_min]), np.asarray([e_max])))(self.params)
 
         conversion_factor = (u.photon / u.cm**2 / u.s).to(unit)
 
@@ -125,11 +121,7 @@ class ChainResult:
             [issue](https://github.com/renecotyfanboy/jaxspec/issues) in the GitHub repository.
         """
 
-        flux = jax.vmap(
-            lambda p: self.model.energy_flux(
-                p, np.asarray([e_min]), np.asarray([e_max])
-            )
-        )(self.params)
+        flux = jax.vmap(lambda p: self.model.energy_flux(p, np.asarray([e_min]), np.asarray([e_max])))(self.params)
 
         conversion_factor = (u.keV / u.cm**2 / u.s).to(unit)
 
@@ -164,13 +156,9 @@ class ChainResult:
         if not observer_frame:
             raise NotImplementedError()
 
-        flux = self.energy_flux(e_min * (1 + redshift), e_max * (1 + redshift)) * (
-            u.erg / u.cm**2 / u.s
-        )
+        flux = self.energy_flux(e_min * (1 + redshift), e_max * (1 + redshift)) * (u.erg / u.cm**2 / u.s)
 
-        value = (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(
-            unit
-        )
+        value = (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(unit)
 
         self.samples[rf"Luminosity ({e_min:.1f}-{e_max:.1f} keV)"] = value
 
@@ -178,13 +166,9 @@ class ChainResult:
 
     @property
     def chain(self) -> Chain:
-        df = pd.DataFrame.from_dict(
-            {key: np.ravel(value) for key, value in self.samples.items()}
-        )
+        df = pd.DataFrame.from_dict({key: np.ravel(value) for key, value in self.samples.items()})
         chain = Chain(samples=df, name="Model")
-        chain.samples.columns = [
-            format_parameters(parameter) for parameter in chain.samples.columns
-        ]
+        chain.samples.columns = [format_parameters(parameter) for parameter in chain.samples.columns]
 
         return chain
 
@@ -213,14 +197,10 @@ class ChainResult:
     def plot_ppc(self, index: int, percentile: Tuple[int, int] = (14, 86)):
         from ..data.util import fakeit_for_multiple_parameters
 
-        count = fakeit_for_multiple_parameters(
-            self.observations[0], self.model, self.params
-        )
+        count = fakeit_for_multiple_parameters(self.observations[0], self.model, self.params)
 
         with plt.style.context("default"):
-            fig, axs = plt.subplots(
-                2, 1, figsize=(8, 5), sharex=True, height_ratios=[0.6, 0.4]
-            )
+            fig, axs = plt.subplots(2, 1, figsize=(8, 5), sharex=True, height_ratios=[0.6, 0.4])
 
             observation = self.observations[index]
 
@@ -243,8 +223,7 @@ class ChainResult:
             axs[0].loglog()
 
             residuals = np.percentile(
-                (observation.observed_counts - count)
-                / np.diff(np.percentile(count, percentile, axis=0), axis=0),
+                (observation.observed_counts - count) / np.diff(np.percentile(count, percentile, axis=0), axis=0),
                 percentile,
                 axis=0,
             )
@@ -268,15 +247,11 @@ class ChainResult:
             plt.subplots_adjust(hspace=0.0)
 
     def table(self):
-        return self.consumer.analysis.get_latex_table(
-            caption="Results of the fit", label="tab:results"
-        )
+        return self.consumer.analysis.get_latex_table(caption="Results of the fit", label="tab:results")
 
     def plot_corner(
         self,
-        config: PlotConfig = PlotConfig(
-            usetex=False, summarise=False, label_font_size=6
-        ),
+        config: PlotConfig = PlotConfig(usetex=False, summarise=False, label_font_size=6),
         **kwargs,
     ):
         """

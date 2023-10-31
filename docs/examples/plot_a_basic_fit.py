@@ -18,7 +18,7 @@ numpyro.set_host_device_count(4)
 from jaxspec.model.additive import Powerlaw
 from jaxspec.model.multiplicative import Tbabs
 
-model = Tbabs()*Powerlaw()
+model = Tbabs() * Powerlaw()
 
 # %% New cell
 # The second step consists in defining the data to be fitted.
@@ -31,22 +31,11 @@ forward = BayesianModel(model, list(obs_list.values()))
 # The third step consists in defining the priors for the model parameters.
 import numpyro.distributions as dist
 
-prior = {
-    'powerlaw_1': {
-        'alpha': dist.Uniform(0, 10),
-        'norm': dist.Exponential(1e4)
-    },
-    'tbabs_1': {
-        'N_H': dist.Uniform(0, 1)
-    }
-}
+prior = {"powerlaw_1": {"alpha": dist.Uniform(0, 10), "norm": dist.Exponential(1e4)}, "tbabs_1": {"N_H": dist.Uniform(0, 1)}}
 
 # %% New cell
 # The fourth step consists in defining the likelihood for the model parameters.
-result = forward.fit(prior,
-                     num_chains=4,
-                     num_samples=1000,
-                     mcmc_kwargs={'progress_bar': False})
+result = forward.fit(prior, num_chains=4, num_samples=1000, mcmc_kwargs={"progress_bar": False})
 
 # %% New cell
 # Finally, you can print the results, in a LaTeX table for example.

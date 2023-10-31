@@ -6,7 +6,7 @@ library. This library provides powerful tool to explore Bayesian models. In this
 to analyse the results of a fit.
 """
 
-from plot_1_basic_fit import result
+from doc_variable import result  # Loading a result object from another notebook
 import arviz as az
 
 # %% New cell
@@ -18,7 +18,7 @@ import arviz as az
 # target distribution. If instead, chains are stuck in some region of the parameter space, or show some trends, this
 # might indicate that the sampler did not explore the full parameter space.
 with az.style.context("arviz-darkgrid", after_reset=True):
-    az.plot_trace(result.inference_data)
+    az.plot_trace(result.inference_data, compact=False)
 
 # %% New cell
 # A more quantitative way to assess the convergence of the chains is to use the `summary` function. This function

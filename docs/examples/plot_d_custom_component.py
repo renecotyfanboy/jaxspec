@@ -25,13 +25,13 @@ from jaxspec.model.additive import AdditiveComponent
 
 
 class CustomAdditiveComponent(AdditiveComponent):
-
     def continuum(self, energy):
         K = hk.get_parameter("K", shape=(), init=jnp.ones)
         E0 = hk.get_parameter("E0", shape=(), init=jnp.ones)
         E1 = hk.get_parameter("E1", shape=(), init=jnp.ones)
 
-        return K*jnp.sin(energy/E0)*jnp.exp(-energy/E1)
+        return K * jnp.sin(energy / E0) * jnp.exp(-energy / E1)
+
 
 # %% New cell
 # To do a quick summary of what is required to build a custom component, we need to:
@@ -47,7 +47,7 @@ class CustomAdditiveComponent(AdditiveComponent):
 from jaxspec.model.additive import Powerlaw
 from jaxspec.model.multiplicative import Tbabs
 
-model = Tbabs()*(Powerlaw() + CustomAdditiveComponent())
+model = Tbabs() * (Powerlaw() + CustomAdditiveComponent())
 model.plot()
 
 # %% New cell
@@ -72,11 +72,11 @@ from jaxspec.model.multiplicative import MultiplicativeComponent
 
 
 class CustomMultiplicativeComponent(MultiplicativeComponent):
+    def continuum(self, energy):
+        E0 = hk.get_parameter("E0", shape=(), init=jnp.ones)
 
-        def continuum(self, energy):
-            E0 = hk.get_parameter("E0", shape=(), init=jnp.ones)
+        return jnp.abs(jnp.cos(energy / E0))
 
-            return jnp.abs(jnp.cos(energy/E0))
 
 # %% New cell
 # These new components are easily foldable into existing models.

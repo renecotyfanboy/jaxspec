@@ -29,19 +29,19 @@ theme:
     repo: fontawesome/brands/github
 
   palette:
-    # Palette toggle for dark mode
-    - scheme: slate
-      #primary: cyan
-      toggle:
-        icon: material/toggle-switch-off-outline
-        name: Switch to light mode
-
     # Palette toggle for light mode
     - scheme: default
       #primary: cyan
       toggle:
         icon: material/toggle-switch
         name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - scheme: slate
+      #primary: cyan
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to light mode
 
 plugins:
   - search

@@ -57,9 +57,7 @@ def fakeit(
     fakeits = []
 
     for i, instrument in enumerate(instruments):
-        transformed_model = hk.without_apply_rng(
-            hk.transform(lambda par: CountForwardModel(model, instrument)(par))
-        )
+        transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, instrument)(par)))
 
         def obs_model(p):
             return transformed_model.apply(None, p)
@@ -114,9 +112,7 @@ def fakeit_for_multiple_parameters(
     fakeits = []
 
     for i, obs in enumerate(instruments):
-        transformed_model = hk.without_apply_rng(
-            hk.transform(lambda par: CountForwardModel(model, obs)(par))
-        )
+        transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, obs)(par)))
 
         def obs_model(p):
             return transformed_model.apply(None, p)

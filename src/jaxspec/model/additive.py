@@ -122,11 +122,7 @@ class Lorentz(AdditiveComponent):
 
         # This is AI generated for tests I should double check this at some point
         def primitive(energy):
-            return (
-                norm
-                * (sigma / (2 * jnp.pi))
-                * jnp.arctan((energy - line_energy) / (sigma / 2))
-            )
+            return norm * (sigma / (2 * jnp.pi)) * jnp.arctan((energy - line_energy) / (sigma / 2))
 
         return primitive(e_max) - primitive(e_min), (e_min + e_max) / 2
 
@@ -246,22 +242,14 @@ class APEC(AdditiveComponent):
         self.c_ref = np.nan_to_num(files["continuum_emissivity"])
         self.pe_ref = np.nan_to_num(files["pseudo_energy"], nan=1e6)
         self.pc_ref = np.nan_to_num(files["pseudo_emissivity"])
-        self.energy_lines = np.nan_to_num(
-            files["lines_energy"], nan=1e6
-        )  # .astype(np.float32))
-        self.epsilon_lines = np.nan_to_num(
-            files["lines_emissivity"]
-        )  # .astype(np.float32))
+        self.energy_lines = np.nan_to_num(files["lines_energy"], nan=1e6)  # .astype(np.float32))
+        self.epsilon_lines = np.nan_to_num(files["lines_emissivity"])  # .astype(np.float32))
         self.element_lines = np.nan_to_num(files["lines_element"])  # .astype(np.int32))
 
         del files
 
-        self.trace_elements = (
-            jnp.array([3, 4, 5, 9, 11, 15, 17, 19, 21, 22, 23, 24, 25, 27, 29, 30]) - 1
-        )
-        self.metals = (
-            np.array([6, 7, 8, 10, 12, 13, 14, 16, 18, 20, 26, 28]) - 1
-        )  # Element number to python index
+        self.trace_elements = jnp.array([3, 4, 5, 9, 11, 15, 17, 19, 21, 22, 23, 24, 25, 27, 29, 30]) - 1
+        self.metals = np.array([6, 7, 8, 10, 12, 13, 14, 16, 18, 20, 26, 28]) - 1  # Element number to python index
         self.metals_one_hot = np.zeros((30,))
         self.metals_one_hot[self.metals] = 1
 
@@ -276,8 +264,7 @@ class APEC(AdditiveComponent):
 
     def reduction_with_elements(self, Z, energy, energy_cube, continuum_cube):
         return jnp.sum(
-            self.interp_on_cubes(energy, energy_cube, continuum_cube)
-            * jnp.where(self.metals_one_hot, Z, 1.0)[None, :],
+            self.interp_on_cubes(energy, energy_cube, continuum_cube) * jnp.where(self.metals_one_hot, Z, 1.0)[None, :],
             axis=-1,
         )
 
@@ -292,9 +279,7 @@ class APEC(AdditiveComponent):
         epsilon = jax_slice(self.epsilon_lines, idx, 2)
         element = jax_slice(self.element_lines, idx, 2) - 1
 
-        emissivity_in_bins = (
-            jnp.where((e_low < energy) & (energy < e_high), True, False) * epsilon
-        )
+        emissivity_in_bins = jnp.where((e_low < energy) & (energy < e_high), True, False) * epsilon
         flux_at_edges = jnp.nansum(
             jnp.where(jnp.isin(element, self.metals), Z, 1) * emissivity_in_bins,
             axis=-1,
@@ -324,9 +309,7 @@ class APEC(AdditiveComponent):
         continuum = jnp.interp(
             kT,
             jax_slice(self.kT_ref, idx, 2),
-            self.reduction_with_elements(
-                Z, energy, jax_slice(self.e_ref, idx, 2), jax_slice(self.c_ref, idx, 2)
-            ),
+            self.reduction_with_elements(Z, energy, jax_slice(self.e_ref, idx, 2), jax_slice(self.c_ref, idx, 2)),
         )
         pseudo = jnp.interp(
             kT,
