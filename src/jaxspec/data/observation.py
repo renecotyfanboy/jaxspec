@@ -66,9 +66,7 @@ class Observation(Instrument):
 
         if pha.ancrfile is None or pha.respfile is None:
             # It should be handled in a better way at some point
-            raise ValueError(
-                "PHA file must contain the ARF and RMF filenames in the header."
-            )
+            raise ValueError("PHA file must contain the ARF and RMF filenames in the header.")
 
         arf = DataARF.from_file(os.path.join(directory, pha.ancrfile))
         rmf = DataRMF.from_file(os.path.join(directory, pha.respfile))
@@ -79,6 +77,4 @@ class Observation(Instrument):
         super().rebin(grouping)
 
         # We also need to rebin the observed counts when there is an observation attached to the instrumental setup
-        self.observed_counts = (
-            grouping @ np.asarray(self.pha.counts.value, dtype=np.int64)
-        )[self._row_idx]
+        self.observed_counts = (grouping @ np.asarray(self.pha.counts.value, dtype=np.int64))[self._row_idx]

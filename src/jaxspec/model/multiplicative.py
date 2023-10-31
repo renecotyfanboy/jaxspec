@@ -40,9 +40,7 @@ class Expfac(MultiplicativeComponent):
         factor = hk.get_parameter("f", [], init=HaikuConstant(1))
         pivot = hk.get_parameter("E_c", [], init=HaikuConstant(1))
 
-        return jnp.where(
-            energy >= pivot, 1.0 + amplitude * jnp.exp(-factor * energy), 1.0
-        )
+        return jnp.where(energy >= pivot, 1.0 + amplitude * jnp.exp(-factor * energy), 1.0)
 
 
 class Tbabs(MultiplicativeComponent):
@@ -138,11 +136,7 @@ class Gabs(MultiplicativeComponent):
         sigma = hk.get_parameter("sigma", [], init=HaikuConstant(1))
         center = hk.get_parameter("E_0", [], init=HaikuConstant(1))
 
-        return jnp.exp(
-            -tau
-            / (jnp.sqrt(2 * jnp.pi) * sigma)
-            * jnp.exp(-0.5 * ((energy - center) / sigma) ** 2)
-        )
+        return jnp.exp(-tau / (jnp.sqrt(2 * jnp.pi) * sigma) * jnp.exp(-0.5 * ((energy - center) / sigma) ** 2))
 
 
 class Highecut(MultiplicativeComponent):
@@ -186,6 +180,4 @@ class Zedge(MultiplicativeComponent):
         D = hk.get_parameter("D", [], init=HaikuConstant(1))
         z = hk.get_parameter("z", [], init=HaikuConstant(0))
 
-        return jnp.where(
-            energy <= E_c, 1.0, jnp.exp(-D * (energy * (1 + z) / E_c) ** 3)
-        )
+        return jnp.where(energy <= E_c, 1.0, jnp.exp(-D * (energy * (1 + z) / E_c) ** 3))

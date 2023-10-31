@@ -90,17 +90,11 @@ class SpectralModel:
 
     @property
     def transformed_func_photon(self):
-        return hk.without_apply_rng(
-            hk.transform(lambda e_low, e_high: self.flux(e_low, e_high))
-        )
+        return hk.without_apply_rng(hk.transform(lambda e_low, e_high: self.flux(e_low, e_high)))
 
     @property
     def transformed_func_energy(self):
-        return hk.without_apply_rng(
-            hk.transform(
-                lambda e_low, e_high: self.flux(e_low, e_high, energy_flux=True)
-            )
-        )
+        return hk.without_apply_rng(hk.transform(lambda e_low, e_high: self.flux(e_low, e_high, energy_flux=True)))
 
     @property
     def params(self):
@@ -154,9 +148,7 @@ class SpectralModel:
             if node and node["type"] == "component":
                 name_space.append(node["name"])
                 n = name_space.count(node["name"])
-                nx.set_node_attributes(
-                    new_graph, {node_id: name_space[-1] + f"_{n}"}, "name"
-                )
+                nx.set_node_attributes(new_graph, {node_id: name_space[-1] + f"_{n}"}, "name")
 
         return new_graph
 
@@ -183,17 +175,13 @@ class SpectralModel:
 
             # Instantiate the haiku modules
             if node and node["type"] == "component":
-                runtime_modules[node_id] = node["component"](
-                    name=node["name"], **node["kwargs"]
-                )
+                runtime_modules[node_id] = node["component"](name=node["name"], **node["kwargs"])
                 continuum[node_id] = runtime_modules[node_id].continuum(energies)
 
             elif node and node["type"] == "operation":
                 component_1 = list(self.graph.in_edges(node_id))[0][0]
                 component_2 = list(self.graph.in_edges(node_id))[1][0]
-                continuum[node_id] = node["function"](
-                    continuum[component_1], continuum[component_2]
-                )
+                continuum[node_id] = node["function"](continuum[component_1], continuum[component_2])
 
         flux_1D = continuum[list(self.graph.in_edges("out"))[0][0]]
         flux = jnp.stack((flux_1D[:-1], flux_1D[1:]))
@@ -206,9 +194,7 @@ class SpectralModel:
             )
 
         else:
-            continuum_flux = trapezoid(
-                flux * energies_to_integrate, x=jnp.log(energies_to_integrate), axis=0
-            )
+            continuum_flux = trapezoid(flux * energies_to_integrate, x=jnp.log(energies_to_integrate), axis=0)
 
         # Iterate from the root nodes to the output node and
         # compute the fine structure contribution for each component
@@ -216,29 +202,21 @@ class SpectralModel:
         root_nodes = [
             node_id
             for node_id, in_degree in self.graph.in_degree(self.graph.nodes)
-            if in_degree == 0
-            and self.graph.nodes[node_id].get("component_type") == "additive"
+            if in_degree == 0 and self.graph.nodes[node_id].get("component_type") == "additive"
         ]
 
         for root_node_id in root_nodes:
             path = nx.shortest_path(self.graph, source=root_node_id, target="out")
             nodes_id_in_path = [node_id for node_id in path]
 
-            flux_from_component, mean_energy = runtime_modules[
-                root_node_id
-            ].emission_lines(e_low, e_high)
+            flux_from_component, mean_energy = runtime_modules[root_node_id].emission_lines(e_low, e_high)
 
             multiplicative_nodes = []
 
             # Search all multiplicative components connected to this node
             # and apply them at mean energy
             for node_id in nodes_id_in_path[::-1]:
-                multiplicative_nodes.extend(
-                    [
-                        node_id
-                        for node_id in self.find_multiplicative_components(node_id)
-                    ]
-                )
+                multiplicative_nodes.extend([node_id for node_id in self.find_multiplicative_components(node_id)])
 
             for mul_node in multiplicative_nodes:
                 flux_from_component *= runtime_modules[mul_node].continuum(mean_energy)
@@ -269,9 +247,7 @@ class SpectralModel:
                 if self.graph.nodes[node_id].get("component_type") == "multiplicative":
                     multiplicative_nodes.append(node_id)
                 elif self.graph.nodes[node_id].get("operation_type") == "mul":
-                    multiplicative_nodes.extend(
-                        self.find_multiplicative_components(node_id)
-                    )
+                    multiplicative_nodes.extend(self.find_multiplicative_components(node_id))
 
         return multiplicative_nodes
 
@@ -293,9 +269,7 @@ class SpectralModel:
         if component.type == "additive":
 
             def lam_func(e):
-                return (
-                    component().continuum(e) + component().emission_lines(e, e + 1)[0]
-                )
+                return component().continuum(e) + component().emission_lines(e, e + 1)[0]
 
         elif component.type == "multiplicative":
 
@@ -328,9 +302,7 @@ class SpectralModel:
 
         return cls(graph, labels)
 
-    def compose(
-        self, other: SpectralModel, operation=None, function=None, name=None
-    ) -> SpectralModel:
+    def compose(self, other: SpectralModel, operation=None, function=None, name=None) -> SpectralModel:
         """
         This function operate a composition between the operation graph of two models
         1) It fuses the two graphs using which joins at the 'out' nodes
@@ -341,9 +313,7 @@ class SpectralModel:
         # Compose the two graphs with their output as common node
         # and add the operation node by overwriting the 'out' node
         node_id = str(uuid4())
-        graph = nx.relabel_nodes(
-            nx.compose(self.raw_graph, other.raw_graph), {"out": node_id}
-        )
+        graph = nx.relabel_nodes(nx.compose(self.raw_graph, other.raw_graph), {"out": node_id})
         nx.set_node_attributes(graph, {node_id: "operation"}, "type")
         nx.set_node_attributes(graph, {node_id: operation}, "operation_type")
         nx.set_node_attributes(graph, {node_id: function}, "function")
@@ -370,14 +340,10 @@ class SpectralModel:
         return SpectralModel(graph, labels)
 
     def __add__(self, other: SpectralModel) -> SpectralModel:
-        return self.compose(
-            other, operation="add", function=lambda x, y: x + y, name="+"
-        )
+        return self.compose(other, operation="add", function=lambda x, y: x + y, name="+")
 
     def __mul__(self, other: SpectralModel) -> SpectralModel:
-        return self.compose(
-            other, operation="mul", function=lambda x, y: x * y, name=r"*"
-        )
+        return self.compose(other, operation="mul", function=lambda x, y: x * y, name=r"*")
 
     def export_to_mermaid(self, file=None):
         mermaid_code = "graph LR\n"  # LR = left to right
@@ -419,9 +385,7 @@ class SpectralModel:
         pos = nx.multipartite_layout(self.graph, subset_key="depth", scale=1)
 
         nodes_out = [x for x, y in self.graph.nodes(data=True) if y["type"] == "out"]
-        nx.draw_networkx_nodes(
-            self.graph, pos, nodelist=nodes_out, node_color="tab:green"
-        )
+        nx.draw_networkx_nodes(self.graph, pos, nodelist=nodes_out, node_color="tab:green")
         nx.draw_networkx_edges(self.graph, pos, width=1.0)
 
         nx.draw_networkx_labels(
