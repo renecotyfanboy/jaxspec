@@ -22,7 +22,8 @@ build:
       # Install dependencies with 'docs' dependency group
       # https://python-poetry.org/docs/managing-dependencies/#dependency-groups
       - poetry install --with docs
-      - pip install -r docs/requirements.txt
+      - pip install git+https://${{ secrets.INS_TOKEN }}@github.com/squidfunk/mkdocs-material-insiders.git@9.4.2-insiders-4.42.0
+
   apt_packages:
     - libcairo2-dev
     - libfreetype6-dev
