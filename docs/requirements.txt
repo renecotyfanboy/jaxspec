@@ -1,0 +1,1 @@
+git+https://${INS_TOKEN}@github.com/squidfunk/mkdocs-material-insiders.git@9.4.2-insiders-4.42.0
