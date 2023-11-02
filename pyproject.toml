@@ -27,7 +27,7 @@ cmasher = "^1.6.3"
 mkdocs = "^1.5.3"
 mkdocs-material = "^9.4.6"
 mkdocstrings = {extras = ["python"], version = "^0.23.0"}
-mkdocs-gallery = "^0.7.8"
+mkdocs-jupyter = "^0.24.6"
 
 
 [tool.poetry.group.test.dependencies]
