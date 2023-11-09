@@ -1,10 +1,12 @@
 import inspect
 import jax.numpy as jnp
-import numpyro
+import chex
+from jax.config import config
 from unittest import TestCase
 from jaxspec.util.integrate import integrate_interval, integrate_positive
 
-numpyro.enable_x64()
+chex.set_n_cpu_devices(n=4)
+config.update("jax_enable_x64", True)
 
 
 class TestIntegrate(TestCase):

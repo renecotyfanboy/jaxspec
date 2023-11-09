@@ -1,9 +1,20 @@
+r"""
+Module for integrating functions in a consistent way in `JAXspec`.
+It uses on tanh-sinh (or double exponential) quadrature.
+
+References:
+
+* [Takahasi and Mori (1974)](https://ems.press/journals/prims/articles/2686)
+* [Mori and Sugihara (2001)](https://doi.org/10.1016/S0377-0427(00)00501-X)
+* [Tanh-sinh quadrature](https://en.wikipedia.org/wiki/Tanh-sinh_quadrature) from Wikipedia
+"""
+
 import jax.numpy as jnp
 from jax.scipy.integrate import trapezoid
 from jax import Array
 
 
-def integrate_interval(func, a: float, b: float, n: int = 41) -> Array:
+def integrate_interval(func, a: float, b: float, n: int = 31) -> Array:
     """
     Integrate a function over an interval [a, b] using the tanh-sinh quadrature.
 
@@ -26,7 +37,7 @@ def integrate_interval(func, a: float, b: float, n: int = 41) -> Array:
     return trapezoid(jnp.nan_to_num(func(x) * dx), x=t)
 
 
-def integrate_positive(func, n: int = 41) -> Array:
+def integrate_positive(func, n: int = 31) -> Array:
     """
     Integrate a function over the positive real axis using the tanh-sinh quadrature.
 
