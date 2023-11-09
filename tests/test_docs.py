@@ -1,24 +1,23 @@
 import os
 import sys
-from unittest import TestCase
+from testbook import testbook
 
 # Allow relative imports for github workflows
 current_dir = os.path.dirname(os.path.abspath(__file__))
 source_dir = os.path.abspath(os.path.join(current_dir, ".."))
 sys.path.append(source_dir)
 
-# TODO: Fix this
+
+@testbook("../docs/examples/fitting_example.ipynb", execute=True)
+def test_fitting(tb):
+    pass
 
 
-class TestDocs(TestCase):
-    def test_basic_fit(self):
-        # runpy.run_module("docs.examples.plot_1_basic_fit", run_name="__main__")
-        pass
+@testbook("../docs/examples/fakeits.ipynb", execute=True)
+def test_fakeits(tb):
+    pass
 
-    def test_build_model(self):
-        # runpy.run_module("docs.examples.plot_2_build_model", run_name="__main__")
-        pass
 
-    def test_custom_component(self):
-        # runpy.run_module("docs.examples.plot_3_custom_component", run_name="__main__")
-        pass
+@testbook("../docs/examples/load_data.ipynb", execute=True)
+def test_load_data(tb):
+    pass
