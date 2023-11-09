@@ -23,7 +23,7 @@ build:
       # https://python-poetry.org/docs/managing-dependencies/#dependency-groups
       - poetry install --with docs
       # Using insiders versions of mkdocs-material
-      - pip install git+https://${GH_TOKEN}@github.com/squidfunk/mkdocs-material-insiders.git@9.4.2-insiders-4.42.0
+      - pip install git+https://${GH_TOKEN}@github.com/squidfunk/mkdocs-material-insiders.git
 
   apt_packages:
     - libcairo2-dev
