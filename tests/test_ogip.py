@@ -29,10 +29,7 @@ class TestRSP(TestCase):
             "data/ogip/XIFU.rmf",
         ]
     ]
-    pha_files = [
-        os.path.join(current_dir, file)
-        for file in ["data/ogip/nustar_pha.pha", "data/ogip/xmm_pha.fits"]
-    ]
+    pha_files = [os.path.join(current_dir, file) for file in ["data/ogip/nustar_pha.pha", "data/ogip/xmm_pha.fits"]]
 
     def test_arf(self):
         """

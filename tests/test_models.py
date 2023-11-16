@@ -37,9 +37,7 @@ class TestModules(chex.TestCase):
                 return module().continuum(inputs)
 
             out = f(self.energy)
-            self.assertEqual(
-                out.shape, self.energy.shape, f"{name} continuum changes input shape"
-            )
+            self.assertEqual(out.shape, self.energy.shape, f"{name} continuum changes input shape")
 
     @chex.all_variants
     def test_all_lines(self):
