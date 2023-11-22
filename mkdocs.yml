@@ -8,9 +8,9 @@ nav:
   - Examples:
     - examples/index.md
     - Spectral fitting speedrun: examples/fitting_example.md
-    - Load your own data: examples/load_data.ipynb
+    - Load your own data: examples/load_data.md
     - Model building made easy: examples/build_model.md
-    - Generate mock data : examples/fakeits.ipynb
+    - Generate mock data : examples/fakeits.md
   - API Reference:
     - Spectral model base: references/model.md
     - Additive models: references/additive.md
@@ -19,6 +19,10 @@ nav:
     - Fitting: references/fitting.md
     - Result containers: references/results.md
     - Integration: references/integrate.md
+  - Developer:
+    - developer/index.md
+    - XSPEC: developer/xspec.md
+
 
 theme:
   name: material
@@ -39,14 +43,14 @@ theme:
     - scheme: default
       #primary: cyan
       toggle:
-        icon: material/toggle-switch
+        icon: material/weather-night
         name: Switch to dark mode
 
     # Palette toggle for dark mode
     - scheme: slate
       #primary: cyan
       toggle:
-        icon: material/toggle-switch-off-outline
+        icon: material/weather-sunny
         name: Switch to light mode
 
 plugins:

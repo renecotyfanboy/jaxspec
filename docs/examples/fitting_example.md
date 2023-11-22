@@ -1,7 +1,7 @@
 # JAXspec fitting speedrun
 
 In this example, the basic spectral fitting workflow is illustrated on a XMM-Newton observation of the
-pulsating ULX candidate from Quintin+2020.
+pulsating ULX candidate from [Quintin & $al.$ (2021)](https://ui.adsabs.harvard.edu/abs/2021MNRAS.503.5485Q/abstract).
 
 ``` python
 import numpyro
@@ -22,6 +22,20 @@ from jaxspec.model.additive import Powerlaw
 from jaxspec.model.multiplicative import Tbabs
 
 model = Tbabs() * Powerlaw()
+```
+
+Which will produce the following model:
+
+```mermaid
+graph LR
+    7af5aff7-db1a-4c0e-ad58-f5d306d01ac8("Tbabs (1)")
+    daa4bc1a-03cd-4ac1-a706-d9fa85b36a34{x}
+    28467034-307f-4b72-b2dd-eb68a54438e1("Powerlaw (1)")
+    out("Output")
+    7af5aff7-db1a-4c0e-ad58-f5d306d01ac8 --> daa4bc1a-03cd-4ac1-a706-d9fa85b36a34
+    daa4bc1a-03cd-4ac1-a706-d9fa85b36a34 --> out
+    28467034-307f-4b72-b2dd-eb68a54438e1 --> daa4bc1a-03cd-4ac1-a706-d9fa85b36a34
+
 ```
 
 ## Load your data
@@ -64,8 +78,7 @@ will return a $\LaTeX$ compilable table. You can also plot the parameter covaria
 result.plot_corner()
 ```
 
-![Image title](statics/fitting.png#only-light)
-![Image title](statics/fitting_dark.png#only-dark)
+![Corner plot](statics/fitting.png)
 
 You can also plot the posterior predictives
 
@@ -73,5 +86,4 @@ You can also plot the posterior predictives
 result.plot_ppc(0)
 ```
 
-![Image title](statics/fitting_ppc.png#only-light)
-![Image title](statics/fitting_ppc_dark.png#only-dark)
+![Posterior predictive plot](statics/fitting_ppc.png)

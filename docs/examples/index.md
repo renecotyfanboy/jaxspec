@@ -6,7 +6,7 @@
 
     ---
 
-    ![Image title](statics/fitting.png)
+    ![JAXspec fitting speedrun](statics/fitting.png){ align=left : style="height:100px;width:100px"}
 
     A quick overview of the general fitting workflow, including the data loading, model
     definition, inference process and results.
@@ -17,30 +17,18 @@
 
     ---
 
-    Change the colors, fonts, language, icons, logo and more with a few lines
+    ![JAXspec rmf](statics/rmf.png){ align=left : style="height:100px;width:100px"}
 
-    [:octicons-arrow-right-24: Customization](#)
+
+    How to load your data in JAXspec, from a PHA file, or build an instrumental set-up with ARF and RMF files.
+
+    [:octicons-arrow-right-24: Example here](load_data)
 
 -   __Model building made easy__
 
     ---
 
-    ``` mermaid
-    graph
-        ce337930-834c-447b-afa8-b14eb3f73f61("Tbabs (1)")
-        21aa645c-a55c-46e7-aac1-dabad13124fa{x}
-        5153ffbf-4d64-44f0-a11b-91dd0dc7449a("Powerlaw (1)")
-        1fbf61c1-aae4-46f8-ab38-a8cbfb1f2759{+}
-        9fb2345d-c4f2-4d3a-a4ef-241d5da97b4c("Blackbody (1)")
-        out("Output")
-        ce337930-834c-447b-afa8-b14eb3f73f61 --> 21aa645c-a55c-46e7-aac1-dabad13124fa
-        21aa645c-a55c-46e7-aac1-dabad13124fa --> out
-        5153ffbf-4d64-44f0-a11b-91dd0dc7449a --> 1fbf61c1-aae4-46f8-ab38-a8cbfb1f2759
-        1fbf61c1-aae4-46f8-ab38-a8cbfb1f2759 --> 21aa645c-a55c-46e7-aac1-dabad13124fa
-        9fb2345d-c4f2-4d3a-a4ef-241d5da97b4c --> 1fbf61c1-aae4-46f8-ab38-a8cbfb1f2759
-    ```
-
-    Combine components to build a model in a very intuitive way
+    Combine components to build a model in a very intuitive way, adding or multiplying components and model together.
 
     [:octicons-arrow-right-24: Example here](build_model)
 
@@ -48,10 +36,13 @@
 
     ---
 
-    ![Image title](statics/fakeits.png)
+    ![JAXspec fakeits](statics/fakeits.png){ align=left : style="height:100px;width:100px"}
+
+    Use the `fakeit` function to generate mock data from a model and a set of parameters, on the CPU, GPU and TPU.
 
     [:octicons-arrow-right-24: Example here](fakeits)
 
 </div>
 
 # Intermediate examples
+
