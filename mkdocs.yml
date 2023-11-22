@@ -7,7 +7,7 @@ nav:
     - Instrument : theory/instrument.md
   - Examples:
     - examples/index.md
-    - Spectral fitting speedrun: examples/fitting_example.ipynb
+    - Spectral fitting speedrun: examples/fitting_example.md
     - Load your own data: examples/load_data.ipynb
     - Model building made easy: examples/build_model.md
     - Generate mock data : examples/fakeits.ipynb
