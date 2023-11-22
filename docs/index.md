@@ -1,9 +1,9 @@
 # Welcome to JAXspec's documentation!
 
 **JAXspec** is a pure Python library for statistical inference on X-ray spectra. It allows to simply build spectral model
-by combining components, and fit it to one or multiple observed spectra. Various inference method are proposed, either
-frequentist or bayesian approaches. As it is written using **[JAX](https://github.com/google/jax#what-is-jax)**, every
-inference problem are just-in-time compiled and can be run on CPU or GPU.
+by combining components, and fit it to one or multiple observed spectra. Various inference methods are proposed, either
+in frequentist or bayesian approaches. Since **JAXspec** is written using **[JAX](https://github.com/google/jax#what-is-jax)**, all
+inference problems are just-in-time compiled and can be run on CPU or GPU.
 
 ## How does it work?
 

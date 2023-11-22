@@ -1,6 +1,6 @@
 fail_fast: true
 
-exclude: ^docs/runtime/
+exclude: ^docs/runtime/|.*\.(fits|fit|pha|arf|rmf)$
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -29,11 +29,3 @@ repos:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
         exclude: ^docs/
-#  - repo: local
-#    hooks:
-#      - id: tests
-#        name: tests
-#        language: system
-#        types: [python]
-#        pass_filenames: false
-#        entry: poetry run pytest

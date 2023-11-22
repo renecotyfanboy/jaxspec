@@ -14,6 +14,8 @@ from astropy.units import Unit
 from haiku.data_structures import traverse
 from chainconsumer import ChainConsumer, Chain, PlotConfig
 import jax
+from scipy.interpolate import interp1d
+from scipy.integrate import trapezoid
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -167,7 +169,7 @@ class ChainResult:
     @property
     def chain(self) -> Chain:
         df = pd.DataFrame.from_dict({key: np.ravel(value) for key, value in self.samples.items()})
-        chain = Chain(samples=df, name="Model")
+        chain = Chain(samples=df, name="Model", color=(0.15, 0.35, 0.55))
         chain.samples.columns = [format_parameters(parameter) for parameter in chain.samples.columns]
 
         return chain
@@ -197,30 +199,54 @@ class ChainResult:
     def plot_ppc(self, index: int, percentile: Tuple[int, int] = (14, 86)):
         from ..data.util import fakeit_for_multiple_parameters
 
-        count = fakeit_for_multiple_parameters(self.observations[0], self.model, self.params)
+        observation = self.observations[index]
+
+        count = fakeit_for_multiple_parameters(observation, self.model, self.params)
+
+        color = (0.15, 0.25, 0.45)
 
         with plt.style.context("default"):
-            fig, axs = plt.subplots(2, 1, figsize=(8, 5), sharex=True, height_ratios=[0.6, 0.4])
+            fig, axs = plt.subplots(2, 1, figsize=(6, 6), sharex=True, height_ratios=[0.7, 0.3])
 
-            observation = self.observations[index]
+            mid_bins_arf = (observation.arf.energ_hi + observation.arf.energ_lo) / 2
+
+            interpolated_arf = interp1d(mid_bins_arf, observation.arf.specresp)
+            integrated_arf = np.array(
+                [
+                    trapezoid(interpolated_arf(np.linspace(bin_low, bin_up, 10)), np.linspace(bin_low, bin_up, 10))
+                    for (bin_low, bin_up) in zip(observation.out_energies[0], observation.out_energies[1])
+                ]
+            ) / (observation.out_energies[1] - observation.out_energies[0])
+
+            if observation.out_energies[0][0] < 1 < observation.out_energies[1][-1]:
+                xticks = [np.floor(observation.out_energies[0][0] * 10) / 10, 1.0, np.floor(observation.out_energies[1][-1])]
+            else:
+                xticks = [np.floor(observation.out_energies[0][0] * 10) / 10, np.floor(observation.out_energies[1][-1])]
+
+            denominator = (observation.out_energies[1] - observation.out_energies[0]) * observation.exposure * integrated_arf
 
             axs[0].step(
-                observation.out_energies[0],
-                observation.observed_counts,
+                list(observation.out_energies[0]) + [observation.out_energies[1][-1]],
+                list(observation.observed_counts / denominator) + [(observation.observed_counts / denominator)[-1]],
                 where="post",
                 label="data",
+                c=color,
             )
 
+            percentiles = np.percentile(count, percentile, axis=0)
             axs[0].fill_between(
-                observation.out_energies[0],
-                *np.percentile(count, percentile, axis=0),
+                list(observation.out_energies[0]) + [observation.out_energies[1][-1]],
+                list(percentiles[0] / denominator) + [(percentiles[0] / denominator)[-1]],
+                list(percentiles[1] / denominator) + [(percentiles[1] / denominator)[-1]],
                 alpha=0.3,
                 step="post",
                 label="posterior predictive",
+                facecolor=color,
             )
 
-            axs[0].set_ylabel("Counts")
+            axs[0].set_ylabel("Folded spectrum\n" + r"[Counts s$^{-1}$ keV$^{-1}$ cm$^{-2}$]")
             axs[0].loglog()
+            axs[0].set_xlim(observation.out_energies[0][0], observation.out_energies[1][-1])
 
             residuals = np.percentile(
                 (observation.observed_counts - count) / np.diff(np.percentile(count, percentile, axis=0), axis=0),
@@ -231,20 +257,33 @@ class ChainResult:
             max_residuals = np.max(np.abs(residuals))
 
             axs[1].fill_between(
-                observation.out_energies[0],
-                *residuals,
+                list(observation.out_energies[0]) + [observation.out_energies[1][-1]],
+                list(residuals[0]) + [residuals[0][-1]],
+                list(residuals[1]) + [residuals[1][-1]],
                 alpha=0.3,
                 step="post",
                 label="posterior predictive",
+                facecolor=color,
             )
 
-            axs[1].set_ylim(-max_residuals, +max_residuals)
-            axs[1].set_ylabel("Residuals")
-            axs[1].set_xlabel("Energy [keV]")
-            axs[1].axhline(0, color="k", ls="--")
+            axs[1].set_xlim(observation.out_energies[0][0], observation.out_energies[1][-1])
+            axs[1].set_ylim(-max(3.5, max_residuals), +max(3.5, max_residuals))
+            axs[1].set_ylabel("Residuals \n" + r"[$\sigma$]")
+            axs[1].set_xlabel("Energy \n[keV]")
 
-            axs[0].set_xlim(observation.low_energy, observation.high_energy)
+            axs[1].axhline(0, color=color, ls="--")
+            axs[1].axhline(-3, color=color, ls=":")
+            axs[1].axhline(3, color=color, ls=":")
+
+            axs[1].set_xticks(xticks, labels=xticks)
+            axs[1].set_yticks([-3, 0, 3], labels=[-3, 0, 3])
+            axs[1].set_yticks(range(-3, 4), minor=True)
+
+            fig.suptitle(self.model.to_string())
+
+            fig.align_ylabels()
             plt.subplots_adjust(hspace=0.0)
+            fig.tight_layout()
 
     def table(self):
         return self.consumer.analysis.get_latex_table(caption="Results of the fit", label="tab:results")
