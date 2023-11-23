@@ -196,7 +196,8 @@ class ChainResult:
 
         return params
 
-    def plot_ppc(self, index: int, percentile: Tuple[int, int] = (14, 86)):
+    def plot_ppc(self, index: int, percentile: Tuple[int, int] = (14, 86), style="default"):
+        # TODO : Add docstring
         from ..data.util import fakeit_for_multiple_parameters
 
         observation = self.observations[index]
@@ -205,7 +206,7 @@ class ChainResult:
 
         color = (0.15, 0.25, 0.45)
 
-        with plt.style.context("default"):
+        with plt.style.context(style):
             fig, axs = plt.subplots(2, 1, figsize=(6, 6), sharex=True, height_ratios=[0.7, 0.3])
 
             mid_bins_arf = (observation.arf.energ_hi + observation.arf.energ_lo) / 2
@@ -285,12 +286,15 @@ class ChainResult:
             plt.subplots_adjust(hspace=0.0)
             fig.tight_layout()
 
+            return fig
+
     def table(self):
         return self.consumer.analysis.get_latex_table(caption="Results of the fit", label="tab:results")
 
     def plot_corner(
         self,
         config: PlotConfig = PlotConfig(usetex=False, summarise=False, label_font_size=6),
+        style="default",
         **kwargs,
     ):
         """
@@ -298,6 +302,7 @@ class ChainResult:
 
         Parameters:
             config: The configuration of the plot.
+            style: The matplotlib style of the plot.
             **kwargs: Additional arguments passed to ChainConsumer.plotter.plot.
         """
 
@@ -305,5 +310,5 @@ class ChainResult:
         consumer.set_plot_config(config)
 
         # Context for default mpl style
-        with plt.style.context("default"):
-            consumer.plotter.plot(**kwargs)
+        with plt.style.context(style):
+            return consumer.plotter.plot(**kwargs)
