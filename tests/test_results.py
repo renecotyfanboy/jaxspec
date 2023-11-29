@@ -1,4 +1,3 @@
-import chex
 import matplotlib.pyplot as plt
 import numpyro
 import numpyro.distributions as dist
@@ -6,15 +5,18 @@ from jax.config import config
 from unittest import TestCase
 from jaxspec.model.additive import Powerlaw
 from jaxspec.model.multiplicative import Tbabs
-from jaxspec.data.util import example_observations as obs_list
+from jaxspec.data.util import load_example_observations
 from jaxspec.fit import BayesianModel
 
 
-chex.set_n_cpu_devices(n=4)
+# chex.set_n_cpu_devices(n=4)
 
 config.update("jax_enable_x64", True)
 numpyro.set_platform("cpu")
 numpyro.set_host_device_count(4)
+
+
+obs_list = load_example_observations()
 
 
 class TestResults(TestCase):
@@ -25,9 +27,12 @@ class TestResults(TestCase):
     result = forward.fit(prior, num_samples=1000)
 
     def test_plot_ppc(self):
-        """
-        Test reading an AMF file using ref files
-        """
-
-        self.result.plot_ppc(0, percentile=(5, 95))
+        self.result[0].plot_ppc(percentile=(5, 95))
         plt.show()
+
+    def test_plot_corner(self):
+        self.result[0].plot_corner()
+        plt.show()
+
+    def test_table(self):
+        print(self.result[0].table())
