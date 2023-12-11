@@ -71,6 +71,7 @@ plugins:
             - https://num.pyro.ai/en/stable/objects.inv
             - https://dm-haiku.readthedocs.io/en/latest/objects.inv
             - https://python.arviz.org/en/stable/objects.inv
+            - https://jax.readthedocs.io/en/latest/objects.inv
           options:
             members_order: alphabetical
             docstring_section_style: spacy

@@ -107,7 +107,7 @@ def fakeit_for_multiple_parameters(
         model: The model to use.
         parameters: The parameters of the model.
         rng_key: The random number generator seed.
-        apply_stat: Whether to make a Poisson realisation of the folded spectra or not.
+        apply_stat: Whether to apply Poisson statistic on the folded spectra or not.
     """
 
     instruments = [instrument] if isinstance(instrument, Instrument) else instrument
@@ -116,6 +116,8 @@ def fakeit_for_multiple_parameters(
     for i, obs in enumerate(instruments):
         transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, obs)(par)))
 
+        @jax.jit
+        @jax.vmap
         def obs_model(p):
             return transformed_model.apply(None, p)
 
@@ -123,11 +125,11 @@ def fakeit_for_multiple_parameters(
             with handlers.seed(rng_seed=rng_key):
                 spectrum = numpyro.sample(
                     f"likelihood_obs_{i}",
-                    numpyro.distributions.Poisson(jax.vmap(obs_model)(parameters)),
+                    numpyro.distributions.Poisson(obs_model(parameters)),
                 )
 
         else:
-            spectrum = jax.vmap(obs_model)(parameters)
+            spectrum = obs_model(parameters)
 
         fakeits.append(spectrum)
 
