@@ -94,6 +94,7 @@ def fakeit_for_multiple_parameters(
     model: SpectralModel,
     parameters: Mapping[K, V],
     rng_key: int = 0,
+    apply_stat=True,
 ):
     """
     This function is a convenience function that allows to simulate spectra multiple spectra from a given model and a
@@ -106,6 +107,7 @@ def fakeit_for_multiple_parameters(
         model: The model to use.
         parameters: The parameters of the model.
         rng_key: The random number generator seed.
+        apply_stat: Whether to make a Poisson realisation of the folded spectra or not.
     """
 
     instruments = [instrument] if isinstance(instrument, Instrument) else instrument
@@ -117,12 +119,16 @@ def fakeit_for_multiple_parameters(
         def obs_model(p):
             return transformed_model.apply(None, p)
 
-        with handlers.seed(rng_seed=rng_key):
-            test = numpyro.sample(
-                f"likelihood_obs_{i}",
-                numpyro.distributions.Poisson(jax.vmap(obs_model)(parameters)),
-            )
+        if apply_stat:
+            with handlers.seed(rng_seed=rng_key):
+                spectrum = numpyro.sample(
+                    f"likelihood_obs_{i}",
+                    numpyro.distributions.Poisson(jax.vmap(obs_model)(parameters)),
+                )
 
-        fakeits.append(test)
+        else:
+            spectrum = jax.vmap(obs_model)(parameters)
+
+        fakeits.append(spectrum)
 
     return fakeits[0] if len(fakeits) == 1 else fakeits
