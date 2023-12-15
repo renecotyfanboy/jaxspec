@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from . import data_loader
 from .ogip import DataPHA, DataARF, DataRMF
 from .instrument import Instrument
 
@@ -16,6 +17,7 @@ class Observation(Instrument):
 
     pha: DataPHA
     observed_counts: np.ndarray
+    observed_bkg: np.ndarray | None
 
     def __init__(
         self,
@@ -24,6 +26,8 @@ class Observation(Instrument):
         rmf: DataRMF,
         low_energy: float = 1e-20,
         high_energy: float = 1e20,
+        bkg: DataPHA = None,
+        background_subtracted: bool = False,
     ):
         """
         This is the basic constructor for an observation.
@@ -36,9 +40,21 @@ class Observation(Instrument):
             rmf: The RMF data.
             low_energy: The lower energy bound.
             high_energy: The higher energy bound.
+            bkg: The background data.
+            background_subtracted: Whether the provided PHA is already background subtracted or not.
+
+        !!! warning
+
+            We found that the `HDUCLAS2`fits keyword, which signal whether the spectrum is background-subtracted or not,
+            might be misused within the various X-ray data software. So at this time, the user must provide
+            this information by himself. See [this issue](https://github.com/renecotyfanboy/jaxspec/issues/99) for more
+            details.
         """
 
         self.pha = pha
+        self.bkg = bkg
+        self.bkg_subtracted = background_subtracted
+
         super().__init__(
             arf,
             rmf,
@@ -60,21 +76,21 @@ class Observation(Instrument):
 
         """
 
-        directory = os.path.dirname(pha_file)
+        pha, arf, rmf, bkg = data_loader(pha_file)
 
-        pha = DataPHA.from_file(pha_file)
-
-        if pha.ancrfile is None or pha.respfile is None:
-            # It should be handled in a better way at some point
-            raise ValueError("PHA file must contain the ARF and RMF filenames in the header.")
-
-        arf = DataARF.from_file(os.path.join(directory, pha.ancrfile))
-        rmf = DataRMF.from_file(os.path.join(directory, pha.respfile))
-
-        return cls(pha, arf, rmf, **kwargs)
+        return cls(pha, arf, rmf, bkg=bkg, **kwargs)
 
     def rebin(self, grouping):
+        # This clearly needs a refactor, even I get lost in the code i've written
+
         super().rebin(grouping)
 
         # We also need to rebin the observed counts when there is an observation attached to the instrumental setup
+
         self.observed_counts = (grouping @ np.asarray(self.pha.counts.value, dtype=np.int64))[self._row_idx]
+        self.observed_bkg = (
+            (grouping @ np.asarray(self.bkg.counts.value, dtype=np.int64))[self._row_idx] if self.bkg is not None else None
+        )
+
+        if self.bkg_subtracted:
+            self.observed_counts += self.observed_bkg

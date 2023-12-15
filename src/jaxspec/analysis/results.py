@@ -1,24 +1,87 @@
 import arviz as az
 import numpy as np
-import pandas as pd
-from numpy.typing import ArrayLike
 import matplotlib.pyplot as plt
 from ..data.observation import Observation
 from ..model.abc import SpectralModel
+from ..model.background import BackgroundModel
 from collections.abc import Mapping
-from typing import TypeVar, Tuple
+from typing import TypeVar, Tuple, Literal
 from astropy.cosmology import Cosmology, Planck18
-from numpyro.infer import MCMC
 import astropy.units as u
 from astropy.units import Unit
 from haiku.data_structures import traverse
-from chainconsumer import ChainConsumer, Chain, PlotConfig
+from chainconsumer import Chain, PlotConfig, ChainConsumer
 import jax
-from scipy.interpolate import interp1d
+from jax.typing import ArrayLike
 from scipy.integrate import trapezoid
 
 K = TypeVar("K")
 V = TypeVar("V")
+
+
+def _plot_binned_samples_with_error(
+    ax: plt.Axes,
+    x_bins: ArrayLike,
+    denominator: ArrayLike | None = None,
+    y_samples: ArrayLike | None = None,
+    y_observed: ArrayLike | None = None,
+    color=(0.15, 0.25, 0.45),
+    percentile: tuple = (16, 84),
+):
+    """
+    Helper function to plot the posterior predictive distribution of the model. The function
+    computes the percentiles of the posterior predictive distribution and plot them as a shaded
+    area. If the observed data is provided, it is also plotted as a step function.
+
+    Parameters:
+        x_bins: The bin edges of the data (2 x N).
+        y_samples: The samples of the posterior predictive distribution (Samples X N).
+        denominator: Values used to divided the samples, i.e. to get energy flux (N).
+        ax: The matplotlib axes object.
+        color: The color of the posterior predictive distribution.
+        y_observed: The observed data (N).
+        label: The label of the observed data.
+        percentile: The percentile of the posterior predictive distribution to plot.
+    """
+
+    mean, envelope = None, None
+
+    if x_bins is None:
+        raise ValueError("x_bins cannot be None.")
+
+    if (y_samples is None) and (y_observed is None):
+        raise ValueError("Either a y_samples or y_observed must be provided.")
+
+    if y_observed is not None:
+        if denominator is None:
+            denominator = np.ones_like(x_bins[0])
+
+        (mean,) = ax.step(
+            list(x_bins[0]) + [x_bins[1][-1]],
+            list(y_observed / denominator) + [(y_observed / denominator)[-1]],
+            where="post",
+            c=color,
+        )
+
+    if y_samples is not None:
+        if denominator is None:
+            denominator = np.ones_like(x_bins[0])
+
+        percentiles = np.percentile(y_samples, percentile, axis=0)
+
+        # The legend cannot handle fill_between, so we pass a fill to get a fancy icone
+        (envelope,) = ax.fill(np.NaN, np.NaN, alpha=0.3, facecolor=color)
+
+        ax.fill_between(
+            list(x_bins[0]) + [x_bins[1][-1]],
+            list(percentiles[0] / denominator) + [(percentiles[0] / denominator)[-1]],
+            list(percentiles[1] / denominator) + [(percentiles[1] / denominator)[-1]],
+            alpha=0.3,
+            step="post",
+            facecolor=color,
+        )
+
+    return [(mean, envelope)]
 
 
 def format_parameters(parameter_name):
@@ -55,15 +118,18 @@ class ChainResult:
     def __init__(
         self,
         model: SpectralModel,
-        observations: list[Observation],
-        mcmc: MCMC,
+        observation: Observation,
+        inference_data: az.InferenceData,
+        samples,
         structure: Mapping[K, V],
+        background_model: BackgroundModel = None,
     ):
         self.model = model
         self._structure = structure
-        self.inference_data = az.from_numpyro(mcmc)
-        self.observations = observations
-        self.samples = mcmc.get_samples()
+        self.inference_data = inference_data
+        self.observation = observation
+        self.samples = samples
+        self.background_model = background_model
         self._structure = structure
 
         # Add the model used in fit to the metadata
@@ -166,20 +232,29 @@ class ChainResult:
 
         return value
 
-    @property
-    def chain(self) -> Chain:
-        df = pd.DataFrame.from_dict({key: np.ravel(value) for key, value in self.samples.items()})
-        chain = Chain(samples=df, name="Model", color=(0.15, 0.35, 0.55))
+    def chain(self, name: str, parameters: Literal["model", "bkg"] = "model") -> Chain:
+        """
+        Return a ChainConsumer Chain object from the posterior distribution of the parameters.
+
+        Parameters:
+            name: The name of the chain.
+            parameters: The parameters to include in the chain.
+        """
+
+        obs_id = self.inference_data.copy()
+
+        if parameters == "model":
+            keys_to_drop = [key for key in obs_id.posterior.keys() if (key.startswith("_") or key.startswith("bkg"))]
+        elif parameters == "bkg":
+            keys_to_drop = [key for key in obs_id.posterior.keys() if not key.startswith("bkg")]
+        else:
+            raise ValueError(f"Unknown value for parameters: {parameters}")
+
+        obs_id.posterior = obs_id.posterior.drop_vars(keys_to_drop)
+        chain = Chain.from_arviz(obs_id, name)
         chain.samples.columns = [format_parameters(parameter) for parameter in chain.samples.columns]
 
         return chain
-
-    @property
-    def consumer(self) -> ChainConsumer:
-        consumer = ChainConsumer()
-        consumer.add_chain(self.chain)
-
-        return consumer
 
     @property
     def params(self):
@@ -196,28 +271,44 @@ class ChainResult:
 
         return params
 
-    def plot_ppc(self, index: int, percentile: Tuple[int, int] = (14, 86), style="default"):
-        # TODO : Add docstring
-        from ..data.util import fakeit_for_multiple_parameters
+    def plot_ppc(self, percentile: Tuple[int, int] = (14, 86)) -> plt.Figure:
+        r"""
+        Plot the posterior predictive distribution of the model. It also features a residual plot, defined using the
+        following formula:
 
-        observation = self.observations[index]
+        $$ \text{Residual} = \frac{\text{Observed counts} - \text{Posterior counts}}
+        {(\text{Posterior counts})_{84\%}-(\text{Posterior counts})_{16\%}} $$
 
-        count = fakeit_for_multiple_parameters(observation, self.model, self.params)
+        Parameters:
+            percentile: The percentile of the posterior predictive distribution to plot.
+
+        Returns:
+            The matplotlib two panel figure.
+        """
+
+        observation = self.observation
+        count = az.extract(self.inference_data, var_names="obs", group="posterior_predictive").values.T
+        bkg_count = (
+            None
+            if self.background_model is None
+            else az.extract(self.inference_data, var_names="bkg", group="posterior_predictive").values.T
+        )
+
+        legend_plots = []
+        legend_labels = []
 
         color = (0.15, 0.25, 0.45)
 
-        with plt.style.context(style):
+        with plt.style.context("default"):
             fig, axs = plt.subplots(2, 1, figsize=(6, 6), sharex=True, height_ratios=[0.7, 0.3])
 
             mid_bins_arf = (observation.arf.energ_hi + observation.arf.energ_lo) / 2
 
-            interpolated_arf = interp1d(mid_bins_arf, observation.arf.specresp)
-            integrated_arf = np.array(
-                [
-                    trapezoid(interpolated_arf(np.linspace(bin_low, bin_up, 10)), np.linspace(bin_low, bin_up, 10))
-                    for (bin_low, bin_up) in zip(observation.out_energies[0], observation.out_energies[1])
-                ]
-            ) / (observation.out_energies[1] - observation.out_energies[0])
+            e_grid = np.linspace(*observation.out_energies, 10)
+            interpolated_arf = np.interp(e_grid, mid_bins_arf.value, observation.arf.specresp)
+            integrated_arf = trapezoid(interpolated_arf, x=e_grid, axis=0) / (
+                observation.out_energies[1] - observation.out_energies[0]
+            )
 
             if observation.out_energies[0][0] < 1 < observation.out_energies[1][-1]:
                 xticks = [np.floor(observation.out_energies[0][0] * 10) / 10, 1.0, np.floor(observation.out_energies[1][-1])]
@@ -226,36 +317,40 @@ class ChainResult:
 
             denominator = (observation.out_energies[1] - observation.out_energies[0]) * observation.exposure * integrated_arf
 
-            axs[0].step(
-                list(observation.out_energies[0]) + [observation.out_energies[1][-1]],
-                list(observation.observed_counts / denominator) + [(observation.observed_counts / denominator)[-1]],
-                where="post",
-                label="data",
-                c=color,
+            # Use the helper function to plot the data and posterior predictive
+            obs = observation.observed_counts
+
+            legend_plots += _plot_binned_samples_with_error(
+                axs[0],
+                observation.out_energies,
+                y_samples=count,
+                y_observed=obs,
+                denominator=denominator,
+                color=color,
+                percentile=percentile,
             )
 
-            percentiles = np.percentile(count, percentile, axis=0)
-            axs[0].fill_between(
-                list(observation.out_energies[0]) + [observation.out_energies[1][-1]],
-                list(percentiles[0] / denominator) + [(percentiles[0] / denominator)[-1]],
-                list(percentiles[1] / denominator) + [(percentiles[1] / denominator)[-1]],
-                alpha=0.3,
-                step="post",
-                label="posterior predictive",
-                facecolor=color,
-            )
+            legend_labels.append("Source + Background")
 
-            axs[0].set_ylabel("Folded spectrum\n" + r"[Counts s$^{-1}$ keV$^{-1}$ cm$^{-2}$]")
-            axs[0].loglog()
-            axs[0].set_xlim(observation.out_energies[0][0], observation.out_energies[1][-1])
+            if self.background_model is not None:
+                # We plot the background only if it is included in the fit, i.e. by subtracting
+                legend_plots += _plot_binned_samples_with_error(
+                    axs[0],
+                    observation.out_energies,
+                    y_observed=observation.observed_bkg,
+                    y_samples=bkg_count,
+                    denominator=denominator,
+                    color=(0.26787604, 0.60085972, 0.63302651),
+                    percentile=percentile,
+                )
+
+                legend_labels.append("Background")
 
             residuals = np.percentile(
-                (observation.observed_counts - count) / np.diff(np.percentile(count, percentile, axis=0), axis=0),
+                (obs - count) / np.diff(np.percentile(count, percentile, axis=0), axis=0),
                 percentile,
                 axis=0,
             )
-
-            max_residuals = np.max(np.abs(residuals))
 
             axs[1].fill_between(
                 list(observation.out_energies[0]) + [observation.out_energies[1][-1]],
@@ -263,9 +358,14 @@ class ChainResult:
                 list(residuals[1]) + [residuals[1][-1]],
                 alpha=0.3,
                 step="post",
-                label="posterior predictive",
                 facecolor=color,
             )
+
+            max_residuals = np.max(np.abs(residuals))
+
+            axs[0].loglog()
+            axs[0].set_ylabel("Folded spectrum\n" + r"[Counts s$^{-1}$ keV$^{-1}$ cm$^{-2}$]")
+            axs[0].set_xlim(observation.out_energies[0][0], observation.out_energies[1][-1])
 
             axs[1].set_xlim(observation.out_energies[0][0], observation.out_energies[1][-1])
             axs[1].set_ylim(-max(3.5, max_residuals), +max(3.5, max_residuals))
@@ -280,6 +380,7 @@ class ChainResult:
             axs[1].set_yticks([-3, 0, 3], labels=[-3, 0, 3])
             axs[1].set_yticks(range(-3, 4), minor=True)
 
+            axs[0].legend(legend_plots, legend_labels)
             fig.suptitle(self.model.to_string())
 
             fig.align_ylabels()
@@ -288,8 +389,15 @@ class ChainResult:
 
             return fig
 
-    def table(self):
-        return self.consumer.analysis.get_latex_table(caption="Results of the fit", label="tab:results")
+    def table(self) -> str:
+        """
+        Return a formatted $\LaTeX$ table of the results of the fit.
+        """
+
+        consumer = ChainConsumer()
+        consumer.add_chain(self.chain(self.model.to_string()))
+
+        return consumer.analysis.get_latex_table(caption="Results of the fit", label="tab:results")
 
     def plot_corner(
         self,
@@ -306,7 +414,8 @@ class ChainResult:
             **kwargs: Additional arguments passed to ChainConsumer.plotter.plot.
         """
 
-        consumer = self.consumer
+        consumer = ChainConsumer()
+        consumer.add_chain(self.chain(self.model.to_string()))
         consumer.set_plot_config(config)
 
         # Context for default mpl style

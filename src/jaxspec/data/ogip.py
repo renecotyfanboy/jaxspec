@@ -66,9 +66,9 @@ class DataPHA:
         kwargs = {
             "grouping": data["GROUPING"] if "GROUPING" in data.colnames else None,
             "quality": data["QUALITY"] if "QUALITY" in data.colnames else None,
-            "backfile": header["BACKFILE"] if len(header["BACKFILE"]) > 0 else None,
-            "respfile": header["RESPFILE"] if len(header["RESPFILE"]) > 0 else None,
-            "ancrfile": header["ANCRFILE"] if len(header["ANCRFILE"]) > 0 else None,
+            "backfile": header.get("BACKFILE"),
+            "respfile": header.get("RESPFILE"),
+            "ancrfile": header.get("ANCRFILE"),
         }
 
         return cls(data["CHANNEL"], data["COUNTS"], header["EXPOSURE"], **kwargs)

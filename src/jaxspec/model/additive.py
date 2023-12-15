@@ -215,18 +215,12 @@ class Gauss(AdditiveComponent):
         * $K$ : Normalization $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
-    def emission_lines(self, e_low, e_high) -> (jax.Array, jax.Array):
+    def continuum(self, energy) -> (jax.Array, jax.Array):
         line_energy = hk.get_parameter("E_l", [], init=HaikuConstant(1))
         sigma = hk.get_parameter("sigma", [], init=HaikuConstant(1))
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
-        f_low = jsp.stats.norm.cdf(e_low, loc=line_energy, scale=sigma)
-        f_high = jsp.stats.norm.cdf(e_high, loc=line_energy, scale=sigma)
-
-        return norm * (f_high - f_low), (e_low + e_high) / 2
-
-    def continuum(self, energy):
-        return jnp.zeros_like(energy)
+        return norm * jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
 
 
 class APEC(AdditiveComponent):

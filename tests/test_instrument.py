@@ -15,22 +15,27 @@ class TestRSP(TestCase):
         os.path.join(current_dir, file)
         for file in [
             "data/ogip/PN.arf",
-            "data/ogip/M1.arf",
-            "data/ogip/M2.arf",
+            "data/ogip/MOS1.arf",
+            "data/ogip/MOS2.arf",
             "data/ogip/nustar.arf",
         ]
     ]
+
     rmf_files = [
         os.path.join(current_dir, file)
         for file in [
             "data/ogip/PN.rmf",
-            "data/ogip/M1.rmf",
-            "data/ogip/M2.rmf",
+            "data/ogip/MOS1.rmf",
+            "data/ogip/MOS2.rmf",
             "data/ogip/nustar.rmf",
             "data/ogip/XIFU.rmf",
         ]
     ]
-    pha_files = [os.path.join(current_dir, file) for file in ["data/ogip/xmm_pha.fits"]]
+
+    pha_files = [
+        os.path.join(current_dir, file)
+        for file in ["data/ogip/MOS1_spectrum_grp.fits", "data/ogip/MOS2_spectrum_grp.fits", "data/ogip/PN_spectrum_grp20.fits"]
+    ]
 
     def test_instrument_constructor(self):
         """
