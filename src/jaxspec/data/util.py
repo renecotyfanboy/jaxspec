@@ -15,23 +15,31 @@ from numpyro import handlers
 K = TypeVar("K")
 V = TypeVar("V")
 
-example_observations = {
-    "PN": Observation.from_pha_file(
-        importlib.resources.files("jaxspec") / "data/example_data/PN.pha",
-        low_energy=0.3,
-        high_energy=12,
-    ),
-    "MOS1": Observation.from_pha_file(
-        importlib.resources.files("jaxspec") / "data/example_data/MOS1.pha",
-        low_energy=0.3,
-        high_energy=7,
-    ),
-    "MOS2": Observation.from_pha_file(
-        importlib.resources.files("jaxspec") / "data/example_data/MOS2.pha",
-        low_energy=0.3,
-        high_energy=7,
-    ),
-}
+
+def load_example_observations():
+    """
+    Load some example observations from the package data.
+    """
+
+    example_observations = {
+        "PN": Observation.from_pha_file(
+            importlib.resources.files("jaxspec") / "data/example_data/PN_spectrum_grp20.fits",
+            low_energy=0.3,
+            high_energy=7.5,
+        ),
+        "MOS1": Observation.from_pha_file(
+            importlib.resources.files("jaxspec") / "data/example_data/MOS1_spectrum_grp.fits",
+            low_energy=0.3,
+            high_energy=7,
+        ),
+        "MOS2": Observation.from_pha_file(
+            importlib.resources.files("jaxspec") / "data/example_data/MOS2_spectrum_grp.fits",
+            low_energy=0.3,
+            high_energy=7,
+        ),
+    }
+
+    return example_observations
 
 
 def fakeit(
