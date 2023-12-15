@@ -39,9 +39,9 @@ def model():
 
 @pytest.fixture
 def observations():
-    from jaxspec.data.util import example_observations
+    from jaxspec.data.util import load_example_observations
 
-    return example_observations["PN"]
+    return load_example_observations()["PN"]
 
 
 @pytest.fixture

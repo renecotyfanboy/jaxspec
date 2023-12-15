@@ -26,10 +26,11 @@ class Observation(Instrument):
         rmf: DataRMF,
         low_energy: float = 1e-20,
         high_energy: float = 1e20,
+        ignore_bad_channel: bool = True,
         bkg: DataPHA = None,
         background_subtracted: bool = False,
     ):
-        """
+        r"""
         This is the basic constructor for an observation.
         It is recommended to build the [`Observation`][jaxspec.data.observation.Observation] object using the
         [`from_pha_file`][jaxspec.data.observation.Observation.from_pha_file] constructor.
@@ -40,12 +41,13 @@ class Observation(Instrument):
             rmf: The RMF data.
             low_energy: The lower energy bound.
             high_energy: The higher energy bound.
+            ignore_bad_channel: Whether to ignore bad channels ([quality $\neq$ 0](https://heasarc.gsfc.nasa.gov/docs/asca/abc/node9.html#SECTION00923000000000000000)) or not. Defaults to True
             bkg: The background data.
             background_subtracted: Whether the provided PHA is already background subtracted or not.
 
         !!! warning
 
-            We found that the `HDUCLAS2`fits keyword, which signal whether the spectrum is background-subtracted or not,
+            We found that the `HDUCLAS2` fits keyword, which signal whether the spectrum is background-subtracted or not,
             might be misused within the various X-ray data software. So at this time, the user must provide
             this information by himself. See [this issue](https://github.com/renecotyfanboy/jaxspec/issues/99) for more
             details.
@@ -54,6 +56,12 @@ class Observation(Instrument):
         self.pha = pha
         self.bkg = bkg
         self.bkg_subtracted = background_subtracted
+
+        if ignore_bad_channel:
+            self.quality_filter = self.pha.quality == 0
+
+        else:
+            self.quality_filter = np.ones_like(self.pha.quality)
 
         super().__init__(
             arf,

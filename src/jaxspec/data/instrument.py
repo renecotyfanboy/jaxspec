@@ -51,6 +51,12 @@ class Instrument:
         self.low_energy = low_energy
         self.high_energy = high_energy
         self.grouping = grouping
+
+        if getattr(self, "quality_filter", None) is None:
+            # setup quality if this has not been done in the Observation class
+            # don't worry this will be refactored soon, i really don't like it
+            self.quality_filter = np.ones((len(self.rmf.channel),), dtype=bool)
+
         self.rebin(grouping)
 
     @classmethod
@@ -95,6 +101,8 @@ class Instrument:
             different grouping matrices.
         """
 
+        grouping = grouping.copy()
+
         arf = self.arf
         rmf = self.rmf
 
@@ -105,8 +113,11 @@ class Instrument:
         e_min = np.nanmin(np.where(grouping > 0, grouping, np.nan) * rmf.e_min.value[None, :], axis=1)
         e_max = np.nanmax(np.where(grouping > 0, grouping, np.nan) * rmf.e_max.value[None, :], axis=1)
 
+        grouping[:, ~self.quality_filter] = 0
+
         row_idx = np.ones(grouping.shape[0], dtype=bool)
         row_idx *= (e_min >= low_energy) & (e_max <= high_energy)
+        # row_idx *= grouping.sum(axis=0) > 0  # Exclude channels with no contribution
 
         col_idx = np.ones(rmf.energ_lo.shape, dtype=bool)
         col_idx *= rmf.energ_lo.value > 0.0  # Exclude channels with 0. as lower energy bound
