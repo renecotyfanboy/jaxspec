@@ -24,6 +24,8 @@ cmasher = "^1.6.3"
 gpjax = "^0.7.2"
 jaxopt = "^0.8.1"
 tinygp = "^0.2.4"
+seaborn = "^0.13.1"
+sparse = "^0.14.0"
 
 
 [tool.poetry.group.docs.dependencies]
@@ -47,6 +49,8 @@ testbook = "^0.4.2"
 pre-commit = "^3.5.0"
 ruff = "^0.1.3"
 jupyterlab = "^4.0.7"
+notebook = "^7.0.6"
+ipywidgets = "^8.1.1"
 
 [tool.ruff]
 line-length = 130

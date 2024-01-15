@@ -43,7 +43,7 @@ class TestRSP(TestCase):
         """
 
         for arf_file, rmf_file in zip(self.arf_files, self.rmf_files):
-            instrument = Instrument.from_ogip_file(arf_file, rmf_file, 1000)
+            instrument = Instrument.from_ogip_file(arf_file, rmf_file)
             assert instrument is not None
 
     def test_observation_constructor(self):

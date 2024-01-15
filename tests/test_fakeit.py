@@ -39,9 +39,14 @@ def model():
 
 @pytest.fixture
 def observations():
-    from jaxspec.data.util import load_example_observations
+    from jaxspec.data.util import load_example_foldings
 
-    return load_example_observations()["PN"]
+    return list(load_example_foldings().values())
+
+
+@pytest.fixture
+def observation(observations):
+    return observations[0]
 
 
 @pytest.fixture
@@ -54,17 +59,25 @@ def sharded_parameters(parameters):
     return jax.device_put(parameters, sharding)
 
 
-def test_fakeits_apply_stat(observations, model, parameters):
+def test_fakeits_apply_stat(observation, model, parameters):
+    spectra = fakeit_for_multiple_parameters(observation, model, parameters, apply_stat=False)
+    chex.assert_type(spectra, float)
+
+    spectra = fakeit_for_multiple_parameters(observation, model, parameters, apply_stat=True)
+    chex.assert_type(spectra, int)
+
+
+def test_fakeits_parallel(observation, model, sharded_parameters):
+    spectra = fakeit_for_multiple_parameters(observation, model, sharded_parameters, apply_stat=False)
+    chex.assert_type(spectra, float)
+
+    spectra = fakeit_for_multiple_parameters(observation, model, sharded_parameters, apply_stat=True)
+    chex.assert_type(spectra, int)
+
+
+def test_fakeits_multiple_observation(observations, model, parameters):
     spectra = fakeit_for_multiple_parameters(observations, model, parameters, apply_stat=False)
     chex.assert_type(spectra, float)
 
     spectra = fakeit_for_multiple_parameters(observations, model, parameters, apply_stat=True)
-    chex.assert_type(spectra, int)
-
-
-def test_fakeits_parallel(observations, model, sharded_parameters):
-    spectra = fakeit_for_multiple_parameters(observations, model, sharded_parameters, apply_stat=False)
-    chex.assert_type(spectra, float)
-
-    spectra = fakeit_for_multiple_parameters(observations, model, sharded_parameters, apply_stat=True)
     chex.assert_type(spectra, int)

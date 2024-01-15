@@ -1,7 +1,7 @@
 import arviz as az
 import numpy as np
 import matplotlib.pyplot as plt
-from ..data.observation import Observation
+from ..data import FoldingModel
 from ..model.abc import SpectralModel
 from ..model.background import BackgroundModel
 from collections.abc import Mapping
@@ -57,9 +57,9 @@ def _plot_binned_samples_with_error(
             denominator = np.ones_like(x_bins[0])
 
         (mean,) = ax.step(
-            list(x_bins[0]) + [x_bins[1][-1]],
-            list(y_observed / denominator) + [(y_observed / denominator)[-1]],
-            where="post",
+            list(x_bins[0]) + [x_bins[1][-1]],  # x_bins[1][-1]+1],
+            list(y_observed / denominator) + [np.nan],  # + [np.nan, np.nan],
+            where="pre",
             c=color,
         )
 
@@ -70,14 +70,14 @@ def _plot_binned_samples_with_error(
         percentiles = np.percentile(y_samples, percentile, axis=0)
 
         # The legend cannot handle fill_between, so we pass a fill to get a fancy icone
-        (envelope,) = ax.fill(np.NaN, np.NaN, alpha=0.3, facecolor=color)
+        (envelope,) = ax.fill(np.nan, np.nan, alpha=0.3, facecolor=color)
 
         ax.fill_between(
-            list(x_bins[0]) + [x_bins[1][-1]],
-            list(percentiles[0] / denominator) + [(percentiles[0] / denominator)[-1]],
-            list(percentiles[1] / denominator) + [(percentiles[1] / denominator)[-1]],
+            list(x_bins[0]) + [x_bins[1][-1]],  # + [x_bins[1][-1], x_bins[1][-1] + 1],
+            list(percentiles[0] / denominator) + [np.nan],  # + [np.nan, np.nan],
+            list(percentiles[1] / denominator) + [np.nan],  # + [np.nan, np.nan],
             alpha=0.3,
-            step="post",
+            step="pre",
             facecolor=color,
         )
 
@@ -118,7 +118,7 @@ class ChainResult:
     def __init__(
         self,
         model: SpectralModel,
-        observation: Observation,
+        folding_model: FoldingModel,
         inference_data: az.InferenceData,
         samples,
         structure: Mapping[K, V],
@@ -127,7 +127,7 @@ class ChainResult:
         self.model = model
         self._structure = structure
         self.inference_data = inference_data
-        self.observation = observation
+        self.folding_model = folding_model
         self.samples = samples
         self.background_model = background_model
         self._structure = structure
@@ -286,7 +286,7 @@ class ChainResult:
             The matplotlib two panel figure.
         """
 
-        observation = self.observation
+        folding_model = self.folding_model
         count = az.extract(self.inference_data, var_names="obs", group="posterior_predictive").values.T
         bkg_count = (
             None
@@ -300,31 +300,35 @@ class ChainResult:
         color = (0.15, 0.25, 0.45)
 
         with plt.style.context("default"):
+            # Note to Simon : do not change folding_model.out_energies[1] - folding_model.out_energies[0] to
+            # np.diff, you already did this twice and forgot that it does not work since diff keeps the dimensions
+            # and enable weird broadcasting that makes the plot fail
+
             fig, axs = plt.subplots(2, 1, figsize=(6, 6), sharex=True, height_ratios=[0.7, 0.3])
 
-            mid_bins_arf = (observation.arf.energ_hi + observation.arf.energ_lo) / 2
+            mid_bins_arf = folding_model.in_energies.mean(axis=0)
 
-            e_grid = np.linspace(*observation.out_energies, 10)
-            interpolated_arf = np.interp(e_grid, mid_bins_arf.value, observation.arf.specresp)
+            e_grid = np.linspace(*folding_model.out_energies, 10)
+            interpolated_arf = np.interp(e_grid, mid_bins_arf, folding_model.area)
             integrated_arf = trapezoid(interpolated_arf, x=e_grid, axis=0) / (
-                observation.out_energies[1] - observation.out_energies[0]
+                folding_model.out_energies[1] - folding_model.out_energies[0]
             )
 
-            if observation.out_energies[0][0] < 1 < observation.out_energies[1][-1]:
-                xticks = [np.floor(observation.out_energies[0][0] * 10) / 10, 1.0, np.floor(observation.out_energies[1][-1])]
+            if folding_model.out_energies[0][0] < 1 < folding_model.out_energies[1][-1]:
+                xticks = [np.floor(folding_model.out_energies[0][0] * 10) / 10, 1.0, np.floor(folding_model.out_energies[1][-1])]
             else:
-                xticks = [np.floor(observation.out_energies[0][0] * 10) / 10, np.floor(observation.out_energies[1][-1])]
+                xticks = [np.floor(folding_model.out_energies[0][0] * 10) / 10, np.floor(folding_model.out_energies[1][-1])]
 
-            denominator = (observation.out_energies[1] - observation.out_energies[0]) * observation.exposure * integrated_arf
+            denominator = (
+                (folding_model.out_energies[1] - folding_model.out_energies[0]) * folding_model.exposure.data * integrated_arf
+            )
 
             # Use the helper function to plot the data and posterior predictive
-            obs = observation.observed_counts
-
             legend_plots += _plot_binned_samples_with_error(
                 axs[0],
-                observation.out_energies,
+                folding_model.out_energies,
                 y_samples=count,
-                y_observed=obs,
+                y_observed=folding_model.folded_counts.data,
                 denominator=denominator,
                 color=color,
                 percentile=percentile,
@@ -336,8 +340,8 @@ class ChainResult:
                 # We plot the background only if it is included in the fit, i.e. by subtracting
                 legend_plots += _plot_binned_samples_with_error(
                     axs[0],
-                    observation.out_energies,
-                    y_observed=observation.observed_bkg,
+                    folding_model.out_energies,
+                    y_observed=folding_model.folded_background.data,
                     y_samples=bkg_count,
                     denominator=denominator,
                     color=(0.26787604, 0.60085972, 0.63302651),
@@ -347,13 +351,13 @@ class ChainResult:
                 legend_labels.append("Background")
 
             residuals = np.percentile(
-                (obs - count) / np.diff(np.percentile(count, percentile, axis=0), axis=0),
+                (folding_model.folded_counts.data - count) / np.diff(np.percentile(count, percentile, axis=0), axis=0),
                 percentile,
                 axis=0,
             )
 
             axs[1].fill_between(
-                list(observation.out_energies[0]) + [observation.out_energies[1][-1]],
+                list(folding_model.out_energies[0]) + [folding_model.out_energies[1][-1]],
                 list(residuals[0]) + [residuals[0][-1]],
                 list(residuals[1]) + [residuals[1][-1]],
                 alpha=0.3,
@@ -365,9 +369,7 @@ class ChainResult:
 
             axs[0].loglog()
             axs[0].set_ylabel("Folded spectrum\n" + r"[Counts s$^{-1}$ keV$^{-1}$ cm$^{-2}$]")
-            axs[0].set_xlim(observation.out_energies[0][0], observation.out_energies[1][-1])
 
-            axs[1].set_xlim(observation.out_energies[0][0], observation.out_energies[1][-1])
             axs[1].set_ylim(-max(3.5, max_residuals), +max(3.5, max_residuals))
             axs[1].set_ylabel("Residuals \n" + r"[$\sigma$]")
             axs[1].set_xlabel("Energy \n[keV]")
@@ -379,6 +381,8 @@ class ChainResult:
             axs[1].set_xticks(xticks, labels=xticks)
             axs[1].set_yticks([-3, 0, 3], labels=[-3, 0, 3])
             axs[1].set_yticks(range(-3, 4), minor=True)
+
+            axs[0].set_xlim(folding_model.out_energies.min(), folding_model.out_energies.max())
 
             axs[0].legend(legend_plots, legend_labels)
             fig.suptitle(self.model.to_string())

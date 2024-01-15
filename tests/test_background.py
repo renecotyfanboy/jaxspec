@@ -1,32 +1,3 @@
-import chex
-import pytest
-import numpyro
-from jax.config import config
-
-chex.set_n_cpu_devices(n=4)
-config.update("jax_enable_x64", True)
-numpyro.set_platform("cpu")
-numpyro.set_host_device_count(4)
-
-
-@pytest.fixture
-def obs_model_prior():
-    from jaxspec.model.additive import Powerlaw, Cutoffpl
-    from jaxspec.model.multiplicative import Tbabs
-    from jaxspec.data.util import load_example_observations
-    import numpyro.distributions as dist
-
-    obs_list = list(load_example_observations().values())
-    model = Tbabs() * (Powerlaw() + Cutoffpl())
-    prior = {
-        "powerlaw_1": {"alpha": dist.Uniform(0, 5), "norm": dist.Exponential(1e4)},
-        "tbabs_1": {"N_H": dist.Uniform(0, 5)},
-        "cutoffpl_1": {"alpha": dist.Uniform(0, 5), "beta": dist.Uniform(0, 10), "norm": dist.Exponential(1e4)},
-    }
-
-    return obs_list, model, prior
-
-
 def test_gp_bkg(obs_model_prior):
     from jaxspec.fit import BayesianModel
     from jaxspec.model.background import GaussianProcessBackground

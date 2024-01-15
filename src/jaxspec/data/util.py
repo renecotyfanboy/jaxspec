@@ -1,4 +1,6 @@
 import importlib.resources
+import os
+
 import numpyro
 import jax
 import numpy as np
@@ -6,8 +8,9 @@ import haiku as hk
 from numpy.typing import ArrayLike
 from collections.abc import Mapping
 from typing import TypeVar
-from .observation import Observation
-from .instrument import Instrument
+
+from .ogip import DataPHA, DataARF, DataRMF
+from . import Observation, Instrument, FoldingModel
 from ..model.abc import SpectralModel
 from ..fit import CountForwardModel
 from numpyro import handlers
@@ -42,8 +45,63 @@ def load_example_observations():
     return example_observations
 
 
+def load_example_instruments():
+    """
+    Load some example instruments from the package data.
+    """
+
+    example_instruments = {
+        "PN": Instrument.from_ogip_file(
+            importlib.resources.files("jaxspec") / "data/example_data/PN.arf",
+            importlib.resources.files("jaxspec") / "data/example_data/PN.rmf",
+        ),
+        "MOS1": Instrument.from_ogip_file(
+            importlib.resources.files("jaxspec") / "data/example_data/MOS1.arf",
+            importlib.resources.files("jaxspec") / "data/example_data/MOS1.rmf",
+        ),
+        "MOS2": Instrument.from_ogip_file(
+            importlib.resources.files("jaxspec") / "data/example_data/MOS2.arf",
+            importlib.resources.files("jaxspec") / "data/example_data/MOS2.rmf",
+        ),
+    }
+
+    return example_instruments
+
+
+def load_example_foldings():
+    """
+    Load some example instruments from the package data.
+    """
+
+    example_instruments = load_example_instruments()
+    example_observations = load_example_observations()
+
+    example_foldings = {
+        "PN": FoldingModel.from_instrument(
+            example_instruments["PN"],
+            example_observations["PN"],
+            low_energy=0.3,
+            high_energy=12,
+        ),
+        "MOS1": FoldingModel.from_instrument(
+            example_instruments["MOS1"],
+            example_observations["MOS1"],
+            low_energy=0.3,
+            high_energy=7,
+        ),
+        "MOS2": FoldingModel.from_instrument(
+            example_instruments["MOS2"],
+            example_observations["MOS2"],
+            low_energy=0.3,
+            high_energy=7,
+        ),
+    }
+
+    return example_foldings
+
+
 def fakeit(
-    instrument: Instrument | list[Instrument],
+    instrument: FoldingModel | list[FoldingModel],
     model: SpectralModel,
     parameters: Mapping[K, V],
     rng_key: int = 0,
@@ -61,7 +119,7 @@ def fakeit(
         rng_key: The random number generator seed.
     """
 
-    instruments = [instrument] if isinstance(instrument, Instrument) else instrument
+    instruments = [instrument] if isinstance(instrument, FoldingModel) else instrument
     fakeits = []
 
     for i, instrument in enumerate(instruments):
@@ -98,7 +156,7 @@ def fakeit(
 
 
 def fakeit_for_multiple_parameters(
-    instrument: Instrument | list[Instrument],
+    instrument: FoldingModel | list[FoldingModel],
     model: SpectralModel,
     parameters: Mapping[K, V],
     rng_key: int = 0,
@@ -118,7 +176,7 @@ def fakeit_for_multiple_parameters(
         apply_stat: Whether to apply Poisson statistic on the folded spectra or not.
     """
 
-    instruments = [instrument] if isinstance(instrument, Instrument) else instrument
+    instruments = [instrument] if isinstance(instrument, FoldingModel) else instrument
     fakeits = []
 
     for i, obs in enumerate(instruments):
@@ -142,3 +200,39 @@ def fakeit_for_multiple_parameters(
         fakeits.append(spectrum)
 
     return fakeits[0] if len(fakeits) == 1 else fakeits
+
+
+def data_loader(pha_path, arf_path=None, rmf_path=None, bkg_path=None):
+    """
+    This function is a convenience function that allows to load PHA, ARF and RMF data
+    from a given PHA file, using either the ARF/RMF/BKG filenames in the header or the
+    specified filenames overwritten by the user.
+
+    Parameters:
+        pha_path: The PHA file path.
+        arf_path: The ARF file path.
+        rmf_path: The RMF file path.
+        bkg_path: The BKG file path.
+    """
+
+    pha = DataPHA.from_file(pha_path)
+
+    if arf_path is None:
+        arf_path = os.path.join(os.path.dirname(pha_path), pha.ancrfile)
+    if rmf_path is None:
+        rmf_path = os.path.join(os.path.dirname(pha_path), pha.respfile)
+    if bkg_path is None:
+        bkg_path = os.path.join(os.path.dirname(pha_path), pha.backfile)
+
+    arf = DataARF.from_file(arf_path)
+    rmf = DataRMF.from_file(rmf_path)
+    bkg = DataPHA.from_file(bkg_path) if bkg_path is not None else None
+
+    metadata = {
+        "observation_file": pha_path,
+        "background_file": bkg_path,
+        "response_matrix_file": rmf_path,
+        "ancillary_response_file": arf_path,
+    }
+
+    return pha, arf, rmf, bkg, metadata

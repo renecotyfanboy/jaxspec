@@ -9,8 +9,7 @@ from jax import random
 from jax.tree_util import tree_map
 from .analysis.results import ChainResult
 from .model.abc import SpectralModel
-from .data.instrument import Instrument
-from .data.observation import Observation
+from .data import FoldingModel
 from .model.background import BackgroundModel
 from numpyro.infer import MCMC, NUTS, Predictive
 from numpyro.distributions import Distribution
@@ -40,11 +39,11 @@ class CountForwardModel(hk.Module):
     A haiku module which allows to build the function that simulates the measured counts
     """
 
-    def __init__(self, model: SpectralModel, instrument: Instrument):
+    def __init__(self, model: SpectralModel, folding: FoldingModel):
         super().__init__()
         self.model = model
-        self.energies = jnp.asarray(instrument.in_energies)
-        self.transfer_matrix = jnp.asarray(instrument.transfer_matrix)
+        self.energies = jnp.asarray(folding.in_energies)
+        self.transfer_matrix = jnp.asarray(folding.transfer_matrix.data)
 
     def __call__(self, parameters):
         """
@@ -63,15 +62,15 @@ class ForwardModelFit(ABC):
 
     model: SpectralModel
     """The model to fit to the data."""
-    observations: list[Observation]
+    observations: list[FoldingModel]
     """The observations to fit the model to."""
     count_function: hk.Transformed
     """A function enabling the forward modelling of observations with the given instrumental setup."""
     pars: dict
 
-    def __init__(self, model: SpectralModel, observations: Observation | list[Observation]):
+    def __init__(self, model: SpectralModel, observations: FoldingModel | list[FoldingModel]):
         self.model = model
-        self.observations = [observations] if isinstance(observations, Observation) else observations
+        self.observations = [observations] if isinstance(observations, FoldingModel) else observations
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
 
     @abstractmethod
@@ -108,10 +107,10 @@ class BayesianModel(ForwardModelFit):
             for i, obs in enumerate(self.observations):
                 transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(self.model, obs)(par)))
 
-                if (obs.bkg is not None) and (self.background_model is not None):
+                if (getattr(obs, "folded_background", None) is not None) and (self.background_model is not None):
                     # TODO : Raise warning when setting a background model but there is no background spectra loaded
                     bkg_countrate = self.background_model.numpyro_model(
-                        obs.out_energies, obs.observed_bkg, name=f"bkg_{i}", observed=observed
+                        obs.out_energies, obs.folded_background.data, name=f"bkg_{i}", observed=observed
                     )
                 else:
                     bkg_countrate = 0.0
@@ -120,11 +119,11 @@ class BayesianModel(ForwardModelFit):
                 countrate = obs_model(prior_params)
 
                 # This is the case where we fit a model to a TOTAL spectrum as defined in OGIP standard
-                with numpyro.plate(f"obs_{i}_plate", len(obs.observed_counts)):
+                with numpyro.plate(f"obs_{i}_plate", len(obs.folded_counts)):
                     numpyro.sample(
                         f"obs_{i}",
                         Poisson(countrate + bkg_countrate),
-                        obs=obs.observed_counts if observed else None,
+                        obs=obs.folded_counts.data if observed else None,
                     )
 
         return model
@@ -163,7 +162,7 @@ class BayesianModel(ForwardModelFit):
             "num_chains": num_chains,
         }
 
-        kernel = NUTS(bayesian_model, max_tree_depth=5)
+        kernel = NUTS(bayesian_model, max_tree_depth=6)
         mcmc = MCMC(kernel, **(chain_kwargs | mcmc_kwargs))
 
         keys = random.split(random.PRNGKey(rng_key), 3)

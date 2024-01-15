@@ -1,104 +1,125 @@
 import os
 import numpy as np
-from . import data_loader
-from .ogip import DataPHA, DataARF, DataRMF
-from .instrument import Instrument
+import xarray as xr
 
 
-class Observation(Instrument):
+class Observation(xr.Dataset):
     """
-    Class to store the data of an observation, including the PHA, ARF and RMF files.
-
-    Note:
-        This inherits from the [`Instrument`][jaxspec.data.instrument.Instrument] class, it includes every attribute from
-        an instrumental setup, including the energy band, exposure time and grouping. It can be used in replacement of
-        [`Instrument`][jaxspec.data.instrument.Instrument] in any function taking an instrumental setup as an argument.
+    Class to store the data of an observation
     """
 
-    pha: DataPHA
-    observed_counts: np.ndarray
-    observed_bkg: np.ndarray | None
+    __slots__ = ("counts", "grouping", "channel", "quality" "exposure")
 
-    def __init__(
-        self,
-        pha: DataPHA,
-        arf: DataARF,
-        rmf: DataRMF,
-        low_energy: float = 1e-20,
-        high_energy: float = 1e20,
-        ignore_bad_channel: bool = True,
-        bkg: DataPHA = None,
-        background_subtracted: bool = False,
+    _default_attributes = {"description": "X-ray observation dataset"}
+
+    @classmethod
+    def from_matrix(
+        cls,
+        counts,
+        grouping,
+        channel,
+        quality,
+        exposure,
+        background=None,
+        attributes: dict | None = None,
     ):
-        r"""
-        This is the basic constructor for an observation.
-        It is recommended to build the [`Observation`][jaxspec.data.observation.Observation] object using the
-        [`from_pha_file`][jaxspec.data.observation.Observation.from_pha_file] constructor.
+        if attributes is None:
+            attributes = {}
+        data_dict = {
+            "counts": (["instrument_channel"], np.array(counts, dtype=np.int64), {"description": "Counts", "unit": "photons"}),
+            "folded_counts": (
+                ["folded_channel"],
+                np.array(grouping @ counts, dtype=np.int64),
+                {"description": "Folded counts, after grouping", "unit": "photons"},
+            ),
+            "grouping": (
+                ["folded_channel", "instrument_channel"],
+                np.array(grouping, dtype=bool),
+                {"description": "Grouping matrix."},
+            ),
+            "quality": (["instrument_channel"], np.array(quality, dtype=np.int64), {"description": "Quality flag."}),
+            "exposure": ([], float(exposure), {"description": "Total exposure", "unit": "s"}),
+        }
 
-        Parameters:
-            pha: The PHA data.
-            arf: The ARF data.
-            rmf: The RMF data.
-            low_energy: The lower energy bound.
-            high_energy: The higher energy bound.
-            ignore_bad_channel: Whether to ignore bad channels ([quality $\neq$ 0](https://heasarc.gsfc.nasa.gov/docs/asca/abc/node9.html#SECTION00923000000000000000)) or not. Defaults to True
-            bkg: The background data.
-            background_subtracted: Whether the provided PHA is already background subtracted or not.
+        if background is not None:
+            data_dict["background"] = (
+                ["instrument_channel"],
+                np.array(background, dtype=np.int64),
+                {"description": "Background counts", "unit": "photons"},
+            )
 
-        !!! warning
+            data_dict["folded_background"] = (
+                ["folded_channel"],
+                np.array(grouping @ background, dtype=np.int64),
+                {"description": "Background counts", "unit": "photons"},
+            )
 
-            We found that the `HDUCLAS2` fits keyword, which signal whether the spectrum is background-subtracted or not,
-            might be misused within the various X-ray data software. So at this time, the user must provide
-            this information by himself. See [this issue](https://github.com/renecotyfanboy/jaxspec/issues/99) for more
-            details.
-        """
-
-        self.pha = pha
-        self.bkg = bkg
-        self.bkg_subtracted = background_subtracted
-
-        if ignore_bad_channel:
-            self.quality_filter = self.pha.quality == 0
-
-        else:
-            self.quality_filter = np.ones_like(self.pha.quality)
-
-        super().__init__(
-            arf,
-            rmf,
-            pha.exposure,
-            pha.grouping,
-            low_energy=low_energy,
-            high_energy=high_energy,
+        return cls(
+            data_dict,
+            coords={
+                "channel": (["instrument_channel"], np.array(channel, dtype=np.int64), {"description": "Channel number"}),
+                "grouped_channel": (
+                    ["folded_channel"],
+                    np.arange(len(grouping @ counts), dtype=np.int64),
+                    {"description": "Channel number"},
+                ),
+            },
+            attrs=cls._default_attributes if attributes is None else attributes | cls._default_attributes,
         )
 
     @classmethod
     def from_pha_file(cls, pha_file: str | os.PathLike, **kwargs):
-        """
-        Build an Instrument object from a PHA file.
-        PHA file must contain the ARF and RMF filenames in the header.
-        PHA, ARF and RMF files are expected to be in the same directory.
+        from .util import data_loader
 
-        Parameters:
-            pha_file: PHA file path
+        pha, arf, rmf, bkg, metadata = data_loader(pha_file)
 
-        """
-
-        pha, arf, rmf, bkg = data_loader(pha_file)
-
-        return cls(pha, arf, rmf, bkg=bkg, **kwargs)
-
-    def rebin(self, grouping):
-        # This clearly needs a refactor, even I get lost in the code i've written
-
-        super().rebin(grouping)
-
-        # We also need to rebin the observed counts when there is an observation attached to the instrumental setup
-
-        self.observed_counts = (grouping @ np.asarray(self.pha.counts.value, dtype=np.int64))[self._row_idx]
-        self.observed_bkg = (
-            (grouping @ np.asarray(self.bkg.counts.value, dtype=np.int64))[self._row_idx] if self.bkg is not None else None
+        return cls.from_matrix(
+            pha.counts,
+            pha.grouping,
+            pha.channel,
+            pha.quality,
+            pha.exposure,
+            background=bkg.counts if bkg is not None else None,
+            attributes=metadata,
         )
 
-        if self.bkg_subtracted:
-            self.observed_counts += self.observed_bkg
+    def plot_counts(self, **kwargs):
+        """
+        Plot the counts
+
+        Parameters:
+            **kwargs : `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.step.html#xarray.DataArray.plot.line
+        """
+
+        return self.counts.plot.step(x="instrument_channel", yscale="log", where="post", **kwargs)
+
+    def plot_grouping(self):
+        """
+        Plot the grouping matrix and compare the grouped counts to the true counts
+        in the original channels.
+        """
+
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        fig = plt.figure(figsize=(6, 6))
+        gs = fig.add_gridspec(
+            2, 2, width_ratios=(4, 1), height_ratios=(1, 4), left=0.1, right=0.9, bottom=0.1, top=0.9, wspace=0.05, hspace=0.05
+        )
+        ax = fig.add_subplot(gs[1, 0])
+        ax_histx = fig.add_subplot(gs[0, 0], sharex=ax)
+        ax_histy = fig.add_subplot(gs[1, 1], sharey=ax)
+        sns.heatmap(self.grouping.T, ax=ax, cbar=False)
+        ax_histx.step(np.arange(len(self.folded_counts)), self.folded_counts, where="post")
+        ax_histy.step(self.counts, np.arange(len(self.counts)), where="post")
+
+        ax.set_xlabel("Grouped channels")
+        ax.set_ylabel("Channels")
+        ax_histx.set_ylabel("Grouped counts")
+        ax_histy.set_xlabel("Counts")
+
+        ax_histx.semilogy()
+        ax_histy.semilogx()
+
+        _ = [label.set_visible(False) for label in ax_histx.get_xticklabels()]
+        _ = [label.set_visible(False) for label in ax_histy.get_yticklabels()]
