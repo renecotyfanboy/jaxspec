@@ -23,12 +23,12 @@ result.plot_ppc()
 The `SubtractedBackground` simply account for the observed counts without propagating any kind of dispersion, which
 is clearly bad when we want to get spectral parameters with a comprehensive error budget. The simplest way to deal with
 it is to consider each background bin as a Poisson realisation of a counting process, which is achieved here using
-`SubtractedBackgroundWithError`.
+`BackgroundWithError`.
 
 ``` python
-from jaxspec.model.background import SubtractedBackgroundWithError
+from jaxspec.model.background import BackgroundWithError
 
-forward = BayesianModel(model, obs, background_model=SubtractedBackgroundWithError())
+forward = BayesianModel(model, obs, background_model=BackgroundWithError())
 result = forward.fit(prior, num_chains=4, num_warmup=1000, num_samples=1000, mcmc_kwargs={"progress_bar": True})
 
 result.plot_ppc()
