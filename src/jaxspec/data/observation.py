@@ -25,11 +25,15 @@ class Observation(xr.Dataset):
     ):
         if attributes is None:
             attributes = {}
+
+        if background is None:
+            background = np.zeros_like(counts, dtype=int)
+
         data_dict = {
             "counts": (["instrument_channel"], np.array(counts, dtype=np.int64), {"description": "Counts", "unit": "photons"}),
             "folded_counts": (
                 ["folded_channel"],
-                np.array(grouping @ counts, dtype=np.int64),
+                np.array(grouping @ counts, dtype=int),
                 {"description": "Folded counts, after grouping", "unit": "photons"},
             ),
             "grouping": (
@@ -37,22 +41,19 @@ class Observation(xr.Dataset):
                 np.array(grouping, dtype=bool),
                 {"description": "Grouping matrix."},
             ),
-            "quality": (["instrument_channel"], np.array(quality, dtype=np.int64), {"description": "Quality flag."}),
+            "quality": (["instrument_channel"], np.array(quality, dtype=int), {"description": "Quality flag."}),
             "exposure": ([], float(exposure), {"description": "Total exposure", "unit": "s"}),
-        }
-
-        if background is not None:
-            data_dict["background"] = (
+            "background": (
                 ["instrument_channel"],
-                np.array(background, dtype=np.int64),
+                np.array(background, dtype=int),
                 {"description": "Background counts", "unit": "photons"},
-            )
-
-            data_dict["folded_background"] = (
+            ),
+            "folded_background": (
                 ["folded_channel"],
-                np.array(grouping @ background, dtype=np.int64),
+                np.array(grouping @ background, dtype=int),
                 {"description": "Background counts", "unit": "photons"},
-            )
+            ),
+        }
 
         return cls(
             data_dict,

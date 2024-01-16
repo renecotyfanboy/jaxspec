@@ -1,6 +1,6 @@
 import importlib.resources
 import os
-
+import warnings
 import numpyro
 import jax
 import numpy as np
@@ -226,7 +226,13 @@ def data_loader(pha_path, arf_path=None, rmf_path=None, bkg_path=None):
 
     arf = DataARF.from_file(arf_path)
     rmf = DataRMF.from_file(rmf_path)
-    bkg = DataPHA.from_file(bkg_path) if bkg_path is not None else None
+
+    try:
+        bkg = DataPHA.from_file(bkg_path) if bkg_path is not None else None
+
+    except FileNotFoundError:
+        bkg = None
+        warnings.warn(f"Background file {bkg_path} is specified in header but not found.")
 
     metadata = {
         "observation_file": pha_path,

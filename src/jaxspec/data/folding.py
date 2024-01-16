@@ -81,7 +81,12 @@ class FoldingModel(xr.Dataset):
 
         transfer_matrix = transfer_matrix.where(row_idx & col_idx, drop=True)
         folded_counts = observation.folded_counts.copy().where(row_idx, drop=True)
-        folded_background = observation.folded_background.copy().where(row_idx, drop=True)
+
+        if observation.folded_background is not None:
+            folded_background = observation.folded_background.copy().where(row_idx, drop=True)
+
+        else:
+            folded_background = None
 
         return cls(
             {
