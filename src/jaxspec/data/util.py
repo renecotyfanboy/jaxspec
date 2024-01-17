@@ -222,7 +222,8 @@ def data_loader(pha_path, arf_path=None, rmf_path=None, bkg_path=None):
     if rmf_path is None:
         rmf_path = os.path.join(os.path.dirname(pha_path), pha.respfile)
     if bkg_path is None:
-        bkg_path = os.path.join(os.path.dirname(pha_path), pha.backfile)
+        if pha.backfile != "none" and pha.backfile != "":
+            bkg_path = os.path.join(os.path.dirname(pha_path), pha.backfile)
 
     arf = DataARF.from_file(arf_path)
     rmf = DataRMF.from_file(rmf_path)

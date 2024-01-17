@@ -17,6 +17,12 @@
 
 ## Data containers
 
+::: jaxspec.data.folding
+    options:
+      show_root_heading: false
+      show_root_toc_entry: false
+      heading_level: 3
+
 ::: jaxspec.data.instrument
     options:
       show_root_heading: false
@@ -24,12 +30,6 @@
       heading_level: 3
 
 ::: jaxspec.data.observation
-    options:
-      show_root_heading: false
-      show_root_toc_entry: false
-      heading_level: 3
-
-::: jaxspec.data.ogip
     options:
       show_root_heading: false
       show_root_toc_entry: false

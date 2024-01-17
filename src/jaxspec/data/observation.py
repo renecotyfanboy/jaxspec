@@ -8,7 +8,22 @@ class Observation(xr.Dataset):
     Class to store the data of an observation
     """
 
-    __slots__ = ("counts", "grouping", "channel", "quality" "exposure")
+    counts: xr.DataArray
+    """The observed counts"""
+    folded_counts: xr.DataArray
+    """The observed counts, after grouping"""
+    grouping: xr.DataArray
+    """The grouping matrix"""
+    quality: xr.DataArray
+    """The quality flag"""
+    exposure: xr.DataArray
+    """The total exposure"""
+    background: xr.DataArray
+    """The background counts if provided, otherwise 0"""
+    folded_background: xr.DataArray
+    """The background counts, after grouping"""
+
+    __slots__ = ("grouping", "channel", "quality", "exposure", "background", "folded_background", "counts", "folded_counts")
 
     _default_attributes = {"description": "X-ray observation dataset"}
 

@@ -5,10 +5,35 @@ from .observation import Observation
 
 
 class FoldingModel(xr.Dataset):
-    __slots__ = "transfer_matrix"
+    """
+    Class to store the data of a folding model, which is the link between the unfolded and folded spectra.
+    """
+
+    transfer_matrix: xr.DataArray
+    """The transfer matrix"""
+    area: xr.DataArray
+    """The effective area of the instrument"""
+    exposure: xr.DataArray
+    """The total exposure"""
+    folded_counts: xr.DataArray
+    """The observed counts, after grouping"""
+    folded_background: xr.DataArray
+    """The background counts, after grouping"""
+
+    __slots__ = (
+        "transfer_matrix",
+        "area",
+        "exposure",
+        "folded_counts",
+        "folded_background",
+    )
 
     @property
     def in_energies(self):
+        """
+        The energy bounds of the unfolded bins in keV. The shape is (2, n_bins).
+        """
+
         in_energies = np.stack(
             (
                 np.asarray(self.coords["e_min_unfolded"], dtype=np.float64),
@@ -20,6 +45,10 @@ class FoldingModel(xr.Dataset):
 
     @property
     def out_energies(self):
+        """
+        The energy bounds of the folded bins in keV. The shape is (2, n_bins).
+        """
+
         out_energies = np.stack(
             (
                 np.asarray(self.coords["e_min_folded"], dtype=np.float64),

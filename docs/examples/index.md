@@ -4,7 +4,7 @@
 
 <div class="grid cards" markdown>
 
--   :material-clock-fast:{ .lg .middle } __JAXspec fitting speedrun__
+-   [__:material-clock-fast:{ .lg .middle } JAXspec fitting speedrun__](fitting_example.md)
 
     ---
 
@@ -13,9 +13,8 @@
     A quick overview of the general fitting workflow, including the data loading, model
     definition, inference process and results.
 
-    [:octicons-arrow-right-24: Example here](fitting_example.md)
 
--   __Load your data in JAXspec__
+-   [__Load your data in JAXspec__](load_data.ipynb)
 
     ---
 
@@ -23,9 +22,7 @@
 
     How to load your data in JAXspec, from a PHA file, or build an instrumental set-up with ARF and RMF files.
 
-    [:octicons-arrow-right-24: Example here](load_data.md)
-
--   __Model building made easy__
+-   [__Model building made easy__](build_model.md)
 
     ---
 
@@ -33,9 +30,8 @@
 
     Combine components to build a model in a very intuitive way, adding or multiplying components and model together.
 
-    [:octicons-arrow-right-24: Example here](build_model.md)
 
--   __Generate mock data__
+-   [__Generate mock data__](fakeits.md)
 
     ---
 
@@ -43,7 +39,6 @@
 
     Use the `fakeit` function to generate mock data from a model and a set of parameters, on the CPU, GPU and TPU.
 
-    [:octicons-arrow-right-24: Example here](fakeits.md)
 
 </div>
 

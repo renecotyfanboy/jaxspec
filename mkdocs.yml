@@ -9,7 +9,7 @@ nav:
   - Examples:
     - examples/index.md
     - Spectral fitting speedrun: examples/fitting_example.md
-    - Load your own data: examples/load_data.md
+    - Load your own data: examples/load_data.ipynb
     - Model building made easy: examples/build_model.md
     - Generate mock data : examples/fakeits.md
     - Add a background : examples/background.md
@@ -61,6 +61,11 @@ theme:
 plugins:
   - search
   - autorefs
+  - mkdocs-jupyter:
+      include_source: True
+      ignore_h1_titles: True
+      execute: false
+      include_requirejs: true
   - mkdocstrings:
       default_handler: python
       handlers:
@@ -75,6 +80,7 @@ plugins:
             - https://tinygp.readthedocs.io/en/latest/objects.inv
             - https://python.arviz.org/en/stable/objects.inv
             - https://jax.readthedocs.io/en/latest/objects.inv
+            - https://docs.xarray.dev/en/stable/objects.inv
           options:
             members_order: alphabetical
             docstring_section_style: spacy
@@ -133,6 +139,7 @@ repo_name: jaxspec
 extra_css:
   - css/material.css
   - css/mkdocstrings.css
+  - css/xarray.css
 
 extra_javascript:
   - javascripts/mathjax.js

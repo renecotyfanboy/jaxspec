@@ -5,6 +5,15 @@ from .ogip import DataARF, DataRMF
 
 
 class Instrument(xr.Dataset):
+    """
+    Class to store the data of an instrument
+    """
+
+    redistribution: xr.DataArray
+    """The photon redistribution probability matrix"""
+    area: xr.DataArray
+    """The effective area of the instrument"""
+
     __slots__ = (
         "redistribution",
         "area",
