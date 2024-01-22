@@ -114,24 +114,12 @@ class Lorentz(AdditiveComponent):
         - $K$ : Normalization $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
-    def emission_lines(self, e_min, e_max) -> (jax.Array, jax.Array):
-        # return the primitive of a lorentzian
+    def continuum(self, energy):
         line_energy = hk.get_parameter("E_l", [], init=HaikuConstant(1))
         sigma = hk.get_parameter("sigma", [], init=HaikuConstant(1))
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
-        # This is AI generated for tests I should double check this at some point
-        def primitive(energy):
-            return norm * (sigma / (2 * jnp.pi)) * jnp.arctan((energy - line_energy) / (sigma / 2))
-
-        return primitive(e_max) - primitive(e_min), (e_min + e_max) / 2
-
-    def continuum(self, energy):
-        hk.get_parameter("E_l", [], init=HaikuConstant(1))
-        hk.get_parameter("sigma", [], init=HaikuConstant(1))
-        hk.get_parameter("norm", [], init=HaikuConstant(1))
-
-        return jnp.zeros_like(energy)
+        return norm * sigma / (2 * jnp.pi) / ((energy - line_energy) ** 2 + (sigma / 2) ** 2)
 
 
 class Logparabola(AdditiveComponent):
@@ -150,6 +138,7 @@ class Logparabola(AdditiveComponent):
         * $E_{\text{Pivot}}$ : Pivot energy fixed at 1 keV $\left[ \mathrm{keV}\right]$
     """
 
+    # TODO : conform with xspec definition
     def continuum(self, energy):
         a = hk.get_parameter("a", [], init=HaikuConstant(11 / 3))
         b = hk.get_parameter("b", [], init=HaikuConstant(0.2))

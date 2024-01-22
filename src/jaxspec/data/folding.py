@@ -4,7 +4,7 @@ from .instrument import Instrument
 from .observation import Observation
 
 
-class FoldingModel(xr.Dataset):
+class FoldingMatrix(xr.Dataset):
     """
     Class to store the data of a folding model, which is the link between the unfolded and folded spectra.
     """
@@ -101,7 +101,7 @@ class FoldingModel(xr.Dataset):
         grouping[:, ~quality_filter] = 0
 
         row_idx = xr.ones_like(e_min, dtype=bool)
-        row_idx *= (e_min >= low_energy) & (e_max <= high_energy)
+        row_idx *= (e_min > low_energy) & (e_max < high_energy)  # Strict exclusion as in XSPEC
         row_idx *= grouping.sum(dim="instrument_channel") > 0  # Exclude channels with no contribution
 
         col_idx = xr.ones_like(instrument.area, dtype=bool)

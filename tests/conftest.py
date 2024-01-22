@@ -3,6 +3,7 @@ import pytest
 import numpyro
 from jax import config
 
+
 chex.set_n_cpu_devices(n=4)
 config.update("jax_enable_x64", True)
 numpyro.set_platform("cpu")

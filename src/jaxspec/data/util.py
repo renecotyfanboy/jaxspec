@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from typing import TypeVar
 
 from .ogip import DataPHA, DataARF, DataRMF
-from . import Observation, Instrument, FoldingModel
+from . import Observation, Instrument, FoldingMatrix
 from ..model.abc import SpectralModel
 from ..fit import CountForwardModel
 from numpyro import handlers
@@ -77,19 +77,19 @@ def load_example_foldings():
     example_observations = load_example_observations()
 
     example_foldings = {
-        "PN": FoldingModel.from_instrument(
+        "PN": FoldingMatrix.from_instrument(
             example_instruments["PN"],
             example_observations["PN"],
             low_energy=0.3,
             high_energy=12,
         ),
-        "MOS1": FoldingModel.from_instrument(
+        "MOS1": FoldingMatrix.from_instrument(
             example_instruments["MOS1"],
             example_observations["MOS1"],
             low_energy=0.3,
             high_energy=7,
         ),
-        "MOS2": FoldingModel.from_instrument(
+        "MOS2": FoldingMatrix.from_instrument(
             example_instruments["MOS2"],
             example_observations["MOS2"],
             low_energy=0.3,
@@ -101,7 +101,7 @@ def load_example_foldings():
 
 
 def fakeit(
-    instrument: FoldingModel | list[FoldingModel],
+    instrument: FoldingMatrix | list[FoldingMatrix],
     model: SpectralModel,
     parameters: Mapping[K, V],
     rng_key: int = 0,
@@ -119,7 +119,7 @@ def fakeit(
         rng_key: The random number generator seed.
     """
 
-    instruments = [instrument] if isinstance(instrument, FoldingModel) else instrument
+    instruments = [instrument] if isinstance(instrument, FoldingMatrix) else instrument
     fakeits = []
 
     for i, instrument in enumerate(instruments):
@@ -156,7 +156,7 @@ def fakeit(
 
 
 def fakeit_for_multiple_parameters(
-    instrument: FoldingModel | list[FoldingModel],
+    instrument: FoldingMatrix | list[FoldingMatrix],
     model: SpectralModel,
     parameters: Mapping[K, V],
     rng_key: int = 0,
@@ -176,7 +176,7 @@ def fakeit_for_multiple_parameters(
         apply_stat: Whether to apply Poisson statistic on the folded spectra or not.
     """
 
-    instruments = [instrument] if isinstance(instrument, FoldingModel) else instrument
+    instruments = [instrument] if isinstance(instrument, FoldingMatrix) else instrument
     fakeits = []
 
     for i, obs in enumerate(instruments):

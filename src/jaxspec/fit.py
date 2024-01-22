@@ -9,7 +9,7 @@ from jax import random
 from jax.tree_util import tree_map
 from .analysis.results import ChainResult
 from .model.abc import SpectralModel
-from .data import FoldingModel
+from .data import FoldingMatrix
 from .model.background import BackgroundModel
 from numpyro.infer import MCMC, NUTS, Predictive
 from numpyro.distributions import Distribution
@@ -39,7 +39,7 @@ class CountForwardModel(hk.Module):
     A haiku module which allows to build the function that simulates the measured counts
     """
 
-    def __init__(self, model: SpectralModel, folding: FoldingModel):
+    def __init__(self, model: SpectralModel, folding: FoldingMatrix):
         super().__init__()
         self.model = model
         self.energies = jnp.asarray(folding.in_energies)
@@ -62,15 +62,15 @@ class ForwardModelFit(ABC):
 
     model: SpectralModel
     """The model to fit to the data."""
-    observations: list[FoldingModel]
+    observations: list[FoldingMatrix]
     """The observations to fit the model to."""
     count_function: hk.Transformed
     """A function enabling the forward modelling of observations with the given instrumental setup."""
     pars: dict
 
-    def __init__(self, model: SpectralModel, observations: FoldingModel | list[FoldingModel]):
+    def __init__(self, model: SpectralModel, observations: FoldingMatrix | list[FoldingMatrix]):
         self.model = model
-        self.observations = [observations] if isinstance(observations, FoldingModel) else observations
+        self.observations = [observations] if isinstance(observations, FoldingMatrix) else observations
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
 
     @abstractmethod

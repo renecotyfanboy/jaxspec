@@ -90,11 +90,17 @@ class SpectralModel:
 
     @property
     def transformed_func_photon(self):
-        return hk.without_apply_rng(hk.transform(lambda e_low, e_high: self.flux(e_low, e_high)))
+        def func_to_transform(e_low, e_high, n_points=2):
+            return self.flux(e_low, e_high, n_points=n_points, energy_flux=False)
+
+        return hk.without_apply_rng(hk.transform(func_to_transform))
 
     @property
     def transformed_func_energy(self):
-        return hk.without_apply_rng(hk.transform(lambda e_low, e_high: self.flux(e_low, e_high, energy_flux=True)))
+        def func_to_transform(e_low, e_high, n_points=2):
+            return self.flux(e_low, e_high, n_points=n_points, energy_flux=True)
+
+        return hk.without_apply_rng(hk.transform(func_to_transform))
 
     @property
     def params(self):
@@ -152,7 +158,7 @@ class SpectralModel:
 
         return new_graph
 
-    def flux(self, e_low, e_high, energy_flux=False):
+    def flux(self, e_low, e_high, energy_flux=False, n_points=2):
         """
         This method return the expected counts between e_low and e_high by integrating the model.
         It contains most of the "usine à gaz" which makes jaxspec works.
@@ -160,8 +166,15 @@ class SpectralModel:
         It should be transformed using haiku.
         """
 
-        energies = jnp.hstack((e_low, e_high[-1]))
-        energies_to_integrate = jnp.stack((e_low, e_high))
+        # TODO : enable interpolation and integration with more than 2 points for the continuum
+
+        if n_points == 2:
+            energies = jnp.hstack((e_low, e_high[-1]))
+            energies_to_integrate = jnp.stack((e_low, e_high))
+
+        else:
+            energies_to_integrate = jnp.linspace(e_low, e_high, n_points)
+            energies = energies_to_integrate
 
         fine_structures_flux = jnp.zeros_like(e_low)
         runtime_modules = {}
@@ -183,8 +196,12 @@ class SpectralModel:
                 component_2 = list(self.graph.in_edges(node_id))[1][0]
                 continuum[node_id] = node["function"](continuum[component_1], continuum[component_2])
 
-        flux_1D = continuum[list(self.graph.in_edges("out"))[0][0]]
-        flux = jnp.stack((flux_1D[:-1], flux_1D[1:]))
+        if n_points == 2:
+            flux_1D = continuum[list(self.graph.in_edges("out"))[0][0]]
+            flux = jnp.stack((flux_1D[:-1], flux_1D[1:]))
+
+        else:
+            flux = continuum[list(self.graph.in_edges("out"))[0][0]]
 
         if energy_flux:
             continuum_flux = trapezoid(
@@ -373,9 +390,6 @@ class SpectralModel:
         else:
             with open(file, "w") as f:
                 f.write(mermaid_code)
-
-    def _repr_html_(self):
-        return "``` mermaid \n" + self.export_to_mermaid() + "\n```"
 
     def plot(self, figsize=(8, 8)):
         import matplotlib.pyplot as plt

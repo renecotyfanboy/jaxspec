@@ -1,11 +1,11 @@
 import matplotlib.pyplot as plt
 import numpyro
 import numpyro.distributions as dist
-from jax.config import config
+from jax import config
 from unittest import TestCase
 from jaxspec.model.additive import Powerlaw
 from jaxspec.model.multiplicative import Tbabs
-from jaxspec.data import FoldingModel
+from jaxspec.data import FoldingMatrix
 from jaxspec.data.util import load_example_observations, load_example_instruments
 from jaxspec.fit import BayesianModel
 
@@ -23,7 +23,7 @@ instruments = load_example_instruments()
 
 class TestResults(TestCase):
     model = Tbabs() * Powerlaw()
-    foldings = [FoldingModel.from_instrument(instruments[key], observations[key]) for key in instruments.keys()]
+    foldings = [FoldingMatrix.from_instrument(instruments[key], observations[key]) for key in instruments.keys()]
     forward = BayesianModel(model, foldings)
 
     prior = {"powerlaw_1": {"alpha": dist.Uniform(0, 10), "norm": dist.Exponential(1e4)}, "tbabs_1": {"N_H": dist.Uniform(0, 1)}}

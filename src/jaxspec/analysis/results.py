@@ -1,7 +1,7 @@
 import arviz as az
 import numpy as np
 import matplotlib.pyplot as plt
-from ..data import FoldingModel
+from ..data import FoldingMatrix
 from ..model.abc import SpectralModel
 from ..model.background import BackgroundModel
 from collections.abc import Mapping
@@ -118,7 +118,7 @@ class ChainResult:
     def __init__(
         self,
         model: SpectralModel,
-        folding_model: FoldingModel,
+        folding_model: FoldingMatrix,
         inference_data: az.InferenceData,
         samples,
         structure: Mapping[K, V],
@@ -394,7 +394,7 @@ class ChainResult:
             return fig
 
     def table(self) -> str:
-        """
+        r"""
         Return a formatted $\LaTeX$ table of the results of the fit.
         """
 
