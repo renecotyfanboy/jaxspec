@@ -12,6 +12,7 @@ from jax.lax import dynamic_slice_in_dim as jax_slice
 from functools import partial
 from .abc import ModelComponent
 from haiku.initializers import Constant as HaikuConstant
+from ..util.integrate import integrate_interval
 
 
 class AdditiveComponent(ModelComponent, ABC):
@@ -338,3 +339,31 @@ class Cutoffpl(AdditiveComponent):
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1e-4))
 
         return norm * energy ** (-alpha) * jnp.exp(-energy / beta)
+
+
+class Diskpbb(AdditiveComponent):
+    r"""
+        A multiple blackbody disk model where local disk temperature T(r) is proportional to $$r^{(-p)}$$,
+        where $$p$$ is a free parameter. The standard disk model, diskbb, is recovered if $$p=0.75$$.
+        If radial advection is important then $$p<0.75$$.
+
+        $$\mathcal{M}\left( E \right) = \frac{2\pi(\cos i)r^{2}_{\text{in}}}{pd^2} \int_{T_{\text{in}}}^{T_{\text{out}}}
+        \left( \frac{T}{T_{\text{in}}} \right)^{-2/p-1} \text{bbody}(E,T) \frac{dT}{T_{\text{in}}}$$
+
+        ??? abstract "Parameters"
+            * $\text{norm}$ : $\cos i(r_{\text{in}}/d)^{2}$,
+            where $r_{\text{in}}$ is "an apparent" inner disk radius $\left[\text{km}\right]$,
+            $d$ the distance to the source in units of $10 \text{kpc}$,
+            $i$ the angle of the disk ($i=0$ is face-on)
+            * $p$ : Exponent of the radial dependence of the disk temperature $\left[\text{dimensionless}\right]$
+            * $T_{\text{in}}$ : Temperature at inner disk radius $\left[ \mathrm{keV}\right]$
+        """
+    def continuum(self, energy):
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        p = hk.get_parameter("p", [], init=HaikuConstant(0.75))
+        tin = hk.get_parameter("tin", [], init=HaikuConstant(1))
+
+        return 2 * jnp.pi * (norm/p) * integrate_interval(Blackbody.continuum(self, energy) * (T/tin)**(-2/(p-1)) * (1/tin), tout, tin, n=51)
+
+
+class Diskbb(AdditiveComponent): pass
