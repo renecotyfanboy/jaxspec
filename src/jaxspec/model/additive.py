@@ -343,27 +343,57 @@ class Cutoffpl(AdditiveComponent):
 
 class Diskpbb(AdditiveComponent):
     r"""
-        A multiple blackbody disk model where local disk temperature T(r) is proportional to $$r^{(-p)}$$,
-        where $$p$$ is a free parameter. The standard disk model, diskbb, is recovered if $$p=0.75$$.
-        If radial advection is important then $$p<0.75$$.
+    A multiple blackbody disk model where local disk temperature T(r) is proportional to $$r^{(-p)}$$,
+    where $$p$$ is a free parameter. The standard disk model, diskbb, is recovered if $$p=0.75$$.
+    If radial advection is important then $$p<0.75$$.
 
-        $$\mathcal{M}\left( E \right) = \frac{2\pi(\cos i)r^{2}_{\text{in}}}{pd^2} \int_{T_{\text{in}}}^{T_{\text{out}}}
-        \left( \frac{T}{T_{\text{in}}} \right)^{-2/p-1} \text{bbody}(E,T) \frac{dT}{T_{\text{in}}}$$
+    $$\mathcal{M}\left( E \right) = \frac{2\pi(\cos i)r^{2}_{\text{in}}}{pd^2} \int_{T_{\text{in}}}^{T_{\text{out}}}
+    \left( \frac{T}{T_{\text{in}}} \right)^{-2/p-1} \text{bbody}(E,T) \frac{dT}{T_{\text{in}}}$$
 
-        ??? abstract "Parameters"
-            * $\text{norm}$ : $\cos i(r_{\text{in}}/d)^{2}$,
-            where $r_{\text{in}}$ is "an apparent" inner disk radius $\left[\text{km}\right]$,
-            $d$ the distance to the source in units of $10 \text{kpc}$,
-            $i$ the angle of the disk ($i=0$ is face-on)
-            * $p$ : Exponent of the radial dependence of the disk temperature $\left[\text{dimensionless}\right]$
-            * $T_{\text{in}}$ : Temperature at inner disk radius $\left[ \mathrm{keV}\right]$
-        """
+    ??? abstract "Parameters"
+        * $\text{norm}$ : $\cos i(r_{\text{in}}/d)^{2}$,
+        where $r_{\text{in}}$ is "an apparent" inner disk radius $\left[\text{km}\right]$,
+        $d$ the distance to the source in units of $10 \text{kpc}$,
+        $i$ the angle of the disk ($i=0$ is face-on)
+        * $p$ : Exponent of the radial dependence of the disk temperature $\left[\text{dimensionless}\right]$
+        * $T_{\text{in}}$ : Temperature at inner disk radius $\left[ \mathrm{keV}\right]$
+    """
+
     def continuum(self, energy):
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
         p = hk.get_parameter("p", [], init=HaikuConstant(0.75))
-        tin = hk.get_parameter("tin", [], init=HaikuConstant(1))
+        tin = hk.get_parameter("Tin", [], init=HaikuConstant(1))
 
-        return 2 * jnp.pi * (norm/p) * integrate_interval(Blackbody.continuum(self, energy) * (T/tin)**(-2/(p-1)) * (1/tin), tout, tin, n=51)
+        # Tout is set to 0 as it is evaluated at R=infinity
+        def integrand(kT, energy):
+            return 2.78e-3 * energy**2 * (kT / tin) ** (-2 / p - 1) / (jnp.exp(energy / kT) - 1)
+
+        func_vmapped = jax.vmap(lambda e: integrate_interval(lambda kT: integrand(kT, e), 0, tin, n=51))
+
+        return norm * (0.75 / p) * func_vmapped(energy)
 
 
-class Diskbb(AdditiveComponent): pass
+class Diskbb(AdditiveComponent):
+    r"""
+    `Diskpbb` with $p=0.75$
+
+    ??? abstract "Parameters"
+        * $\text{norm}$ : $\cos i(r_{\text{in}}/d)^{2}$,
+        where $r_{\text{in}}$ is "an apparent" inner disk radius $\left[\text{km}\right]$,
+        $d$ the distance to the source in units of $10 \text{kpc}$,
+        $i$ the angle of the disk ($i=0$ is face-on)
+        * $T_{\text{in}}$ : Temperature at inner disk radius $\left[ \mathrm{keV}\right]$
+    """
+
+    def continuum(self, energy):
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        p = 0.75
+        tin = hk.get_parameter("Tin", [], init=HaikuConstant(1))
+
+        # Tout is set to 0 as it is evaluated at R=infinity
+        def integrand(kT, energy):
+            return 2.78e-3 * energy**2 * (kT / tin) ** (-2 / p - 1) / (jnp.exp(energy / kT) - 1)
+
+        func_vmapped = jax.vmap(lambda e: integrate_interval(lambda kT: integrand(kT, e), 0, tin, n=51))
+
+        return norm * (0.75 / p) * func_vmapped(energy)
