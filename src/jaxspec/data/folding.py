@@ -107,7 +107,6 @@ class FoldingMatrix(xr.Dataset):
         col_idx = xr.ones_like(instrument.area, dtype=bool)
         col_idx *= instrument.coords["e_min_unfolded"] > 0.0  # Exclude channels with 0. as lower energy bound
         col_idx *= instrument.redistribution.sum(dim="instrument_channel") > 0  # Exclude channels with no contribution
-        # XSPEC does not exclude the channels with no contribution, it substitutes 0 with a small value
 
         transfer_matrix = transfer_matrix.where(row_idx & col_idx, drop=True)
         folded_counts = observation.folded_counts.copy().where(row_idx, drop=True)
