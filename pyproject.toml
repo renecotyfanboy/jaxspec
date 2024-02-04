@@ -25,7 +25,6 @@ gpjax = "^0.7.2"
 jaxopt = "^0.8.1"
 tinygp = "^0.2.4"
 seaborn = "^0.13.1"
-sparse = "^0.14.0"
 
 
 [tool.poetry.group.docs.dependencies]

@@ -18,6 +18,20 @@ def folding_models():
 
 
 @pytest.fixture
+def observations():
+    from jaxspec.data.util import load_example_observations
+
+    return list(load_example_observations().values())
+
+
+@pytest.fixture
+def instruments():
+    from jaxspec.data.util import load_example_instruments
+
+    return list(load_example_instruments().values())
+
+
+@pytest.fixture
 def obs_model_prior(folding_models):
     from jaxspec.model.additive import Powerlaw, Cutoffpl
     from jaxspec.model.multiplicative import Tbabs
