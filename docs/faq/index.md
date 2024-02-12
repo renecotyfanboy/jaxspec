@@ -2,8 +2,6 @@
 
 ## Why should I use `jaxspec` over `xspec` or associated ?
 
-
-
 ## Why is there no $\chi^2$ statistic ?
 
 When it comes to define the fitting statistic, the question of either using $\chi^2$ or C-stat arises
@@ -29,4 +27,3 @@ errors but rather getting samples of the posterior distributions of our paramete
 issue. The samples will be distributed accordingly to their intrinsic dispersions, in a representative way of the error
 in the parameter space. Because of this, we choose to ensure a Poisson likelihood in every situation, which is
 equivalent to fit under C-stat.
-

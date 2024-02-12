@@ -18,9 +18,9 @@ Let's build a model we want to fake and load an observation with the instrumenta
 ``` python
 from jaxspec.model.additive import Powerlaw, Blackbodyrad
 from jaxspec.model.multiplicative import Tbabs
-from jaxspec.data.observation import Observation
+from jaxspec.data import ObsConfiguration
 
-obs = Observation.pha_file('obs_1.pha')
+obs = ObsConfiguration.pha_file('obs_1.pha')
 model = Tbabs() * (Powerlaw() + Blackbodyrad())
 ```
 

@@ -17,7 +17,7 @@
 
 ## Data containers
 
-::: jaxspec.data.folding
+::: jaxspec.data.obsconf
     options:
       show_root_heading: false
       show_root_toc_entry: false

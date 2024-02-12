@@ -24,6 +24,7 @@ nav:
     - Integration: references/integrate.md
   - FAQ:
       - faq/index.md
+      - Cookbook: faq/cookbook.md
   - Developer:
     - developer/index.md
     - XSPEC: developer/xspec.md
