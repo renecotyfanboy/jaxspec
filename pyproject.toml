@@ -30,7 +30,7 @@ seaborn = "^0.13.1"
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.5.3"
 mkdocs-material = "^9.4.6"
-mkdocstrings = {extras = ["python"], version = "^0.23.0"}
+mkdocstrings = {extras = ["python"], version = "^0.24.0"}
 mkdocs-jupyter = "^0.24.6"
 
 
