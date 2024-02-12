@@ -1,5 +1,7 @@
 # Generate mock data
 
+## Basic usage
+
 This tutorial illustrates how to make generate mock observed spectra using `fakeit` - like interface
 as proposed by XSPEC.
 
@@ -16,9 +18,9 @@ Let's build a model we want to fake and load an observation with the instrumenta
 ``` python
 from jaxspec.model.additive import Powerlaw, Blackbodyrad
 from jaxspec.model.multiplicative import Tbabs
-from jaxspec.data.observation import Observation
+from jaxspec.data import ObsConfiguration
 
-obs = Observation.pha_file('obs_1.pha')
+obs = ObsConfiguration.pha_file('obs_1.pha')
 model = Tbabs() * (Powerlaw() + Blackbodyrad())
 ```
 
@@ -74,3 +76,69 @@ plt.loglog()
 ```
 
 ![Some spectra](statics/fakeits.png)
+
+## Computing in parallel
+
+Thanks to the amazing [PositionalSharding](https://jax.readthedocs.io/en/latest/jax.sharding.html#jax.sharding.PositionalSharding)
+interface, it is fairly easy to do this computation in parallel using a sharding on the input parameters. To do so, one
+must first declare multiple devices using one of the following codes.
+
+=== "With numpyro"
+
+    ``` python
+    import numpyro
+
+    n_devices = 8
+
+    numpyro.set_platform("cpu")
+    numpyro.set_host_device_count(n_devices)
+    numpyro.enable_x64()
+    ```
+
+=== "With JAX"
+
+    ``` python
+    import os
+    import jax
+
+    n_devices = 8
+
+    os.environ["XLA_FLAGS"] = f"--xla_force_host_platform_device_count={n_devices}"
+    jax.config.update("jax_platform_name", "cpu")
+    jax.config.update("jax_enable_x64", True)
+    ```
+
+This must be run **before any `JAX` code is run in the process** otherwise the extra cores won't be accessible. To
+double-check, you can ensure that the available number of devices is consistent with `n_devices`
+
+``` python
+
+assert len(jax.local_devices()) == n_devices
+```
+
+Once it is certain that all the devices are visible, the array can be split using a [PositionalSharding](https://jax.readthedocs.io/en/latest/jax.sharding.html#jax.sharding.PositionalSharding)
+and distributed to all the devices.
+
+``` python
+import jax
+from jax.experimental import mesh_utils
+from jax.sharding import PositionalSharding
+
+# Create a Sharding object to distribute a value across devices:
+sharding = PositionalSharding(mesh_utils.create_device_mesh((n_devices,)))
+
+# Split the parameters on every device
+
+sharded_parameters = jax.device_put(parameters, sharding)
+```
+
+Then we can use these sharded parameters to compute the fakeits in parallel
+
+``` python
+fakeit_for_multiple_parameters(obs, model, sharded_parameters, apply_stat=False)
+```
+
+!!! info
+
+    Since JAX is pretty well optimized at getting the best from your physical CPU, the gain by enforcing parallel
+    execution might not be gigantic. However, doing so on several GPUs or TPUs will greatly improve the execution time.

@@ -156,7 +156,8 @@ class DataRMF:
                     base += self.n_chan[i][j]
 
         # Transposed matrix so that we just have to multiply by the spectrum
-        self.full_matrix = self.full_matrix.T
+        self.matrix = self.full_matrix.T
+        # self.matrix = bsr_matrix(self.full_matrix.T).T
         # self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
 
     @classmethod

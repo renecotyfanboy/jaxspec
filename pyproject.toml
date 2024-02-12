@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "jaxspec"
-version = "0.1.0"
+version = "0.0.2"
 description = "jaxspec is a bayesian spectral fitting library for X-ray astronomy."
 authors = ["sdupourque <sdupourque@irap.omp.eu>"]
 license = "MIT"
@@ -8,13 +8,13 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.12"
-jax = "^0.4.18"
-jaxlib = "^0.4.18"
+jax = "^0.4.23"
+jaxlib = "^0.4.23"
 numpy = "^1.26.1"
-pandas = "^2.1.1"
+pandas = "^2.2.0"
 astropy = "^5.3.4"
 numpyro = "^0.13.2"
-dm-haiku = "^0.0.10"
+dm-haiku = "^0.0.11"
 networkx = "^3.1"
 matplotlib = "^3.8.0"
 arviz = "^0.16.1"
@@ -24,6 +24,7 @@ cmasher = "^1.6.3"
 gpjax = "^0.7.2"
 jaxopt = "^0.8.1"
 tinygp = "^0.2.4"
+seaborn = "^0.13.1"
 
 
 [tool.poetry.group.docs.dependencies]
@@ -47,6 +48,8 @@ testbook = "^0.4.2"
 pre-commit = "^3.5.0"
 ruff = "^0.1.3"
 jupyterlab = "^4.0.7"
+notebook = "^7.0.6"
+ipywidgets = "^8.1.1"
 
 [tool.ruff]
 line-length = 130

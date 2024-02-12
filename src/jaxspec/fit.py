@@ -3,36 +3,72 @@ import jax.numpy as jnp
 import numpyro
 import arviz as az
 import jax
-from typing import Callable, Mapping, List
-from abc import ABC, abstractmethod
+from typing import Callable, TypeVar
+from abc import ABC
 from jax import random
 from jax.tree_util import tree_map
 from .analysis.results import ChainResult
 from .model.abc import SpectralModel
-from .data.instrument import Instrument
-from .data.observation import Observation
+from .data import ObsConfiguration
 from .model.background import BackgroundModel
 from numpyro.infer import MCMC, NUTS, Predictive
 from numpyro.distributions import Distribution
 from numpyro.distributions import Poisson
+from jax.typing import ArrayLike
 
 
-def build_prior(prior):
-    """
-    Build the prior distribution for the model parameters.
+T = TypeVar("T")
 
-    to_set is supposed to be a numpyro distribution.
 
-    It turns the distribution into a numpyro sample.
-    """
+class HaikuDict(dict[str, dict[str, T]]):
+    ...
 
-    parameters = hk.data_structures.to_haiku_dict(prior)
 
-    for i, (m, n, to_set) in enumerate(hk.data_structures.traverse(prior)):
-        if isinstance(to_set, Distribution):
-            parameters[m][n] = numpyro.sample(f"{m}_{n}", to_set)
+def build_prior(prior: HaikuDict[Distribution | ArrayLike], expand_shape: tuple = ()):
+    parameters = dict(hk.data_structures.to_haiku_dict(prior))
+
+    for i, (m, n, sample) in enumerate(hk.data_structures.traverse(prior)):
+        match sample:
+            case Distribution():
+                parameters[m][n] = numpyro.sample(f"{m}_{n}", sample.expand(expand_shape))
+            case float() | ArrayLike():
+                parameters[m][n] = jnp.ones(expand_shape) * sample
+            case _:
+                raise ValueError(f"Invalid prior type {type(sample)} for parameter {m}_{n} : {sample}")
 
     return parameters
+
+
+def build_numpyro_model(
+    obs: ObsConfiguration,
+    model: SpectralModel,
+    background_model: BackgroundModel,
+    name: str = "",
+) -> Callable:
+    def numpro_model(prior_params, observed=True):
+        # prior_params = build_prior(prior_distributions, name=name)
+        transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, obs)(par)))
+
+        if (getattr(obs, "folded_background", None) is not None) and (background_model is not None):
+            # TODO : Raise warning when setting a background model but there is no background spectra loaded
+            bkg_countrate = background_model.numpyro_model(
+                obs.out_energies, obs.folded_background.data, name=name + "bkg", observed=observed
+            )
+        else:
+            bkg_countrate = 0.0
+
+        obs_model = jax.jit(lambda p: transformed_model.apply(None, p))
+        countrate = obs_model(prior_params)
+
+        # This is the case where we fit a model to a TOTAL spectrum as defined in OGIP standard
+        with numpyro.plate(name + "obs_plate", len(obs.folded_counts)):
+            numpyro.sample(
+                name + "obs",
+                Poisson(countrate + bkg_countrate),
+                obs=obs.folded_counts.data if observed else None,
+            )
+
+    return numpro_model
 
 
 class CountForwardModel(hk.Module):
@@ -40,11 +76,11 @@ class CountForwardModel(hk.Module):
     A haiku module which allows to build the function that simulates the measured counts
     """
 
-    def __init__(self, model: SpectralModel, instrument: Instrument):
+    def __init__(self, model: SpectralModel, folding: ObsConfiguration):
         super().__init__()
         self.model = model
-        self.energies = jnp.asarray(instrument.in_energies)
-        self.transfer_matrix = jnp.asarray(instrument.transfer_matrix)
+        self.energies = jnp.asarray(folding.in_energies)
+        self.transfer_matrix = jnp.asarray(folding.transfer_matrix.data)
 
     def __call__(self, parameters):
         """
@@ -56,44 +92,96 @@ class CountForwardModel(hk.Module):
         return jnp.clip(expected_counts, a_min=1e-6)
 
 
-class ForwardModelFit(ABC):
+class BayesianModelAbstract(ABC):
     """
     Abstract class to fit a model to a given set of observation.
     """
 
     model: SpectralModel
     """The model to fit to the data."""
-    observations: list[Observation]
-    """The observations to fit the model to."""
-    count_function: hk.Transformed
-    """A function enabling the forward modelling of observations with the given instrumental setup."""
+    numpyro_model: Callable
+    """The numpyro model defining the likelihood."""
+    background_model: BackgroundModel
+    """The background model."""
     pars: dict
 
-    def __init__(self, model: SpectralModel, observations: Observation | list[Observation]):
+    def __init__(self, model: SpectralModel):
         self.model = model
-        self.observations = [observations] if isinstance(observations, Observation) else observations
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
 
-    @abstractmethod
-    def fit(self, *args, **kwargs):
+    def fit(
+        self,
+        prior_distributions: HaikuDict[Distribution],
+        rng_key: int = 0,
+        num_chains: int = 4,
+        num_warmup: int = 1000,
+        num_samples: int = 1000,
+        max_tree_depth: int = 10,
+        target_accept_prob: float = 0.8,
+        jit_model: bool = False,
+        mcmc_kwargs: dict = {},
+    ) -> ChainResult:
         """
-        Abstract method to fit the model to the data.
+        Fit the model to the data using NUTS sampler from numpyro. This is the default sampler in JAXspec.
+
+        Parameters:
+            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
+            rng_key: the random key used to initialize the sampler.
+            num_chains: the number of chains to run.
+            num_warmup: the number of warmup steps.
+            num_samples: the number of samples to draw.
+            max_tree_depth: the recursion depth of NUTS sampler.
+            target_accept_prob: the target acceptance probability for the NUTS sampler.
+            jit_model: whether to jit the model or not.
+            mcmc_kwargs: additional arguments to pass to the MCMC sampler. See [`MCMC`][numpyro.infer.mcmc.MCMC] for more details.
+
+        Returns:
+            A [`ChainResult`][jaxspec.analysis.results.ChainResult] instance containing the results of the fit.
         """
-        pass
+
+        bayesian_model = self.numpyro_model(prior_distributions)
+
+        chain_kwargs = {
+            "num_warmup": num_warmup,
+            "num_samples": num_samples,
+            "num_chains": num_chains,
+        }
+
+        kernel = NUTS(bayesian_model, max_tree_depth=max_tree_depth, target_accept_prob=target_accept_prob)
+        mcmc = MCMC(kernel, **(chain_kwargs | mcmc_kwargs))
+
+        keys = random.split(random.PRNGKey(rng_key), 3)
+
+        mcmc.run(keys[0])
+        posterior_predictive = Predictive(bayesian_model, mcmc.get_samples())(keys[1], observed=False)
+        prior = Predictive(bayesian_model, num_samples=num_samples)(keys[2], observed=False)
+        inference_data = az.from_numpyro(mcmc, prior=prior, posterior_predictive=posterior_predictive)
+        # parameters = [f"obs", f"bkg"] if self.background_model is not None else [f"obs"]
+        # obs_id = global_id.copy()
+        # obs_id.posterior_predictive = obs_id.posterior_predictive[parameters]
+
+        return ChainResult(
+            self.model,
+            self.observation,
+            inference_data,
+            mcmc.get_samples(),
+            self.model.params,
+            background_model=self.background_model,
+        )
 
 
-class BayesianModel(ForwardModelFit):
+class BayesianModel(BayesianModelAbstract):
     """
     Class to fit a model to a given set of observation using a Bayesian approach.
     """
 
-    samples: dict = {}
-
-    def __init__(self, model, observations, background_model: BackgroundModel = None):
-        super().__init__(model, observations)
+    def __init__(self, model, observation, background_model: BackgroundModel = None):
+        super().__init__(model)
+        self.observation = observation
+        self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
         self.background_model = background_model
 
-    def numpyro_model(self, prior_distributions: Mapping[str, Mapping[str, Distribution]]) -> Callable:
+    def numpyro_model(self, prior_distributions: HaikuDict[Distribution]) -> Callable:
         """
         Build the numpyro model for the Bayesian fit. It returns a callable which can be used
         to fit the model using numpyro's various samplers.
@@ -104,90 +192,40 @@ class BayesianModel(ForwardModelFit):
 
         def model(observed=True):
             prior_params = build_prior(prior_distributions)
-
-            for i, obs in enumerate(self.observations):
-                transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(self.model, obs)(par)))
-
-                if (obs.bkg is not None) and (self.background_model is not None):
-                    # TODO : Raise warning when setting a background model but there is no background spectra loaded
-                    bkg_countrate = self.background_model.numpyro_model(
-                        obs.out_energies, obs.observed_bkg, name=f"bkg_{i}", observed=observed
-                    )
-                else:
-                    bkg_countrate = 0.0
-
-                obs_model = jax.jit(lambda p: transformed_model.apply(None, p))
-                countrate = obs_model(prior_params)
-
-                # This is the case where we fit a model to a TOTAL spectrum as defined in OGIP standard
-                with numpyro.plate(f"obs_{i}_plate", len(obs.observed_counts)):
-                    numpyro.sample(
-                        f"obs_{i}",
-                        Poisson(countrate + bkg_countrate),
-                        obs=obs.observed_counts if observed else None,
-                    )
+            obs_model = build_numpyro_model(self.observation, self.model, self.background_model)
+            obs_model(prior_params, observed=observed)
 
         return model
 
-    def fit(
-        self,
-        prior_distributions: Mapping[str, Mapping[str, Distribution]],
-        rng_key: int = 0,
-        num_chains: int = 4,
-        num_warmup: int = 1000,
-        num_samples: int = 1000,
-        jit_model: bool = False,
-        mcmc_kwargs: dict = {},
-    ) -> List[ChainResult]:
-        """
-        Fit the model to the data using NUTS sampler from numpyro. This is the default sampler in JAXspec.
 
-        Parameters:
-            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
-            rng_key: the random key used to initialize the sampler.
-            num_chains: the number of chains to run.
-            num_warmup: the number of warmup steps.
-            num_samples: the number of samples to draw.
-            jit_model: whether to jit the model or not.
-            mcmc_kwargs: additional arguments to pass to the MCMC sampler. See [`MCMC`][numpyro.infer.mcmc.MCMC] for more details.
+"""
+class MultipleObservationMCMC(BayesianModelAbstract):
 
-        Returns:
-            A [`ChainResult`][jaxspec.analysis.results.ChainResult] instance containing the results of the fit.
-        """
-        # Instantiate Bayesian model
-        bayesian_model = self.numpyro_model(prior_distributions)
+    def __init__(self, model, observations, background_model: BackgroundModel = None):
 
-        chain_kwargs = {
-            "num_warmup": num_warmup,
-            "num_samples": num_samples,
-            "num_chains": num_chains,
-        }
+        super().__init__(model)
+        self.observations = observations
+        self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
+        self.background_model = background_model
 
-        kernel = NUTS(bayesian_model, max_tree_depth=5)
-        mcmc = MCMC(kernel, **(chain_kwargs | mcmc_kwargs))
+    def numpyro_model(self, prior_distributions: HaikuDict[Distribution]) -> Callable:
 
-        keys = random.split(random.PRNGKey(rng_key), 3)
+        def model(observed=True):
 
-        mcmc.run(keys[0])
-        posterior_predictive = Predictive(bayesian_model, mcmc.get_samples())(keys[1], observed=False)
-        prior = Predictive(bayesian_model, num_samples=num_samples)(keys[2], observed=False)
+            prior_params = build_prior(prior_distributions, expand_shape=(len(self.observations),))
 
-        # Extract results and divide the inference data into one per observation
-        result_list = []
+            for i, (key, observation) in enumerate(self.observations.items()):
 
-        global_id = az.from_numpyro(mcmc, prior=prior, posterior_predictive=posterior_predictive)
+                params = tree_map(lambda x: x[i], prior_params)
 
-        for index, observation in enumerate(self.observations):
-            mapping_dict = (
-                {f"obs_{index}": "obs", f"bkg_{index}": "bkg"} if self.background_model is not None else {f"obs_{index}": "obs"}
-            )
-            parameters = [f"obs_{index}", f"bkg_{index}"] if self.background_model is not None else [f"obs_{index}"]
-            obs_id = global_id.copy()
-            obs_id.posterior_predictive = obs_id.posterior_predictive[parameters].rename_vars(mapping_dict)
-            result_list.append(
-                ChainResult(
-                    self.model, observation, obs_id, mcmc.get_samples(), self.model.params, background_model=self.background_model
+                obs_model = build_numpyro_model(
+                    observation,
+                    self.model,
+                    self.background_model,
+                    name=key + '_'
                 )
-            )
 
-        return result_list
+                obs_model(params, observed=observed)
+
+        return model
+"""

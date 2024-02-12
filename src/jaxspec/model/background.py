@@ -29,7 +29,7 @@ class SubtractedBackground(BackgroundModel):
 
         This is not a good way to model the background, as it does not account for the fact that the measured
         background is a Poisson realisation of the true background's countrate. This is why we prefer a
-        [`SubtractedBackgroundWithError`][jaxspec.model.background.GaussianProcessBackground].
+        [`ConjugateBackground`][jaxspec.model.background.ConjugateBackground].
 
     """
 
@@ -39,17 +39,61 @@ class SubtractedBackground(BackgroundModel):
         return jnp.zeros_like(observed_counts)
 
 
-class SubtractedBackgroundWithError(BackgroundModel):
+class BackgroundWithError(BackgroundModel):
     """
     This class is to use when implying that the observed background should be simply subtracted from the observed. It
     fits a countrate for each background bin assuming a Poisson distribution.
+
+    !!! warning
+        This is the same as [`ConjugateBackground`][jaxspec.model.background.ConjugateBackground]
+        but slower since it performs the fit using MCMC instead of analytical solution.
     """
 
     def numpyro_model(self, energy, observed_counts, name: str = "bkg", observed=True):
-        countrate = numpyro.sample(f"{name}_params", dist.Gamma(observed_counts + 1))
+        # Gamma in numpyro is parameterized by concentration and rate (alpha/beta)
+        alpha = observed_counts + 1
+        beta = 1
+        countrate = numpyro.sample(f"{name}_params", dist.Gamma(alpha, rate=beta))
 
         with numpyro.plate(f"{name}_plate", len(observed_counts)):
             numpyro.sample(f"{name}", dist.Poisson(countrate), obs=observed_counts if observed else None)
+
+        return countrate
+
+
+class ConjugateBackground(BackgroundModel):
+    r"""
+    This class fit an expected rate $\lambda$ in each bin of the background spectrum. Assuming a Gamma prior
+    distribution, we can analytically derive the posterior as a Negative binomial distribution.
+
+    $$ p(\lambda_{\text{Bkg}}) \sim \Gamma \left( \alpha, \beta \right) \implies
+    p\left(\lambda_{\text{Bkg}} | \text{Counts}_{\text{Bkg}}\right) \sim \text{NB}\left(\alpha, \frac{\beta}{\beta +1}
+    \right) $$
+
+    !!! info
+        Here, $\alpha$ and $\beta$ are set to $\alpha = \text{Counts}_{\text{Bkg}} + 1$ and $\beta = 1$. Doing so,
+        the prior distribution is such that $\mathbb{E}[\lambda_{\text{Bkg}}] = \text{Counts}_{\text{Bkg}} +1$ and
+        $\text{Var}[\lambda_{\text{Bkg}}] = \text{Counts}_{\text{Bkg}}+1$. The +1 is to avoid numerical issues when the
+        counts are 0, and add a small scatter even if the measured background is effectively null.
+
+    ??? abstract "References"
+
+        - https://en.wikipedia.org/wiki/Conjugate_prior
+        - https://www.acsu.buffalo.edu/~adamcunn/probability/gamma.html
+        - https://bayesiancomputationbook.com/markdown/chp_01.html?highlight=conjugate#conjugate-priors
+        - https://vioshyvo.github.io/Bayesian_inference/conjugate-distributions.html
+
+    """
+
+    def numpyro_model(self, energy, observed_counts, name: str = "bkg", observed=True):
+        # Gamma in numpyro is parameterized by concentration and rate (alpha/beta)
+        alpha = observed_counts + 1
+        beta = 1
+
+        with numpyro.plate(f"{name}_plate", len(observed_counts)):
+            countrate = numpyro.sample(
+                f"{name}", dist.NegativeBinomialProbs(alpha, probs=beta / (beta + 1)), obs=observed_counts if observed else None
+            )
 
         return countrate
 

@@ -1,0 +1,12 @@
+*.ipynb
+*.npz
+*.arf
+*.rmf
+
+data
+data_to_test
+didier_test
+docs
+.cache
+.github
+.ipynb_checkpoints
