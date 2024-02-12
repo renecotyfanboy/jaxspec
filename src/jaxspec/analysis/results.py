@@ -1,7 +1,7 @@
 import arviz as az
 import numpy as np
 import matplotlib.pyplot as plt
-from ..data import FoldingMatrix
+from ..data import ObsConfiguration
 from ..model.abc import SpectralModel
 from ..model.background import BackgroundModel
 from collections.abc import Mapping
@@ -118,7 +118,7 @@ class ChainResult:
     def __init__(
         self,
         model: SpectralModel,
-        folding_model: FoldingMatrix,
+        folding_model: ObsConfiguration,
         inference_data: az.InferenceData,
         samples,
         structure: Mapping[K, V],

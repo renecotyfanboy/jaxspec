@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from typing import TypeVar
 
 from .ogip import DataPHA, DataARF, DataRMF
-from . import Observation, Instrument, FoldingMatrix
+from . import Observation, Instrument, ObsConfiguration
 from ..model.abc import SpectralModel
 from ..fit import CountForwardModel
 from numpyro import handlers
@@ -77,19 +77,19 @@ def load_example_foldings():
     example_observations = load_example_observations()
 
     example_foldings = {
-        "PN": FoldingMatrix.from_instrument(
+        "PN": ObsConfiguration.from_instrument(
             example_instruments["PN"],
             example_observations["PN"],
             low_energy=0.3,
             high_energy=12,
         ),
-        "MOS1": FoldingMatrix.from_instrument(
+        "MOS1": ObsConfiguration.from_instrument(
             example_instruments["MOS1"],
             example_observations["MOS1"],
             low_energy=0.3,
             high_energy=7,
         ),
-        "MOS2": FoldingMatrix.from_instrument(
+        "MOS2": ObsConfiguration.from_instrument(
             example_instruments["MOS2"],
             example_observations["MOS2"],
             low_energy=0.3,
@@ -101,7 +101,7 @@ def load_example_foldings():
 
 
 def fakeit(
-    instrument: FoldingMatrix | list[FoldingMatrix],
+    instrument: ObsConfiguration | list[ObsConfiguration],
     model: SpectralModel,
     parameters: Mapping[K, V],
     rng_key: int = 0,
@@ -119,7 +119,7 @@ def fakeit(
         rng_key: The random number generator seed.
     """
 
-    instruments = [instrument] if isinstance(instrument, FoldingMatrix) else instrument
+    instruments = [instrument] if isinstance(instrument, ObsConfiguration) else instrument
     fakeits = []
 
     for i, instrument in enumerate(instruments):
@@ -156,7 +156,7 @@ def fakeit(
 
 
 def fakeit_for_multiple_parameters(
-    instrument: FoldingMatrix | list[FoldingMatrix],
+    instrument: ObsConfiguration | list[ObsConfiguration],
     model: SpectralModel,
     parameters: Mapping[K, V],
     rng_key: int = 0,
@@ -176,7 +176,7 @@ def fakeit_for_multiple_parameters(
         apply_stat: Whether to apply Poisson statistic on the folded spectra or not.
     """
 
-    instruments = [instrument] if isinstance(instrument, FoldingMatrix) else instrument
+    instruments = [instrument] if isinstance(instrument, ObsConfiguration) else instrument
     fakeits = []
 
     for i, obs in enumerate(instruments):

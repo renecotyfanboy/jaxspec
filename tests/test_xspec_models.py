@@ -6,7 +6,7 @@ import os
 import jax.numpy as jnp
 from jax.tree_util import tree_map
 from jaxspec.model.abc import SpectralModel
-from jaxspec.data import FoldingMatrix
+from jaxspec.data import ObsConfiguration
 from jaxspec.data.util import fakeit_for_multiple_parameters
 from dataclasses import dataclass
 from scipy.stats import anderson_ksamp
@@ -145,7 +145,7 @@ def test_fakeits(tmp_path, request, monkeypatch, model: AdditiveModelTestSetup, 
     p_jaxspec = {re.sub(r"\(.*\)", "", model.name_jaxspec.lower()) + r"_1": model.parameters}
     p_jaxspec = tree_map(lambda x: x * jnp.ones(n_spectra), p_jaxspec)
 
-    setup = FoldingMatrix.from_pha_file("fakeit.pha", low_energy=model.energy_range[0], high_energy=model.energy_range[1])
+    setup = ObsConfiguration.from_pha_file("fakeit.pha", low_energy=model.energy_range[0], high_energy=model.energy_range[1])
 
     jaxspec_spectra = fakeit_for_multiple_parameters(setup, m_jaxspec, p_jaxspec)
 

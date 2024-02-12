@@ -5,7 +5,7 @@ from jax import config
 from unittest import TestCase
 from jaxspec.model.additive import Powerlaw
 from jaxspec.model.multiplicative import Tbabs
-from jaxspec.data import FoldingMatrix
+from jaxspec.data import ObsConfiguration
 from jaxspec.data.util import load_example_observations, load_example_instruments
 from jaxspec.fit import BayesianModel
 from jaxspec.analysis.compare import plot_corner_comparison
@@ -21,12 +21,13 @@ numpyro.set_host_device_count(4)
 observations = load_example_observations()
 instruments = load_example_instruments()
 model = Tbabs() * Powerlaw()
-foldings = [FoldingMatrix.from_instrument(instruments[key], observations[key]) for key in instruments.keys()]
-forward = BayesianModel(model, foldings)
 prior = {"powerlaw_1": {"alpha": dist.Uniform(0, 10), "norm": dist.Exponential(1e4)}, "tbabs_1": {"N_H": dist.Uniform(0, 1)}}
 
-result = forward.fit(prior, num_samples=1000)
-result_multiple = [BayesianModel(model, folding).fit(prior, num_samples=1000)[0] for folding in foldings]
+result = []
+
+for folding in [ObsConfiguration.from_instrument(instruments[key], observations[key]) for key in instruments.keys()]:
+    forward = BayesianModel(model, folding)
+    result.append(BayesianModel(model, folding).fit(prior, num_samples=1000))
 
 
 class TestResults(TestCase):
@@ -42,4 +43,4 @@ class TestResults(TestCase):
         print(result[0].table())
 
     def test_compare(self):
-        plot_corner_comparison({f"Obs {i}": result for i, result in enumerate(result_multiple)})
+        plot_corner_comparison({f"Obs {i}": res for i, res in enumerate(result)})

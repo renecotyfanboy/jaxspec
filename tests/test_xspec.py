@@ -7,14 +7,14 @@ xspec = pytest.importorskip("xspec")
 
 @pytest.fixture
 def load_jaxspec_data(request, monkeypatch):
-    from jaxspec.data import FoldingMatrix, Observation
+    from jaxspec.data import ObsConfiguration, Observation
 
     monkeypatch.chdir(os.path.join(os.path.dirname(request.fspath.dirname), "src/jaxspec/data/example_data"))
 
     file_pha = "PN_spectrum_grp20.fits"
 
     low_energy, high_energy = 0.5, 8.0
-    folding = FoldingMatrix.from_pha_file(file_pha, low_energy=low_energy, high_energy=high_energy)
+    folding = ObsConfiguration.from_pha_file(file_pha, low_energy=low_energy, high_energy=high_energy)
     observation = Observation.from_pha_file(file_pha)
 
     return folding, observation

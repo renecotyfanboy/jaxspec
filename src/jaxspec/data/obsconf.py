@@ -4,7 +4,7 @@ from .instrument import Instrument
 from .observation import Observation
 
 
-class FoldingMatrix(xr.Dataset):
+class ObsConfiguration(xr.Dataset):
     """
     Class to store the data of a folding model, which is the link between the unfolded and folded spectra.
     """
