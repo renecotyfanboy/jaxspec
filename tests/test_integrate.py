@@ -30,7 +30,7 @@ class TestIntegrate(TestCase):
         """
 
         for func, interval, result in self.func_interval_to_test:
-            assert jnp.isclose(integrate_interval(func, *interval), result)
+            assert jnp.isclose(integrate_interval(func)(*interval), result)
 
     def test_integrate_positive(self):
         """

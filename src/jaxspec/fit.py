@@ -12,9 +12,10 @@ from .model.abc import SpectralModel
 from .data import ObsConfiguration
 from .model.background import BackgroundModel
 from numpyro.infer import MCMC, NUTS, Predictive
-from numpyro.distributions import Distribution
+from numpyro.distributions import Distribution, TransformedDistribution
 from numpyro.distributions import Poisson
 from jax.typing import ArrayLike
+from numpyro.infer.reparam import TransformReparam
 
 
 T = TypeVar("T")
@@ -64,7 +65,7 @@ def build_numpyro_model(
         with numpyro.plate(name + "obs_plate", len(obs.folded_counts)):
             numpyro.sample(
                 name + "obs",
-                Poisson(countrate + bkg_countrate),
+                Poisson(countrate + bkg_countrate * obs.backratio.data),
                 obs=obs.folded_counts.data if observed else None,
             )
 
@@ -139,7 +140,11 @@ class BayesianModelAbstract(ABC):
             A [`ChainResult`][jaxspec.analysis.results.ChainResult] instance containing the results of the fit.
         """
 
-        bayesian_model = self.numpyro_model(prior_distributions)
+        transform_dict = {}
+
+        for m, n, val in hk.data_structures.traverse(prior_distributions):
+            if isinstance(val, TransformedDistribution):
+                transform_dict[f"{m}_{n}"] = TransformReparam()
 
         chain_kwargs = {
             "num_warmup": num_warmup,
@@ -147,7 +152,10 @@ class BayesianModelAbstract(ABC):
             "num_chains": num_chains,
         }
 
-        kernel = NUTS(bayesian_model, max_tree_depth=max_tree_depth, target_accept_prob=target_accept_prob)
+        bayesian_model = numpyro.handlers.reparam(self.numpyro_model(prior_distributions), config=transform_dict)
+
+        kernel = NUTS(bayesian_model, max_tree_depth=max_tree_depth, target_accept_prob=target_accept_prob, dense_mass=True)
+
         mcmc = MCMC(kernel, **(chain_kwargs | mcmc_kwargs))
 
         keys = random.split(random.PRNGKey(rng_key), 3)
@@ -156,9 +164,13 @@ class BayesianModelAbstract(ABC):
         posterior_predictive = Predictive(bayesian_model, mcmc.get_samples())(keys[1], observed=False)
         prior = Predictive(bayesian_model, num_samples=num_samples)(keys[2], observed=False)
         inference_data = az.from_numpyro(mcmc, prior=prior, posterior_predictive=posterior_predictive)
-        # parameters = [f"obs", f"bkg"] if self.background_model is not None else [f"obs"]
-        # obs_id = global_id.copy()
-        # obs_id.posterior_predictive = obs_id.posterior_predictive[parameters]
+
+        predictive_parameters = ["obs", "bkg"] if self.background_model is not None else ["obs"]
+        inference_data.posterior_predictive = inference_data.posterior_predictive[predictive_parameters]
+
+        parameters = [x for x in inference_data.posterior.keys() if not x.endswith("_base")]
+        inference_data.posterior = inference_data.posterior[parameters]
+        inference_data.prior = inference_data.prior[parameters]
 
         return ChainResult(
             self.model,

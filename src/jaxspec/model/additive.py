@@ -330,6 +330,7 @@ class Cutoffpl(AdditiveComponent):
         return norm * energy ** (-alpha) * jnp.exp(-energy / beta)
 
 
+'''
 class Diskpbb(AdditiveComponent):
     r"""
     A multiple blackbody disk model where local disk temperature T(r) is proportional to $$r^{(-p)}$$,
@@ -360,6 +361,7 @@ class Diskpbb(AdditiveComponent):
         func_vmapped = jax.vmap(lambda e: integrate_interval(lambda kT: integrand(kT, e), 0, tin, n=51))
 
         return norm * (0.75 / p) * func_vmapped(energy)
+'''
 
 
 class Diskbb(AdditiveComponent):
@@ -378,11 +380,12 @@ class Diskbb(AdditiveComponent):
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
         p = 0.75
         tin = hk.get_parameter("Tin", [], init=HaikuConstant(1))
+        tout = 0.0
 
         # Tout is set to 0 as it is evaluated at R=infinity
-        def integrand(kT, energy):
-            return 2.78e-3 * energy**2 * (kT / tin) ** (-2 / p - 1) / (jnp.exp(energy / kT) - 1)
+        def integrand(kT, e, tin, p):
+            return e**2 * (kT / tin) ** (-2 / p - 1) / (jnp.exp(e / kT) - 1)
 
-        func_vmapped = jax.vmap(lambda e: integrate_interval(lambda kT: integrand(kT, e), 0, tin, n=51))
+        integral = integrate_interval(integrand)
 
-        return norm * (0.75 / p) * func_vmapped(energy)
+        return norm * 2.78e-3 * (0.75 / p) / tin * jax.vmap(lambda e: integral(tout, tin, e, tin, p))(energy)

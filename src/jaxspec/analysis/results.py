@@ -343,7 +343,7 @@ class ChainResult:
                     folding_model.out_energies,
                     y_observed=folding_model.folded_background.data,
                     y_samples=bkg_count,
-                    denominator=denominator,
+                    denominator=denominator / folding_model.backratio.data,
                     color=(0.26787604, 0.60085972, 0.63302651),
                     percentile=percentile,
                 )

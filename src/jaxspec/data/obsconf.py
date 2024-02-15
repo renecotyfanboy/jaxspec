@@ -73,6 +73,7 @@ class ObsConfiguration(xr.Dataset):
             pha.quality,
             pha.exposure,
             background=bkg.counts if bkg is not None else None,
+            backratio=pha.backscal / bkg.backscal if bkg is not None else 1.0,
             attributes=metadata,
         )
 
@@ -122,6 +123,7 @@ class ObsConfiguration(xr.Dataset):
                 "transfer_matrix": transfer_matrix,
                 "area": instrument.area.copy().where(col_idx, drop=True),
                 "exposure": observation.exposure,
+                "backratio": observation.backratio,
                 "folded_counts": folded_counts,
                 "folded_background": folded_background,
             }
