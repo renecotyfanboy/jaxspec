@@ -36,6 +36,7 @@ class Observation(xr.Dataset):
         quality,
         exposure,
         background=None,
+        backratio=1.0,
         attributes: dict | None = None,
     ):
         if attributes is None:
@@ -58,6 +59,7 @@ class Observation(xr.Dataset):
             ),
             "quality": (["instrument_channel"], np.array(quality, dtype=int), {"description": "Quality flag."}),
             "exposure": ([], float(exposure), {"description": "Total exposure", "unit": "s"}),
+            "backratio": ([], float(backratio), {"description": "Background scaling (SRC_BACKSCAL/BKG_BACKSCAL)"}),
             "background": (
                 ["instrument_channel"],
                 np.array(background, dtype=int),
@@ -89,12 +91,18 @@ class Observation(xr.Dataset):
 
         pha, arf, rmf, bkg, metadata = data_loader(pha_file)
 
+        if bkg is not None:
+            backratio = (pha.backscal * pha.exposure * pha.areascal) / (bkg.backscal * bkg.exposure * bkg.areascal)
+        else:
+            backratio = 1.0
+
         return cls.from_matrix(
             pha.counts,
             pha.grouping,
             pha.channel,
             pha.quality,
             pha.exposure,
+            backratio=backratio,
             background=bkg.counts if bkg is not None else None,
             attributes=metadata,
         )

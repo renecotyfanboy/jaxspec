@@ -268,8 +268,8 @@ class SpectralModel:
 
         return multiplicative_nodes
 
-    def __call__(self, pars, e_low, e_high):
-        return self.photon_flux(pars, e_low, e_high)
+    def __call__(self, pars, e_low, e_high, **kwargs):
+        return self.photon_flux(pars, e_low, e_high, **kwargs)
 
     @classmethod
     def from_component(cls, component, **kwargs) -> SpectralModel:

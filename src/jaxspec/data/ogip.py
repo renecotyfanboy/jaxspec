@@ -23,6 +23,8 @@ class DataPHA:
         backfile=None,
         respfile=None,
         ancrfile=None,
+        backscal=1.0,
+        areascal=1.0,
     ):
         self.channel = channel
         self.counts = counts
@@ -32,6 +34,8 @@ class DataPHA:
         self.backfile = backfile
         self.respfile = respfile
         self.ancrfile = ancrfile
+        self.backscal = backscal
+        self.areascal = areascal
 
         if grouping is not None:
             # Indices array of beginning of each group
@@ -69,6 +73,8 @@ class DataPHA:
             "backfile": header.get("BACKFILE"),
             "respfile": header.get("RESPFILE"),
             "ancrfile": header.get("ANCRFILE"),
+            "backscal": header.get("BACKSCAL", 1.0),
+            "areascal": header.get("AREASCAL", 1.0),
         }
 
         return cls(data["CHANNEL"], data["COUNTS"], header["EXPOSURE"], **kwargs)

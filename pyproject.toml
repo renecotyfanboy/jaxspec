@@ -25,6 +25,7 @@ gpjax = "^0.7.2"
 jaxopt = "^0.8.1"
 tinygp = "^0.3.0"
 seaborn = "^0.13.1"
+mkdocstrings = "^0.24.0"
 
 
 [tool.poetry.group.docs.dependencies]
