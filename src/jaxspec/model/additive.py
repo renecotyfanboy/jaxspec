@@ -388,6 +388,7 @@ class Diskbb(AdditiveComponent):
 class Agauss(AdditiveComponent):
     r"""
     A simple Gaussian line profile in wavelength space.
+    The factor used to convert from keV to $$\AA$$ is 12.39842, from CODATA 2018, Tiesinga et al. (2021).
     If the width is $$\leq 0$$ then it is treated as a delta function.
     The Zagauss variant computes a redshifted Gaussian.
 
@@ -400,17 +401,19 @@ class Agauss(AdditiveComponent):
         * $K$ : Normalization $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
-    def continuum(self, wavelength) -> (jax.Array, jax.Array):
+    def continuum(self, energy) -> (jax.Array, jax.Array):
         line_wavelength = hk.get_parameter("Lambda_l", [], init=HaikuConstant(12.39842))
         sigma = hk.get_parameter("sigma", [], init=HaikuConstant(0.001))
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
-        return norm * jsp.stats.norm.pdf(wavelength, loc=line_wavelength, scale=sigma)
+        return norm * jsp.stats.norm.pdf(energy, loc=12.39842/line_wavelength,
+                                         scale=12.39842 * (sigma / (line_wavelength**2 - sigma**2)))
 
 
 class Zagauss(AdditiveComponent):
     r"""
     A redshifted Gaussian line profile in wavelength space.
+    The factor used to convert from keV to $$\AA$$ is 12.39842, from CODATA 2018, Tiesinga et al. (2021).
     If the width is $$\leq 0$$ then it is treated as a delta function.
 
     $$\mathcal{M}\left( \lambda \right) =
@@ -423,13 +426,14 @@ class Zagauss(AdditiveComponent):
         * $z$ : Redshift [dimensionless]
     """
 
-    def continuum(self, wavelength) -> (jax.Array, jax.Array):
+    def continuum(self, energy) -> (jax.Array, jax.Array):
         line_wavelength = hk.get_parameter("Lambda_l", [], init=HaikuConstant(12.39842))
         sigma = hk.get_parameter("sigma", [], init=HaikuConstant(0.001))
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
         redshift = hk.get_parameter("redshift", [], init=HaikuConstant(0))
 
-        return norm * (1+redshift) * jsp.stats.norm.pdf(wavelength/(1+redshift), loc=line_wavelength, scale=sigma)
+        return (norm/(1+redshift)) * jsp.stats.norm.pdf(energy*(1+redshift), loc=12.39842/line_wavelength,
+                                                        scale=12.39842 * (sigma / (line_wavelength**2 - sigma**2)))
 
 
 class Zgauss(AdditiveComponent):
