@@ -11,7 +11,7 @@ main.py
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
 *.ipynb
-
+poetry.lock
 # IPython
 profile_default/
 ipython_config.py
