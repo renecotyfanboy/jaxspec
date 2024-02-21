@@ -10,7 +10,6 @@ import numpy as np
 import importlib.resources
 import astropy.units as u
 import astropy.constants
-hc = (astropy.constants.h * astropy.constants.c).to(u.angstrom * u.keV).value
 
 from jax.lax import dynamic_slice_in_dim as jax_slice
 from functools import partial
@@ -406,6 +405,7 @@ class Agauss(AdditiveComponent):
     """
 
     def continuum(self, energy) -> (jax.Array, jax.Array):
+        hc = (astropy.constants.h * astropy.constants.c).to(u.angstrom * u.keV).value
         line_wavelength = hk.get_parameter("Lambda_l", [], init=HaikuConstant(hc))
         sigma = hk.get_parameter("sigma", [], init=HaikuConstant(0.001))
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
@@ -430,6 +430,7 @@ class Zagauss(AdditiveComponent):
     """
 
     def continuum(self, energy) -> (jax.Array, jax.Array):
+        hc = (astropy.constants.h * astropy.constants.c).to(u.angstrom * u.keV).value
         line_wavelength = hk.get_parameter("Lambda_l", [], init=HaikuConstant(hc))
         sigma = hk.get_parameter("sigma", [], init=HaikuConstant(0.001))
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
