@@ -7,9 +7,8 @@ as proposed by XSPEC.
 
 ``` python
 import numpyro
-from jax.config import config
 
-config.update("jax_enable_x64", True)
+numpyro.enable_x64()
 numpyro.set_platform("cpu")
 ```
 
@@ -20,7 +19,7 @@ from jaxspec.model.additive import Powerlaw, Blackbodyrad
 from jaxspec.model.multiplicative import Tbabs
 from jaxspec.data import ObsConfiguration
 
-obs = ObsConfiguration.pha_file('obs_1.pha')
+obs = ObsConfiguration.from_pha_file('obs_1.pha')
 model = Tbabs() * (Powerlaw() + Blackbodyrad())
 ```
 
