@@ -6,10 +6,6 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-import numpy as np
-import importlib.resources
-from jax.lax import dynamic_slice_in_dim as jax_slice
-from functools import partial
 from .abc import ModelComponent
 from haiku.initializers import Constant as HaikuConstant
 from ..util.integrate import integrate_interval
@@ -213,6 +209,7 @@ class Gauss(AdditiveComponent):
         return norm * jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
 
 
+"""
 class APEC(AdditiveComponent):
     def __init__(self, name="apec"):
         super(APEC, self).__init__(name=name)
@@ -307,6 +304,7 @@ class APEC(AdditiveComponent):
         )
 
         return (continuum + pseudo) * 1e14 * norm
+"""
 
 
 class Cutoffpl(AdditiveComponent):
