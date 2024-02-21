@@ -210,6 +210,7 @@ class Gauss(AdditiveComponent):
         return norm * jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
 
 
+"""
 class APEC(AdditiveComponent):
     def __init__(self, name="apec"):
         super(APEC, self).__init__(name=name)
@@ -304,6 +305,7 @@ class APEC(AdditiveComponent):
         )
 
         return (continuum + pseudo) * 1e14 * norm
+"""
 
 
 class Cutoffpl(AdditiveComponent):
