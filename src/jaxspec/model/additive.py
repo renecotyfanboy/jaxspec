@@ -8,6 +8,10 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 import numpy as np
 import importlib.resources
+import astropy.units as u
+import astropy.constants
+hc = (astropy.constants.h * astropy.constants.c).to(u.angstrom * u.keV).value
+
 from jax.lax import dynamic_slice_in_dim as jax_slice
 from functools import partial
 from .abc import ModelComponent
@@ -402,12 +406,11 @@ class Agauss(AdditiveComponent):
     """
 
     def continuum(self, energy) -> (jax.Array, jax.Array):
-        line_wavelength = hk.get_parameter("Lambda_l", [], init=HaikuConstant(12.39842))
+        line_wavelength = hk.get_parameter("Lambda_l", [], init=HaikuConstant(hc))
         sigma = hk.get_parameter("sigma", [], init=HaikuConstant(0.001))
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
-        return norm * jsp.stats.norm.pdf(energy, loc=12.39842/line_wavelength,
-                                         scale=12.39842 * (sigma / (line_wavelength**2 - sigma**2)))
+        return norm * jsp.stats.norm.pdf(hc/energy, loc=line_wavelength, scale=sigma)
 
 
 class Zagauss(AdditiveComponent):
@@ -427,13 +430,12 @@ class Zagauss(AdditiveComponent):
     """
 
     def continuum(self, energy) -> (jax.Array, jax.Array):
-        line_wavelength = hk.get_parameter("Lambda_l", [], init=HaikuConstant(12.39842))
+        line_wavelength = hk.get_parameter("Lambda_l", [], init=HaikuConstant(hc))
         sigma = hk.get_parameter("sigma", [], init=HaikuConstant(0.001))
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
         redshift = hk.get_parameter("redshift", [], init=HaikuConstant(0))
 
-        return (norm/(1+redshift)) * jsp.stats.norm.pdf(energy*(1+redshift), loc=12.39842/line_wavelength,
-                                                        scale=12.39842 * (sigma / (line_wavelength**2 - sigma**2)))
+        return norm * (1+redshift) * jsp.stats.norm.pdf((hc/energy)/(1+redshift), loc=line_wavelength, scale=sigma)
 
 
 class Zgauss(AdditiveComponent):
