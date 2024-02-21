@@ -119,11 +119,11 @@ class BayesianModelAbstract(ABC):
         num_samples: int = 1000,
         max_tree_depth: int = 10,
         target_accept_prob: float = 0.8,
-        jit_model: bool = False,
+        dense_mass=True,
         mcmc_kwargs: dict = {},
     ) -> ChainResult:
         """
-        Fit the model to the data using NUTS sampler from numpyro. This is the default sampler in JAXspec.
+        Fit the model to the data using NUTS sampler from numpyro. This is the default sampler in jaxspec.
 
         Parameters:
             prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
@@ -133,7 +133,7 @@ class BayesianModelAbstract(ABC):
             num_samples: the number of samples to draw.
             max_tree_depth: the recursion depth of NUTS sampler.
             target_accept_prob: the target acceptance probability for the NUTS sampler.
-            jit_model: whether to jit the model or not.
+            dense_mass: whether to use a dense mass for the NUTS sampler.
             mcmc_kwargs: additional arguments to pass to the MCMC sampler. See [`MCMC`][numpyro.infer.mcmc.MCMC] for more details.
 
         Returns:
@@ -154,7 +154,7 @@ class BayesianModelAbstract(ABC):
 
         bayesian_model = numpyro.handlers.reparam(self.numpyro_model(prior_distributions), config=transform_dict)
 
-        kernel = NUTS(bayesian_model, max_tree_depth=max_tree_depth, target_accept_prob=target_accept_prob, dense_mass=True)
+        kernel = NUTS(bayesian_model, max_tree_depth=max_tree_depth, target_accept_prob=target_accept_prob, dense_mass=dense_mass)
 
         mcmc = MCMC(kernel, **(chain_kwargs | mcmc_kwargs))
 
