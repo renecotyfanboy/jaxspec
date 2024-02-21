@@ -393,8 +393,7 @@ class Diskbb(AdditiveComponent):
 class Agauss(AdditiveComponent):
     r"""
     A simple Gaussian line profile in wavelength space.
-    The factor used to convert from keV to $$\AA$$ is 12.39842, from CODATA 2018, Tiesinga et al. (2021).
-    If the width is $$\leq 0$$ then it is treated as a delta function.
+    If the width is $\leq 0$ then it is treated as a delta function.
     The Zagauss variant computes a redshifted Gaussian.
 
     $$\mathcal{M}\left( \lambda \right) =
@@ -418,8 +417,7 @@ class Agauss(AdditiveComponent):
 class Zagauss(AdditiveComponent):
     r"""
     A redshifted Gaussian line profile in wavelength space.
-    The factor used to convert from keV to $$\AA$$ is 12.39842, from CODATA 2018, Tiesinga et al. (2021).
-    If the width is $$\leq 0$$ then it is treated as a delta function.
+    If the width is $\leq 0$ then it is treated as a delta function.
 
     $$\mathcal{M}\left( \lambda \right) =
     \frac{K (1+z)}{\sigma \sqrt{2 \pi}} \exp\left(\frac{-(\lambda/(1+z) - \lambda_L)^2}{2 \sigma^2}\right)$$
@@ -443,7 +441,7 @@ class Zagauss(AdditiveComponent):
 
 class Zgauss(AdditiveComponent):
     r"""
-    A redshifted Gaussian line profile. If the width is $$\leq 0$$ then it is treated as a delta function.
+    A redshifted Gaussian line profile. If the width is $\leq 0$ then it is treated as a delta function.
 
     $$\mathcal{M}\left( E \right) =
     \frac{K}{(1+z) \sigma \sqrt{2 \pi}}\exp\left(\frac{-(E(1+z)-E_L)^2}{2\sigma^2}\right)$$
