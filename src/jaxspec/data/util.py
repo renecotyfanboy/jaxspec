@@ -81,7 +81,7 @@ def load_example_foldings():
             example_instruments["PN"],
             example_observations["PN"],
             low_energy=0.3,
-            high_energy=12,
+            high_energy=7.5,
         ),
         "MOS1": ObsConfiguration.from_instrument(
             example_instruments["MOS1"],
@@ -218,15 +218,17 @@ def data_loader(pha_path, arf_path=None, rmf_path=None, bkg_path=None):
     pha = DataPHA.from_file(pha_path)
 
     if arf_path is None:
-        arf_path = os.path.join(os.path.dirname(pha_path), pha.ancrfile)
+        if pha.ancrfile != "none" and pha.ancrfile != "":
+            arf_path = os.path.join(os.path.dirname(pha_path), pha.ancrfile)
     if rmf_path is None:
-        rmf_path = os.path.join(os.path.dirname(pha_path), pha.respfile)
+        if pha.respfile != "none" and pha.respfile != "":
+            rmf_path = os.path.join(os.path.dirname(pha_path), pha.respfile)
     if bkg_path is None:
         if pha.backfile != "none" and pha.backfile != "":
             bkg_path = os.path.join(os.path.dirname(pha_path), pha.backfile)
 
-    arf = DataARF.from_file(arf_path)
-    rmf = DataRMF.from_file(rmf_path)
+    arf = DataARF.from_file(arf_path) if arf_path is not None else None
+    rmf = DataRMF.from_file(rmf_path) if rmf_path is not None else None
 
     try:
         bkg = DataPHA.from_file(bkg_path) if bkg_path is not None else None

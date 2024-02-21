@@ -65,11 +65,19 @@ class DataPHA:
         data = QTable.read(pha_file, "SPECTRUM")
         header = fits.getheader(pha_file, "SPECTRUM")
 
+        if "QUALITY" in data.colnames:
+            quality = data["QUALITY"]
+        else:
+            if header.get("QUALITY") == 0:
+                quality = np.ones(len(data["CHANNEL"]), dtype=bool)
+            else:
+                raise ValueError("No quality column found in the PHA file.")
+
         # Grouping and quality parameters are in binned PHA dataset
         # Backfile, respfile and ancrfile are in primary header
         kwargs = {
             "grouping": data["GROUPING"] if "GROUPING" in data.colnames else None,
-            "quality": data["QUALITY"] if "QUALITY" in data.colnames else None,
+            "quality": quality,
             "backfile": header.get("BACKFILE"),
             "respfile": header.get("RESPFILE"),
             "ancrfile": header.get("ANCRFILE"),
