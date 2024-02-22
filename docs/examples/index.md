@@ -1,6 +1,6 @@
 !!! warning "Under construction"
 
-# Beginner examples
+# Start with `jaxspec`
 
 <div class="grid cards" markdown>
 
@@ -46,12 +46,22 @@
 
 <div class="grid cards" markdown>
 
--   :material-clock-fast:{ .lg .middle } __Add a background__
+-   [__Add a background__](background.md)
 
     ---
 
     Add an observed background in your spectral model.
 
-    [:octicons-arrow-right-24: Example here](background.md)
+-   [__Work with arviz__](result_analysis.ipynb)
+
+    ---
+
+    Use `arviz` to assess the quality of your fit
+
+-   [__Build a custom model__](build_custom_model.ipynb)
+
+    ---
+
+    Add a custom model to `jaxspec`
 
 </div>

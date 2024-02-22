@@ -13,6 +13,8 @@ nav:
     - Model building made easy: examples/build_model.md
     - Generate mock data : examples/fakeits.md
     - Add a background : examples/background.md
+    - Work with arviz : examples/result_analysis.ipynb
+    - Build a custom model : examples/build_custom_model.ipynb
   - API Reference:
     - Spectral model base: references/model.md
     - Additive models: references/additive.md
