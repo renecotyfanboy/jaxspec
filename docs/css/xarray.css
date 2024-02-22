@@ -1,3 +1,14 @@
+[data-md-color-scheme="slate"] {
+  --xr-font-color0: var(--md-default-fg-color); /* Couleur de texte principale */
+  --xr-font-color2: var(--md-default-fg-color--light); /* Couleur de texte secondaire */
+  --xr-font-color3: var(--md-default-fg-color--lighter); /* Couleur de texte teriaire */
+  --xr-border-color: var(--md-default-fg-color--light); /* Couleur de la bordure */
+  --xr-disabled-color: var(--md-default-fg-color--light); /* Couleur pour les éléments désactivés */
+  --xr-background-color: var(--md-default-bg-color); /* Couleur de fond principale */
+  --xr-background-color-row-even: var(--md-default-bg-color); /* Couleur de fond pour les lignes paires */
+  --xr-background-color-row-odd: var(--md-default-bg-color--light); /* Couleur de fond pour les lignes impaires */
+}
+
 .md-typeset pre.xr-text-repr-fallback {
     display: none;
 }
