@@ -25,6 +25,7 @@ build:
       # Using insiders versions of mkdocs-material & mkdocstrings
       - pip install git+https://${GH_TOKEN}@github.com/squidfunk/mkdocs-material-insiders.git
       - pip install git+https://${GH_TOKEN}@github.com/pawamoy-insiders/mkdocstrings-python.git
+      - pip install mkdocs-jupyter # This is bugged, I enforced it manually, let's see if it works
 
   apt_packages:
     - libcairo2-dev
