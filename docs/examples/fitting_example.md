@@ -65,7 +65,7 @@ prior = {
 }
 
 forward = BayesianModel(model, obs)
-result = forward.fit(prior, num_chains=4, num_warmups=5000, num_samples=5000)
+result = forward.fit(prior, num_chains=4, num_warmup=5000, num_samples=5000)
 ```
 
 ## Gather results
