@@ -23,8 +23,8 @@ params = {
     }
 }
 
-photon_flux = model.photon_flux(model.params, energies[:-1], energies[1:], n_points=30)
-energy_flux = model.energy_flux(model.params, energies[:-1], energies[1:], n_points=30)
+photon_flux = model.photon_flux(params, energies[:-1], energies[1:], n_points=30)
+energy_flux = model.energy_flux(params, energies[:-1], energies[1:], n_points=30)
 ```
 
 ## Fit a single observation with MCMC

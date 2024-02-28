@@ -1,5 +1,6 @@
 from __future__ import annotations
 import haiku as hk
+import jax
 import jax.numpy as jnp
 import networkx as nx
 from haiku._src import base
@@ -122,11 +123,16 @@ class SpectralModel:
 
         !!! info
             This method is internally used in the inference process and should not be used directly. See
-            [`photon_flux`](/references/results/#jaxspec.analysis.results.ChainResult.photon_flux) to compute
+            [`photon_flux`][jaxspec.analysis.results.ChainResult.photon_flux] to compute
             the photon flux associated with a set of fitted parameters in a
-            [`ChainResult`](/references/results/#jaxspec.analysis.results.ChainResult)
+            [`ChainResult`][jaxspec.analysis.results.ChainResult]
             instead.
         """
+
+        params = jax.tree_map(lambda x: jnp.asarray(x), params)
+        e_low = jnp.asarray(e_low)
+        e_high = jnp.asarray(e_high)
+
         return self.transformed_func_photon.apply(params, e_low, e_high, n_points=n_points)
 
     def energy_flux(self, params, e_low, e_high, n_points=10):
@@ -150,6 +156,11 @@ class SpectralModel:
             [`ChainResult`](/references/results/#jaxspec.analysis.results.ChainResult)
             instead.
         """
+
+        params = jax.tree_map(lambda x: jnp.asarray(x), params)
+        e_low = jnp.asarray(e_low)
+        e_high = jnp.asarray(e_high)
+
         return self.transformed_func_energy.apply(params, e_low, e_high, n_points=n_points)
 
     def build_namespace(self):
