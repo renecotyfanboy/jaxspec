@@ -1,17 +1,17 @@
 import inspect
 import chex
 import pytest
-from jax.config import config
 import jax
 import jax.numpy as jnp
+import numpyro
 from jax.scipy.special import gamma, hyp1f1
 from jaxspec.util.integrate import integrate_interval, integrate_positive
 from dataclasses import dataclass
 from jax.typing import ArrayLike
 
 
+numpyro.enable_x64()
 chex.set_n_cpu_devices(n=4)
-config.update("jax_enable_x64", True)
 
 
 @dataclass

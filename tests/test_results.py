@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpyro
 import numpyro.distributions as dist
-from jax import config
 from unittest import TestCase
 from jaxspec.model.additive import Powerlaw
 from jaxspec.model.multiplicative import Tbabs
@@ -13,7 +12,7 @@ from jaxspec.analysis.compare import plot_corner_comparison
 
 # chex.set_n_cpu_devices(n=4)
 
-config.update("jax_enable_x64", True)
+numpyro.enable_x64()
 numpyro.set_platform("cpu")
 numpyro.set_host_device_count(4)
 
