@@ -4,8 +4,9 @@ nav:
   - Home: index.md
   - Theory:
     - theory/index.md
-    - Bayesian inference crash course: theory/bayesian_inference.md
+    - Bayesian inference: theory/bayesian_inference.md
     - Instruments modelling: theory/instrument.md
+    - Background modelling: theory/background.md
   - Examples:
     - examples/index.md
     - Spectral fitting speedrun: examples/fitting_example.md

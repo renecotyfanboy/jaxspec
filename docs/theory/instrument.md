@@ -1,7 +1,5 @@
 The instruments used to acquire X-ray spectra are modelled using the following quantities.
 
-
-
 ## Effective area
 
 ## Redistribution matrix

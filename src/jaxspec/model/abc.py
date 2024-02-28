@@ -106,13 +106,19 @@ class SpectralModel:
     def params(self):
         return self.transformed_func_photon.init(None, jnp.ones(10), jnp.ones(10))
 
-    def photon_flux(self, *args, **kwargs):
+    def photon_flux(self, params, e_low, e_high, n_points=10):
         r"""
         Compute the expected counts between $E_\min$ and $E_\max$ by integrating the model.
 
         $$ \Phi_{\text{photon}}\left(E_\min, ~E_\max\right) =
         \int _{E_\min}^{E_\max}\text{d}E ~ \mathcal{M}\left( E \right)
         \quad \left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$$
+
+        Parameters:
+            params : The parameters of the model.
+            e_low : The lower bound of the energy bins.
+            e_high : The upper bound of the energy bins.
+            n_points : The number of points used to integrate the model in each bin.
 
         !!! info
             This method is internally used in the inference process and should not be used directly. See
@@ -121,15 +127,21 @@ class SpectralModel:
             [`ChainResult`](/references/results/#jaxspec.analysis.results.ChainResult)
             instead.
         """
-        return self.transformed_func_photon.apply(*args, **kwargs)
+        return self.transformed_func_photon.apply(params, e_low, e_high, n_points=n_points)
 
-    def energy_flux(self, *args, **kwargs):
+    def energy_flux(self, params, e_low, e_high, n_points=10):
         r"""
         Compute the expected energy flux between $E_\min$ and $E_\max$ by integrating the model.
 
         $$ \Phi_{\text{energy}}\left(E_\min, ~E_\max\right) =
         \int _{E_\min}^{E_\max}\text{d}E ~ E ~ \mathcal{M}\left( E \right)
         \quad \left[\frac{\text{keV}}{\text{cm}^2\text{s}}\right]$$
+
+        Parameters:
+            params : The parameters of the model.
+            e_low : The lower bound of the energy bins.
+            e_high : The upper bound of the energy bins.
+            n_points : The number of points used to integrate the model in each bin.
 
         !!! info
             This method is internally used in the inference process and should not be used directly. See
@@ -138,7 +150,7 @@ class SpectralModel:
             [`ChainResult`](/references/results/#jaxspec.analysis.results.ChainResult)
             instead.
         """
-        return self.transformed_func_energy.apply(*args, **kwargs)
+        return self.transformed_func_energy.apply(params, e_low, e_high, n_points=n_points)
 
     def build_namespace(self):
         """
