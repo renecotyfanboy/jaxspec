@@ -158,7 +158,7 @@ class Highecut(MultiplicativeComponent):
     $$
 
     ??? abstract "Parameters"
-        * $E_c$ : Eutoff energy $\left[\text{keV}\right]$
+        * $E_c$ : Cutoff energy $\left[\text{keV}\right]$
         * $E_f$ : Folding energy $\left[\text{keV}\right]$
     """
 
