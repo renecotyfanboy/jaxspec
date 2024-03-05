@@ -29,9 +29,9 @@ class Expfac(MultiplicativeComponent):
     $$
 
     ??? abstract "Parameters"
-        * $A$ : amplitude of the modification $\left[\text{dimensionless}\right]$
-        * $f$ : exponential factor $\left[\text{keV}^{-1}\right]$
-        * $E_c$ : start energy of modification $\left[\text{keV}\right]$
+        * $A$ : Amplitude of the modification $\left[\text{dimensionless}\right]$
+        * $f$ : Exponential factor $\left[\text{keV}^{-1}\right]$
+        * $E_c$ : Start energy of modification $\left[\text{keV}\right]$
 
     """
 
@@ -45,11 +45,20 @@ class Expfac(MultiplicativeComponent):
 
 class Tbabs(MultiplicativeComponent):
     r"""
-    The Tuebingen-Boulder ISM absorption model.
+    The Tuebingen-Boulder ISM absorption model. This model calculates the cross section for X-ray absorption by the ISM
+    as the sum of the cross sections for X-ray absorption due to the gas-phase ISM, the grain-phase ISM,
+    and the molecules in the ISM.
+
+    $$
+        \mathcal{M}(E) = \exp^{-N_{\text{H}}\sigma(E)}
+    $$
 
     ??? abstract "Parameters"
-        * $N_H$ : equivalent hydrogen column density
+        * $N_{\text{H}}$ : Equivalent hydrogen column density
             $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
+
+    !!! note
+        Abundances and cross-sections $\sigma$ can be found in Wilms et al. (2000).
 
     """
 
@@ -71,7 +80,7 @@ class Phabs(MultiplicativeComponent):
     A photoelectric absorption model.
 
     ??? abstract "Parameters"
-        * $N_H$ : equivalent hydrogen column density
+        * $N_{\text{H}}$ : Equivalent hydrogen column density
             $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
 
     """
@@ -94,7 +103,7 @@ class Wabs(MultiplicativeComponent):
     A photo-electric absorption using Wisconsin (Morrison & McCammon 1983) cross-sections.
 
     ??? abstract "Parameters"
-        * $N_H$ : equivalent hydrogen column density
+        * $N_{\text{H}}$ : Equivalent hydrogen column density
             $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
 
     """
@@ -122,9 +131,9 @@ class Gabs(MultiplicativeComponent):
     $$
 
     ??? abstract "Parameters"
-        * $\tau$ : absorption strength $\left[\text{dimensionless}\right]$
-        * $\sigma$ : absorption width $\left[\text{keV}\right]$
-        * $E_0$ : absorption center $\left[\text{keV}\right]$
+        * $\tau$ : Absorption strength $\left[\text{dimensionless}\right]$
+        * $\sigma$ : Absorption width $\left[\text{keV}\right]$
+        * $E_0$ : Absorption center $\left[\text{keV}\right]$
 
     !!! note
         The optical depth at line center is $\tau/(\sqrt{2 \pi} \sigma)$.
@@ -149,8 +158,8 @@ class Highecut(MultiplicativeComponent):
     $$
 
     ??? abstract "Parameters"
-        * $E_c$ : cutoff energy $\left[\text{keV}\right]$
-        * $E_f$ : e-folding energy $\left[\text{keV}\right]$
+        * $E_c$ : Cutoff energy $\left[\text{keV}\right]$
+        * $E_f$ : Folding energy $\left[\text{keV}\right]$
     """
 
     def continuum(self, energy):
@@ -170,9 +179,9 @@ class Zedge(MultiplicativeComponent):
     $$
 
     ??? abstract "Parameters"
-        * $E_c$ : threshold energy
-        * $E_f$ : absorption depth at the threshold
-        * $z$ : redshift
+        * $E_c$ : Threshold energy
+        * $E_f$ : Absorption depth at the threshold
+        * $z$ : Redshift [dimensionless]
     """
 
     def continuum(self, energy):
@@ -181,3 +190,35 @@ class Zedge(MultiplicativeComponent):
         z = hk.get_parameter("z", [], init=HaikuConstant(0))
 
         return jnp.where(energy <= E_c, 1.0, jnp.exp(-D * (energy * (1 + z) / E_c) ** 3))
+
+
+class Tbpcf(MultiplicativeComponent):
+    r"""
+    Partial covering model using the Tuebingen-Boulder ISM absorption model (for more details, see `Tbabs`).
+
+    $$
+        \mathcal{M}(E) = f \exp^{-N_{\text{H}}\sigma(E)} + (1-f)
+    $$
+
+    ??? abstract "Parameters"
+        * $N_{\text{H}}$ : Equivalent hydrogen column density
+            $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
+        * $f$ : Partial covering fraction, ranges between 0 and 1 [dimensionless]
+
+    !!! note
+        Abundances and cross-sections $\sigma$ can be found in Wilms et al. (2000).
+
+    """
+
+    ref = importlib.resources.files("jaxspec") / "tables/xsect_tbabs_wilm.fits"
+    with importlib.resources.as_file(ref) as path:
+        table = Table.read(path)
+    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float32)
+    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float32)
+
+    def continuum(self, energy):
+        nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))
+        f = hk.get_parameter("f", [], init=HaikuConstant(0.2))
+        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
+
+        return f*jnp.exp(-nh * sigma) + (1-f)

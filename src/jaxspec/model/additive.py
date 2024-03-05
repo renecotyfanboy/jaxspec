@@ -71,7 +71,7 @@ class Powerlaw(AdditiveComponent):
     ??? abstract "Parameters"
         * $\alpha$ : Photon index of the power law $\left[\text{dimensionless}\right]$
         * $E_0$ : Reference energy fixed at 1 keV $\left[ \mathrm{keV}\right]$
-        * $K$ : Normalization at 1 keV $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
+        * $K$ : Normalization at the reference energy (1 keV) $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
     def continuum(self, energy):
@@ -134,8 +134,8 @@ class Logparabola(AdditiveComponent):
     ??? abstract "Parameters"
         * $a$ : Slope of the LogParabola at the pivot energy $\left[\text{dimensionless}\right]$
         * $b$ : Curve parameter of the LogParabola $\left[\text{dimensionless}\right]$
-        * $K$ : Normalization at the pivot energy $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
         * $E_{\text{Pivot}}$ : Pivot energy fixed at 1 keV $\left[ \mathrm{keV}\right]$
+        * $K$ : Normalization at the pivot energy (1keV) $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
     # TODO : conform with xspec definition
@@ -188,7 +188,7 @@ class Blackbodyrad(AdditiveComponent):
 class Gauss(AdditiveComponent):
     r"""
     A Gaussian line profile. If the width is $$\leq 0$$ then it is treated as a delta function.
-    The Zgauss variant computes a redshifted Gaussian.
+    The `Zgauss` variant computes a redshifted Gaussian.
 
     $$\mathcal{M}\left( E \right) = \frac{K}{\sigma \sqrt{2 \pi}}\exp\left(\frac{-(E-E_L)^2}{2\sigma^2}\right)$$
 
@@ -314,7 +314,7 @@ class Cutoffpl(AdditiveComponent):
         * $\alpha$ : Photon index of the power law $\left[\text{dimensionless}\right]$
         * $\beta$ : Folding energy of the exponential cutoff $\left[\text{keV}\right]$
         * $E_0$ : Reference energy fixed at 1 keV $\left[ \mathrm{keV}\right]$
-        * $K$ : Normalization at 1 keV $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
+        * $K$ : Normalization at the reference energy (1 keV) $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$
     """
 
     def continuum(self, energy):
@@ -390,7 +390,7 @@ class Agauss(AdditiveComponent):
     r"""
     A simple Gaussian line profile in wavelength space.
     If the width is $\leq 0$ then it is treated as a delta function.
-    The Zagauss variant computes a redshifted Gaussian.
+    The `Zagauss` variant computes a redshifted Gaussian.
 
     $$\mathcal{M}\left( \lambda \right) =
     \frac{K}{\sigma \sqrt{2 \pi}} \exp\left(\frac{-(\lambda - \lambda_L)^2}{2 \sigma^2}\right)$$
