@@ -382,8 +382,7 @@ class Diskbb(AdditiveComponent):
             return e**2 * (kT / tin) ** (-2 / p - 1) / (jnp.exp(e / kT) - 1)
 
         integral = integrate_interval(integrand)
-
-        return norm * 2.78e-3 * (0.75 / p) / tin * jax.vmap(lambda e: integral(tout, tin, e, tin, p))(energy)
+        return norm * 2.78e-3 * (0.75 / p) / tin * jnp.vectorize(lambda e: integral(tout, tin, e, tin, p))(energy)
 
 
 class Agauss(AdditiveComponent):
