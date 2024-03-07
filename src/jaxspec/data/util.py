@@ -1,10 +1,11 @@
 import importlib.resources
 import os
-import warnings
 import numpyro
 import jax
 import numpy as np
 import haiku as hk
+from pathlib import Path
+from difflib import get_close_matches
 from numpy.typing import ArrayLike
 from collections.abc import Mapping
 from typing import TypeVar
@@ -26,17 +27,17 @@ def load_example_observations():
 
     example_observations = {
         "PN": Observation.from_pha_file(
-            importlib.resources.files("jaxspec") / "data/example_data/PN_spectrum_grp20.fits",
+            str(importlib.resources.files("jaxspec") / "data/example_data/PN_spectrum_grp20.fits"),
             low_energy=0.3,
             high_energy=7.5,
         ),
         "MOS1": Observation.from_pha_file(
-            importlib.resources.files("jaxspec") / "data/example_data/MOS1_spectrum_grp.fits",
+            str(importlib.resources.files("jaxspec") / "data/example_data/MOS1_spectrum_grp.fits"),
             low_energy=0.3,
             high_energy=7,
         ),
         "MOS2": Observation.from_pha_file(
-            importlib.resources.files("jaxspec") / "data/example_data/MOS2_spectrum_grp.fits",
+            str(importlib.resources.files("jaxspec") / "data/example_data/MOS2_spectrum_grp.fits"),
             low_energy=0.3,
             high_energy=7,
         ),
@@ -52,16 +53,16 @@ def load_example_instruments():
 
     example_instruments = {
         "PN": Instrument.from_ogip_file(
-            importlib.resources.files("jaxspec") / "data/example_data/PN.arf",
-            importlib.resources.files("jaxspec") / "data/example_data/PN.rmf",
+            str(importlib.resources.files("jaxspec") / "data/example_data/PN.arf"),
+            str(importlib.resources.files("jaxspec") / "data/example_data/PN.rmf"),
         ),
         "MOS1": Instrument.from_ogip_file(
-            importlib.resources.files("jaxspec") / "data/example_data/MOS1.arf",
-            importlib.resources.files("jaxspec") / "data/example_data/MOS1.rmf",
+            str(importlib.resources.files("jaxspec") / "data/example_data/MOS1.arf"),
+            str(importlib.resources.files("jaxspec") / "data/example_data/MOS1.rmf"),
         ),
         "MOS2": Instrument.from_ogip_file(
-            importlib.resources.files("jaxspec") / "data/example_data/MOS2.arf",
-            importlib.resources.files("jaxspec") / "data/example_data/MOS2.rmf",
+            str(importlib.resources.files("jaxspec") / "data/example_data/MOS2.arf"),
+            str(importlib.resources.files("jaxspec") / "data/example_data/MOS2.rmf"),
         ),
     }
 
@@ -202,7 +203,7 @@ def fakeit_for_multiple_parameters(
     return fakeits[0] if len(fakeits) == 1 else fakeits
 
 
-def data_loader(pha_path, arf_path=None, rmf_path=None, bkg_path=None):
+def data_loader(pha_path: str, arf_path=None, rmf_path=None, bkg_path=None):
     """
     This function is a convenience function that allows to load PHA, ARF and RMF data
     from a given PHA file, using either the ARF/RMF/BKG filenames in the header or the
@@ -216,26 +217,23 @@ def data_loader(pha_path, arf_path=None, rmf_path=None, bkg_path=None):
     """
 
     pha = DataPHA.from_file(pha_path)
+    directory = str(Path(pha_path).parent)
 
     if arf_path is None:
         if pha.ancrfile != "none" and pha.ancrfile != "":
-            arf_path = os.path.join(os.path.dirname(pha_path), pha.ancrfile)
+            arf_path = find_file_or_compressed_in_dir(pha.ancrfile, directory)
+
     if rmf_path is None:
         if pha.respfile != "none" and pha.respfile != "":
-            rmf_path = os.path.join(os.path.dirname(pha_path), pha.respfile)
+            rmf_path = find_file_or_compressed_in_dir(pha.respfile, directory)
+
     if bkg_path is None:
         if pha.backfile != "none" and pha.backfile != "":
-            bkg_path = os.path.join(os.path.dirname(pha_path), pha.backfile)
+            bkg_path = find_file_or_compressed_in_dir(pha.backfile, directory)
 
     arf = DataARF.from_file(arf_path) if arf_path is not None else None
     rmf = DataRMF.from_file(rmf_path) if rmf_path is not None else None
-
-    try:
-        bkg = DataPHA.from_file(bkg_path) if bkg_path is not None else None
-
-    except FileNotFoundError:
-        bkg = None
-        warnings.warn(f"Background file {bkg_path} is specified in header but not found.")
+    bkg = DataPHA.from_file(bkg_path) if bkg_path is not None else None
 
     metadata = {
         "observation_file": pha_path,
@@ -245,3 +243,29 @@ def data_loader(pha_path, arf_path=None, rmf_path=None, bkg_path=None):
     }
 
     return pha, arf, rmf, bkg, metadata
+
+
+def find_file_or_compressed_in_dir(path: str | Path, directory: str | Path) -> str:
+    """
+    Try to find a file or its .gz compressed version in a given directory and return
+    the full path of the file.
+    """
+    path = Path(path) if isinstance(path, str) else path
+    directory = Path(directory) if isinstance(directory, str) else directory
+
+    if directory.joinpath(path).exists():
+        return str(directory.joinpath(path))
+
+    matching_files = list(directory.glob(str(path) + "*"))
+
+    if matching_files:
+        file = matching_files[0]
+        if file.suffix == ".gz":
+            return str(directory.joinpath(file))
+
+    else:
+        raise FileNotFoundError(
+            f"Can't find {path}(.gz) in {directory}. \n"
+            f"Closest file in {directory} is "
+            f"{get_close_matches(str(path), os.listdir(str(directory.absolute())), n=1)[0]}"
+        )
