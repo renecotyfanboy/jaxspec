@@ -119,7 +119,7 @@ class BayesianModelAbstract(ABC):
         num_samples: int = 1000,
         max_tree_depth: int = 10,
         target_accept_prob: float = 0.8,
-        dense_mass=True,
+        dense_mass=False,
         mcmc_kwargs: dict = {},
     ) -> ChainResult:
         """
