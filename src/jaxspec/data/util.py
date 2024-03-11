@@ -261,7 +261,7 @@ def find_file_or_compressed_in_dir(path: str | Path, directory: str | Path) -> s
     if matching_files:
         file = matching_files[0]
         if file.suffix == ".gz":
-            return str(directory.joinpath(file))
+            return str(file)
 
     else:
         raise FileNotFoundError(
