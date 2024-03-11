@@ -65,18 +65,24 @@ class DataPHA:
         data = QTable.read(pha_file, "SPECTRUM")
         header = fits.getheader(pha_file, "SPECTRUM")
 
-        if "QUALITY" in data.colnames:
+        if header.get("GROUPING") == 0:
+            grouping = None
+        elif "GROUPING" in data.colnames:
+            grouping = data["GROUPING"]
+        else:
+            raise ValueError("No grouping column found in the PHA file.")
+
+        if header.get("QUALITY") == 0:
+            quality = np.zeros(len(data["CHANNEL"]), dtype=bool)
+        elif "QUALITY" in data.colnames:
             quality = data["QUALITY"]
         else:
-            if header.get("QUALITY") == 0:
-                quality = np.ones(len(data["CHANNEL"]), dtype=bool)
-            else:
-                raise ValueError("No quality column found in the PHA file.")
+            raise ValueError("No quality column found in the PHA file.")
 
         # Grouping and quality parameters are in binned PHA dataset
         # Backfile, respfile and ancrfile are in primary header
         kwargs = {
-            "grouping": data["GROUPING"] if "GROUPING" in data.colnames else None,
+            "grouping": grouping,
             "quality": quality,
             "backfile": header.get("BACKFILE"),
             "respfile": header.get("RESPFILE"),
@@ -182,8 +188,18 @@ class DataRMF:
         Parameters:
             rmf_file: The RMF file path.
         """
+        extension_names = [hdu[1] for hdu in fits.info(rmf_file, output=False)]
 
-        matrix_table = QTable.read(rmf_file, "MATRIX")
+        if "MATRIX" in extension_names:
+            matrix_extension = "MATRIX"
+
+        elif "SPECRESP MATRIX" in extension_names:
+            matrix_extension = "SPECRESP MATRIX"
+
+        else:
+            raise ValueError("No MATRIX or SPECRESP MATRIX extension found in the RMF file")
+
+        matrix_table = QTable.read(rmf_file, matrix_extension)
         ebounds_table = QTable.read(rmf_file, "EBOUNDS")
 
         return cls(
