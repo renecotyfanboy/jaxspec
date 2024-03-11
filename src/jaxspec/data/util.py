@@ -53,16 +53,16 @@ def load_example_instruments():
 
     example_instruments = {
         "PN": Instrument.from_ogip_file(
-            str(importlib.resources.files("jaxspec") / "data/example_data/PN.arf"),
             str(importlib.resources.files("jaxspec") / "data/example_data/PN.rmf"),
+            str(importlib.resources.files("jaxspec") / "data/example_data/PN.arf"),
         ),
         "MOS1": Instrument.from_ogip_file(
-            str(importlib.resources.files("jaxspec") / "data/example_data/MOS1.arf"),
             str(importlib.resources.files("jaxspec") / "data/example_data/MOS1.rmf"),
+            str(importlib.resources.files("jaxspec") / "data/example_data/MOS1.arf"),
         ),
         "MOS2": Instrument.from_ogip_file(
-            str(importlib.resources.files("jaxspec") / "data/example_data/MOS2.arf"),
             str(importlib.resources.files("jaxspec") / "data/example_data/MOS2.rmf"),
+            str(importlib.resources.files("jaxspec") / "data/example_data/MOS2.arf"),
         ),
     }
 

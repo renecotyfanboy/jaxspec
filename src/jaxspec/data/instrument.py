@@ -64,21 +64,26 @@ class Instrument(xr.Dataset):
         )
 
     @classmethod
-    def from_ogip_file(cls, arf_file: str | os.PathLike, rmf_file: str | os.PathLike, **kwargs):
+    def from_ogip_file(cls, rmf_file: str | os.PathLike, arf_file: str | os.PathLike = None, **kwargs):
         """
         Load the data from OGIP files.
 
         Parameters:
-            arf_file: The ARF file path.
             rmf_file: The RMF file path.
+            arf_file: The ARF file path.
             exposure: The exposure time in second.
             grouping: The grouping matrix.
         """
 
-        arf = DataARF.from_file(arf_file)
         rmf = DataRMF.from_file(rmf_file)
 
-        return cls.from_matrix(rmf.matrix, arf.specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max)
+        if arf_file is not None:
+            specresp = DataARF.from_file(arf_file).specresp
+
+        else:
+            specresp = np.ones(rmf.energ_lo.shape)
+
+        return cls.from_matrix(rmf.matrix, specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max)
 
     def plot_redistribution(self, **kwargs):
         """
