@@ -140,7 +140,7 @@ class DataRMF:
         # RMF stuff
         self.energ_lo = energ_lo  # "Entry" energies
         self.energ_hi = energ_hi  # "Entry" energies
-        self.n_grp = n_grp  # "Entry" energies
+        self.n_grp = n_grp
         self.f_chan = f_chan
         self.n_chan = n_chan
         self.matrix_entry = matrix
@@ -195,6 +195,7 @@ class DataRMF:
 
         elif "SPECRESP MATRIX" in extension_names:
             matrix_extension = "SPECRESP MATRIX"
+            raise NotImplementedError("SPECRESP MATRIX extension is not yet supported")
 
         else:
             raise ValueError("No MATRIX or SPECRESP MATRIX extension found in the RMF file")
@@ -202,11 +203,16 @@ class DataRMF:
         matrix_table = QTable.read(rmf_file, matrix_extension)
         ebounds_table = QTable.read(rmf_file, "EBOUNDS")
 
+        matrix_header = fits.getheader(rmf_file, matrix_extension)
+
+        f_chan_column_pos = list(matrix_table.columns).index("F_CHAN") + 1
+        tlmin_fchan = int(matrix_header[f"TLMIN{f_chan_column_pos}"])
+
         return cls(
             matrix_table["ENERG_LO"],
             matrix_table["ENERG_HI"],
             matrix_table["N_GRP"],
-            matrix_table["F_CHAN"],
+            matrix_table["F_CHAN"] - tlmin_fchan,
             matrix_table["N_CHAN"],
             matrix_table["MATRIX"],
             ebounds_table["CHANNEL"],
