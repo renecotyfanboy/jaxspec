@@ -51,10 +51,12 @@ def build_numpyro_model(
         transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, obs)(par)))
 
         if (getattr(obs, "folded_background", None) is not None) and (background_model is not None):
-            # TODO : Raise warning when setting a background model but there is no background spectra loaded
             bkg_countrate = background_model.numpyro_model(
                 obs.out_energies, obs.folded_background.data, name=name + "bkg", observed=observed
             )
+        elif (getattr(obs, "folded_background", None) is None) and (background_model is not None):
+            raise ValueError("Trying to fit a background model but no background is linked to this observation")
+
         else:
             bkg_countrate = 0.0
 
@@ -65,7 +67,7 @@ def build_numpyro_model(
         with numpyro.plate(name + "obs_plate", len(obs.folded_counts)):
             numpyro.sample(
                 name + "obs",
-                Poisson(countrate + bkg_countrate * obs.backratio.data),
+                Poisson(countrate + bkg_countrate * obs.folded_backratio.data),
                 obs=obs.folded_counts.data if observed else None,
             )
 
@@ -184,7 +186,7 @@ class BayesianModelAbstract(ABC):
 
 class BayesianModel(BayesianModelAbstract):
     """
-    Class to fit a model to a given set of observation using a Bayesian approach.
+    Class to fit a model to a given observation using a Bayesian approach.
     """
 
     def __init__(self, model, observation, background_model: BackgroundModel = None):

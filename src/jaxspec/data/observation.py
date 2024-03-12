@@ -59,7 +59,16 @@ class Observation(xr.Dataset):
             ),
             "quality": (["instrument_channel"], np.array(quality, dtype=int), {"description": "Quality flag."}),
             "exposure": ([], float(exposure), {"description": "Total exposure", "unit": "s"}),
-            "backratio": ([], float(backratio), {"description": "Background scaling (SRC_BACKSCAL/BKG_BACKSCAL)"}),
+            "backratio": (
+                ["instrument_channel"],
+                np.array(backratio, dtype=float),
+                {"description": "Background scaling (SRC_BACKSCAL/BKG_BACKSCAL)"},
+            ),
+            "folded_backratio": (
+                ["folded_channel"],
+                np.array(grouping @ backratio, dtype=float),
+                {"description": "Background scaling after grouping"},
+            ),
             "background": (
                 ["instrument_channel"],
                 np.array(background, dtype=int),
@@ -92,9 +101,9 @@ class Observation(xr.Dataset):
         pha, arf, rmf, bkg, metadata = data_loader(pha_file)
 
         if bkg is not None:
-            backratio = (pha.backscal * pha.exposure * pha.areascal) / (bkg.backscal * bkg.exposure * bkg.areascal)
+            backratio = np.nan_to_num((pha.backscal * pha.exposure * pha.areascal) / (bkg.backscal * bkg.exposure * bkg.areascal))
         else:
-            backratio = 1.0
+            backratio = np.ones_like(pha.counts)
 
         return cls.from_matrix(
             pha.counts,

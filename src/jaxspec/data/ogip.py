@@ -77,7 +77,21 @@ class DataPHA:
         elif "QUALITY" in data.colnames:
             quality = data["QUALITY"]
         else:
-            raise ValueError("No quality column found in the PHA file.")
+            raise ValueError("No QUALITY column found in the PHA file.")
+
+        if "BACKSCAL" in header:
+            backscal = header["BACKSCAL"] * np.ones_like(data["CHANNEL"])
+        elif "BACKSCAL" in data.colnames:
+            backscal = data["BACKSCAL"]
+        else:
+            raise ValueError("No BACKSCAL found in the PHA file.")
+
+        if "AREASCAL" in header:
+            areascal = header["AREASCAL"]
+        elif "AREASCAL" in data.colnames:
+            areascal = data["AREASCAL"]
+        else:
+            raise ValueError("No AREASCAL found in the PHA file.")
 
         # Grouping and quality parameters are in binned PHA dataset
         # Backfile, respfile and ancrfile are in primary header
@@ -87,8 +101,8 @@ class DataPHA:
             "backfile": header.get("BACKFILE"),
             "respfile": header.get("RESPFILE"),
             "ancrfile": header.get("ANCRFILE"),
-            "backscal": header.get("BACKSCAL", 1.0),
-            "areascal": header.get("AREASCAL", 1.0),
+            "backscal": backscal,
+            "areascal": areascal,
         }
 
         return cls(data["CHANNEL"], data["COUNTS"], header["EXPOSURE"], **kwargs)

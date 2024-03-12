@@ -61,6 +61,7 @@ class BackgroundWithError(BackgroundModel):
         return countrate
 
 
+'''
 class ConjugateBackground(BackgroundModel):
     r"""
     This class fit an expected rate $\lambda$ in each bin of the background spectrum. Assuming a Gamma prior
@@ -87,15 +88,14 @@ class ConjugateBackground(BackgroundModel):
 
     def numpyro_model(self, energy, observed_counts, name: str = "bkg", observed=True):
         # Gamma in numpyro is parameterized by concentration and rate (alpha/beta)
-        alpha = observed_counts + 1
-        beta = 1
+        # alpha = observed_counts + 1
+        # beta = 1
 
         with numpyro.plate(f"{name}_plate", len(observed_counts)):
-            countrate = numpyro.sample(
-                f"{name}", dist.NegativeBinomialProbs(alpha, probs=beta / (beta + 1)), obs=observed_counts if observed else None
-            )
+            countrate = numpyro.sample(f"{name}", dist.Gamma(2 * observed_counts + 1, 2), obs=None)
 
         return countrate
+'''
 
 
 class GaussianProcessBackground(BackgroundModel):
