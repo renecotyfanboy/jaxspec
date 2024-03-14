@@ -54,7 +54,7 @@ class Observation(xr.Dataset):
             ),
             "grouping": (
                 ["folded_channel", "instrument_channel"],
-                np.array(grouping, dtype=bool),
+                grouping,
                 {"description": "Grouping matrix."},
             ),
             "quality": (["instrument_channel"], np.array(quality, dtype=int), {"description": "Quality flag."}),
@@ -142,7 +142,7 @@ class Observation(xr.Dataset):
         ax = fig.add_subplot(gs[1, 0])
         ax_histx = fig.add_subplot(gs[0, 0], sharex=ax)
         ax_histy = fig.add_subplot(gs[1, 1], sharey=ax)
-        sns.heatmap(self.grouping.T, ax=ax, cbar=False)
+        sns.heatmap(self.grouping.data.todense().T, ax=ax, cbar=False)
         ax_histx.step(np.arange(len(self.folded_counts)), self.folded_counts, where="post")
         ax_histy.step(self.counts, np.arange(len(self.counts)), where="post")
 

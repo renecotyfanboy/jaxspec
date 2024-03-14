@@ -7,6 +7,7 @@ from typing import Callable, TypeVar
 from abc import ABC
 from jax import random
 from jax.tree_util import tree_map
+from jax.experimental.sparse import BCSR
 from .analysis.results import ChainResult
 from .model.abc import SpectralModel
 from .data import ObsConfiguration
@@ -67,7 +68,7 @@ def build_numpyro_model(
         with numpyro.plate(name + "obs_plate", len(obs.folded_counts)):
             numpyro.sample(
                 name + "obs",
-                Poisson(countrate + bkg_countrate * obs.folded_backratio.data),
+                Poisson(countrate + bkg_countrate / obs.folded_backratio.data),
                 obs=obs.folded_counts.data if observed else None,
             )
 
@@ -83,7 +84,12 @@ class CountForwardModel(hk.Module):
         super().__init__()
         self.model = model
         self.energies = jnp.asarray(folding.in_energies)
-        self.transfer_matrix = jnp.asarray(folding.transfer_matrix.data)
+
+        if folding.transfer_matrix.data.density > 0.015:
+            self.transfer_matrix = BCSR.from_scipy_sparse(folding.transfer_matrix.data.to_scipy_sparse().tocsr())  #
+
+        else:
+            self.transfer_matrix = jnp.asarray(folding.transfer_matrix.data.todense())
 
     def __call__(self, parameters):
         """

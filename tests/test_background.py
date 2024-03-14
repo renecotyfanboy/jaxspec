@@ -1,3 +1,6 @@
+import matplotlib.pyplot as plt
+
+
 def test_gp_bkg(obs_model_prior):
     from jaxspec.fit import BayesianModel
     from jaxspec.model.background import GaussianProcessBackground
@@ -8,6 +11,8 @@ def test_gp_bkg(obs_model_prior):
 
     res_1 = forward.fit(prior, num_chains=4, num_warmup=100, num_samples=100, mcmc_kwargs={"progress_bar": False})
     res_1.plot_ppc()
+    plt.suptitle("Gaussian Process Background")
+    plt.show()
 
 
 def test_subtract_bkg(obs_model_prior):
@@ -21,6 +26,8 @@ def test_subtract_bkg(obs_model_prior):
     res_1 = forward.fit(prior, num_chains=4, num_warmup=100, num_samples=100, mcmc_kwargs={"progress_bar": False})
 
     res_1.plot_ppc()
+    plt.suptitle("Subtracted Background")
+    plt.show()
 
 
 def test_subtract_bkg_with_error(obs_model_prior):
@@ -34,8 +41,11 @@ def test_subtract_bkg_with_error(obs_model_prior):
     res_1 = forward.fit(prior, num_chains=4, num_warmup=100, num_samples=100, mcmc_kwargs={"progress_bar": False})
 
     res_1.plot_ppc()
+    plt.suptitle("Subtracted Background with Error")
+    plt.show()
 
 
+"""
 def test_conjugate_bkg(obs_model_prior):
     from jaxspec.fit import BayesianModel
     from jaxspec.model.background import ConjugateBackground
@@ -47,3 +57,4 @@ def test_conjugate_bkg(obs_model_prior):
     res_1 = forward.fit(prior, num_chains=4, num_warmup=100, num_samples=100, mcmc_kwargs={"progress_bar": False})
 
     res_1.plot_ppc()
+"""

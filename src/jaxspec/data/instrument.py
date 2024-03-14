@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import xarray as xr
+from matplotlib import colors
 from .ogip import DataARF, DataRMF
 
 
@@ -83,7 +84,7 @@ class Instrument(xr.Dataset):
         else:
             specresp = np.ones(rmf.energ_lo.shape)
 
-        return cls.from_matrix(rmf.matrix, specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max)
+        return cls.from_matrix(rmf.sparse_matrix, specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max)
 
     def plot_redistribution(self, **kwargs):
         """
@@ -100,9 +101,8 @@ class Instrument(xr.Dataset):
             y="e_max_channel",
             xscale="log",
             yscale="log",
-            cmap=cmr.cosmic,
-            vmin=0,
-            vmax=0.075,
+            cmap=cmr.ember_r,
+            norm=colors.LogNorm(vmin=1e-6, vmax=1),
             add_labels=True,
             **kwargs,
         )

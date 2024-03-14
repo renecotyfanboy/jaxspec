@@ -1,18 +1,12 @@
 import numpy as np
 import os
 import astropy.units as u
+import sparse
 from astropy.table import QTable
 from astropy.io import fits
 
 
 class DataPHA:
-    r"""
-    Class to handle PHA data defined with OGIP standards.
-
-    ??? info "References"
-        * [The OGIP standard PHA file format](https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html)
-    """
-
     def __init__(
         self,
         channel,
@@ -38,18 +32,28 @@ class DataPHA:
         self.areascal = areascal
 
         if grouping is not None:
-            # Indices array of beginning of each group
+            # Indices array of the beginning of each group
             b_grp = np.where(grouping == 1)[0]
-            # Indices array of ending of each group
+            # Indices array of the ending of each group
             e_grp = np.hstack((b_grp[1:], len(channel)))
-            # Matrix to multiply with counts/channel to have counts/group
-            grp_matrix = np.zeros((len(b_grp), len(channel)), dtype=bool)
+
+            # Prepare data for sparse matrix
+            rows = []
+            cols = []
+            data = []
 
             for i in range(len(b_grp)):
-                grp_matrix[i, b_grp[i] : e_grp[i]] = 1
+                for j in range(b_grp[i], e_grp[i]):
+                    rows.append(i)
+                    cols.append(j)
+                    data.append(True)
+
+            # Create a COO sparse matrix
+            grp_matrix = sparse.COO((data, (rows, cols)), shape=(len(b_grp), len(channel)), fill_value=0)
 
         else:
-            grp_matrix = np.eye(len(channel))
+            # Identity matrix case, use sparse for efficiency
+            grp_matrix = sparse.eye(len(channel), format="coo", dtype=bool)
 
         self.grouping = grp_matrix
 
@@ -141,16 +145,7 @@ class DataARF:
 
 
 class DataRMF:
-    r"""
-    Class to handle RMF data defined with OGIP standards.
-
-    ??? info "References"
-        * [The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats)](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html)
-        * [The Calibration Requirements for Spectral Analysis Addendum: Changes log](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html)
-
-    """
-
-    def __init__(self, energ_lo, energ_hi, n_grp, f_chan, n_chan, matrix, channel, e_min, e_max):
+    def __init__(self, energ_lo, energ_hi, n_grp, f_chan, n_chan, matrix, channel, e_min, e_max, low_threshold=0.0):
         # RMF stuff
         self.energ_lo = energ_lo  # "Entry" energies
         self.energ_hi = energ_hi  # "Entry" energies
@@ -164,35 +159,51 @@ class DataRMF:
         self.e_min = e_min
         self.e_max = e_max
 
-        self.full_matrix = np.zeros(self.n_grp.shape + self.channel.shape)
+        # Prepare data for sparse matrix
+        rows = []
+        cols = []
+        data = []
 
-        for i, n_grp in enumerate(self.n_grp):
+        for i, n_grp_val in enumerate(self.n_grp):
             base = 0
 
             if np.size(self.f_chan[i]) == 1:
-                # ravel()[0] allows to get the value of the array without triggering numpy's conversion from
-                # multidimensional array to scalar
                 low = int(self.f_chan[i].ravel()[0])
                 high = min(
                     int(self.f_chan[i].ravel()[0] + self.n_chan[i].ravel()[0]),
-                    self.full_matrix.shape[1],
+                    len(self.channel),
                 )
 
-                self.full_matrix[i, low:high] = self.matrix_entry[i][0 : high - low]
+                rows.extend([i] * (high - low))
+                cols.extend(range(low, high))
+                data.extend(self.matrix_entry[i][0 : high - low])
 
             else:
-                for j in range(n_grp):
+                for j in range(n_grp_val):
                     low = self.f_chan[i][j]
-                    high = min(self.f_chan[i][j] + self.n_chan[i][j], self.full_matrix.shape[1])
+                    high = min(self.f_chan[i][j] + self.n_chan[i][j], len(self.channel))
 
-                    self.full_matrix[i, low:high] = self.matrix_entry[i][base : base + self.n_chan[i][j]]
+                    rows.extend([i] * (high - low))
+                    cols.extend(range(low, high))
+                    data.extend(self.matrix_entry[i][base : base + self.n_chan[i][j]])
 
                     base += self.n_chan[i][j]
 
-        # Transposed matrix so that we just have to multiply by the spectrum
-        self.matrix = self.full_matrix.T
-        # self.matrix = bsr_matrix(self.full_matrix.T).T
-        # self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
+        # Convert lists to numpy arrays
+        rows = np.array(rows)
+        cols = np.array(cols)
+        data = np.array(data)
+
+        # Sometimes, zero elements are given in the matrix rows, so we get rid of them
+        idxs = data > low_threshold
+
+        # Create a COO sparse matrix and then convert to CSR for efficiency
+        coo = sparse.COO([rows[idxs], cols[idxs]], data[idxs], shape=(len(self.energ_lo), len(self.channel)))
+        self.sparse_matrix = coo.T  # .tocsr()
+
+    @property
+    def matrix(self):
+        return np.asarray(self.sparse_matrix.todense())
 
     @classmethod
     def from_file(cls, rmf_file: str | os.PathLike):
