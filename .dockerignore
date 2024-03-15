@@ -2,6 +2,7 @@
 *.npz
 *.arf
 *.rmf
+*.lock
 
 data
 data_to_test

@@ -111,7 +111,7 @@ def test_models(model: AdditiveModelTestSetup):
 
 @pytest.mark.filterwarnings("ignore:p-value capped")
 @pytest.mark.parametrize("model", models_to_test, ids=lambda m: f"{m.name_xspec} & {m.name_jaxspec}")
-def test_fakeits(tmp_path, request, monkeypatch, model: AdditiveModelTestSetup, exposure=10_000):
+def test_fakeits(tmp_path, request, monkeypatch, model: AdditiveModelTestSetup, exposure=float(10_000)):
     monkeypatch.chdir(os.path.join(os.path.dirname(request.fspath.dirname), "src/jaxspec/data/example_data"))
 
     # XSPEC's fakeit

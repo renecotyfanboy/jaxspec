@@ -20,16 +20,16 @@ class DataPHA:
         backscal=1.0,
         areascal=1.0,
     ):
-        self.channel = channel
-        self.counts = counts
-        self.exposure = exposure
+        self.channel = np.asarray(channel, dtype=int)
+        self.counts = np.asarray(counts, dtype=int)
+        self.exposure = float(exposure)
 
-        self.quality = quality
+        self.quality = np.asarray(quality, dtype=int)
         self.backfile = backfile
         self.respfile = respfile
         self.ancrfile = ancrfile
-        self.backscal = backscal
-        self.areascal = areascal
+        self.backscal = np.asarray(backscal, dtype=float)
+        self.areascal = np.asarray(areascal, dtype=float)
 
         if grouping is not None:
             # Indices array of the beginning of each group

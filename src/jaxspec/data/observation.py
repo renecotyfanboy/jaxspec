@@ -43,13 +43,13 @@ class Observation(xr.Dataset):
             attributes = {}
 
         if background is None:
-            background = np.zeros_like(counts, dtype=int)
+            background = np.zeros_like(counts, dtype=np.int64)
 
         data_dict = {
-            "counts": (["instrument_channel"], np.array(counts, dtype=np.int64), {"description": "Counts", "unit": "photons"}),
+            "counts": (["instrument_channel"], np.asarray(counts, dtype=np.int64), {"description": "Counts", "unit": "photons"}),
             "folded_counts": (
                 ["folded_channel"],
-                np.array(grouping @ counts, dtype=int),
+                np.asarray(np.ma.filled(grouping @ counts), dtype=np.int64),
                 {"description": "Folded counts, after grouping", "unit": "photons"},
             ),
             "grouping": (
@@ -57,26 +57,26 @@ class Observation(xr.Dataset):
                 grouping,
                 {"description": "Grouping matrix."},
             ),
-            "quality": (["instrument_channel"], np.array(quality, dtype=int), {"description": "Quality flag."}),
+            "quality": (["instrument_channel"], np.asarray(quality, dtype=np.int64), {"description": "Quality flag."}),
             "exposure": ([], float(exposure), {"description": "Total exposure", "unit": "s"}),
             "backratio": (
                 ["instrument_channel"],
-                np.array(backratio, dtype=float),
+                np.asarray(backratio, dtype=float),
                 {"description": "Background scaling (SRC_BACKSCAL/BKG_BACKSCAL)"},
             ),
             "folded_backratio": (
                 ["folded_channel"],
-                np.array(grouping @ backratio, dtype=float),
+                np.asarray(np.ma.filled(grouping @ backratio), dtype=float),
                 {"description": "Background scaling after grouping"},
             ),
             "background": (
                 ["instrument_channel"],
-                np.array(background, dtype=int),
+                np.asarray(background, dtype=np.int64),
                 {"description": "Background counts", "unit": "photons"},
             ),
             "folded_background": (
                 ["folded_channel"],
-                np.array(grouping @ background, dtype=int),
+                np.asarray(np.ma.filled(grouping @ background), dtype=np.int64),
                 {"description": "Background counts", "unit": "photons"},
             ),
         }
@@ -84,7 +84,7 @@ class Observation(xr.Dataset):
         return cls(
             data_dict,
             coords={
-                "channel": (["instrument_channel"], np.array(channel, dtype=np.int64), {"description": "Channel number"}),
+                "channel": (["instrument_channel"], np.asarray(channel, dtype=np.int64), {"description": "Channel number"}),
                 "grouped_channel": (
                     ["folded_channel"],
                     np.arange(len(grouping @ counts), dtype=np.int64),
