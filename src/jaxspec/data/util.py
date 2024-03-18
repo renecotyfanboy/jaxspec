@@ -228,7 +228,7 @@ def data_loader(pha_path: str, arf_path=None, rmf_path=None, bkg_path=None):
             rmf_path = find_file_or_compressed_in_dir(pha.respfile, directory)
 
     if bkg_path is None:
-        if pha.backfile != "none" and pha.backfile != "":
+        if pha.backfile.lower() != "none" and pha.backfile != "":
             bkg_path = find_file_or_compressed_in_dir(pha.backfile, directory)
 
     arf = DataARF.from_file(arf_path) if arf_path is not None else None
