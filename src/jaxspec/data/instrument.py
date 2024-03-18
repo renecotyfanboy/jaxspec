@@ -65,21 +65,21 @@ class Instrument(xr.Dataset):
         )
 
     @classmethod
-    def from_ogip_file(cls, rmf_file: str | os.PathLike, arf_file: str | os.PathLike = None, **kwargs):
+    def from_ogip_file(cls, rmf_path: str | os.PathLike, arf_path: str | os.PathLike = None):
         """
         Load the data from OGIP files.
 
         Parameters:
-            rmf_file: The RMF file path.
-            arf_file: The ARF file path.
+            rmf_path: The RMF file path.
+            arf_path: The ARF file path.
             exposure: The exposure time in second.
             grouping: The grouping matrix.
         """
 
-        rmf = DataRMF.from_file(rmf_file)
+        rmf = DataRMF.from_file(rmf_path)
 
-        if arf_file is not None:
-            specresp = DataARF.from_file(arf_file).specresp
+        if arf_path is not None:
+            specresp = DataARF.from_file(arf_path).specresp
 
         else:
             specresp = np.ones(rmf.energ_lo.shape)

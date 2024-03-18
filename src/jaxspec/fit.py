@@ -46,10 +46,11 @@ def build_numpyro_model(
     model: SpectralModel,
     background_model: BackgroundModel,
     name: str = "",
+    sparse: bool = False,
 ) -> Callable:
     def numpro_model(prior_params, observed=True):
         # prior_params = build_prior(prior_distributions, name=name)
-        transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, obs)(par)))
+        transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, obs, sparse=sparse)(par)))
 
         if (getattr(obs, "folded_background", None) is not None) and (background_model is not None):
             bkg_countrate = background_model.numpyro_model(
@@ -80,12 +81,12 @@ class CountForwardModel(hk.Module):
     A haiku module which allows to build the function that simulates the measured counts
     """
 
-    def __init__(self, model: SpectralModel, folding: ObsConfiguration):
+    def __init__(self, model: SpectralModel, folding: ObsConfiguration, sparse=False):
         super().__init__()
         self.model = model
         self.energies = jnp.asarray(folding.in_energies)
 
-        if folding.transfer_matrix.data.density > 0.015:
+        if sparse:  # folding.transfer_matrix.data.density > 0.015 is a good criterion to consider sparsify
             self.transfer_matrix = BCSR.from_scipy_sparse(folding.transfer_matrix.data.to_scipy_sparse().tocsr())  #
 
         else:
@@ -195,10 +196,11 @@ class BayesianModel(BayesianModelAbstract):
     Class to fit a model to a given observation using a Bayesian approach.
     """
 
-    def __init__(self, model, observation, background_model: BackgroundModel = None):
+    def __init__(self, model, observation, background_model: BackgroundModel = None, sparsify_matrix: bool = False):
         super().__init__(model)
         self.observation = observation
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
+        self.sparse = sparsify_matrix
         self.background_model = background_model
 
     def numpyro_model(self, prior_distributions: HaikuDict[Distribution]) -> Callable:
@@ -212,7 +214,7 @@ class BayesianModel(BayesianModelAbstract):
 
         def model(observed=True):
             prior_params = build_prior(prior_distributions)
-            obs_model = build_numpyro_model(self.observation, self.model, self.background_model)
+            obs_model = build_numpyro_model(self.observation, self.model, self.background_model, sparse=self.sparse)
             obs_model(prior_params, observed=observed)
 
         return model

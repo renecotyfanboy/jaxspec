@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import pytest
 import yaml
+import numpy as np
 from pathlib import Path
 from jaxspec.data import Instrument, Observation, ObsConfiguration
 from typing import List
@@ -89,7 +90,7 @@ def test_loading_curated_data_files_from_pha_with_explicit_files(observation):
 
 @pytest.mark.parametrize("observation", data_collection, ids=lambda m: m["name"])
 def test_plot_instruments_from_curated_data_files(observation):
-    if observation["name"] not in ["XRISM/Resolve", "Chandra/LETGS"]:
+    if observation["name"] not in ["Chandra/LETGS"]:
         if "arf_path" in observation.keys():
             instrument = Instrument.from_ogip_file(
                 data_directory / observation["rmf_path"], arf_path=data_directory / observation["arf_path"]
@@ -97,14 +98,16 @@ def test_plot_instruments_from_curated_data_files(observation):
 
         else:
             instrument = Instrument.from_ogip_file(data_directory / observation["rmf_path"], arf_path=None)
+            assert np.isclose(instrument.area, np.ones_like(instrument.area)).all()
 
         instrument.plot_area()
         plt.suptitle(observation["name"])
         plt.show()
 
-        instrument.plot_redistribution()
-        plt.suptitle(observation["name"])
-        plt.show()
+        if observation["name"] not in ["XRISM/Resolve", "Hitomi/SXS"]:
+            instrument.plot_redistribution()
+            plt.suptitle(observation["name"])
+            plt.show()
 
 
 def test_plot_instruments(instruments: List[Instrument]):
