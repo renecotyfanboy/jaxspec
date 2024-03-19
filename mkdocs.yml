@@ -24,6 +24,7 @@ nav:
     - Data containers: references/data.md
     - Fitting: references/fitting.md
     - Result containers: references/results.md
+    - Abundance: references/abundance.md
     - Integration: references/integrate.md
   - FAQ:
       - faq/index.md
