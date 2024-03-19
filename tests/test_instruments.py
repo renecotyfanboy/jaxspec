@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import pytest
 import yaml
 import numpy as np
+import shutil
+from astropy.io import fits
 from pathlib import Path
 from jaxspec.data import Instrument, Observation, ObsConfiguration
 from typing import List
@@ -110,11 +112,68 @@ def test_plot_instruments_from_curated_data_files(observation):
             plt.show()
 
 
-def test_plot_instruments(instruments: List[Instrument]):
+def test_plot_exemple_instruments(instruments: List[Instrument]):
     for instrument in instruments:
-        instrument
+        plt.figure(figsize=(10, 5))
+        plt.subplot(121)
+        instrument.plot_redistribution()
+        plt.subplot(122)
+        instrument.plot_area()
+        plt.show()
 
 
-def test_plot_observations(observations: List[Observation]):
+def test_plot_exemple_observations(observations: List[Observation]):
     for observation in observations:
-        observation
+        observation.plot_grouping()
+        plt.show()
+
+
+@pytest.fixture
+def file_with_no_grouping(tmp_path):
+    file_path = tmp_path / "no_grouping.fits"
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
+
+    with fits.open(file_path) as hdul:
+        hdul[1].columns.del_col("GROUPING")
+        hdul.writeto(file_path, overwrite=True)
+
+    return file_path
+
+
+def test_loading_file_with_no_grouping(file_with_no_grouping):
+    with pytest.raises(ValueError):
+        Observation.from_pha_file(file_with_no_grouping)
+
+
+@pytest.fixture
+def file_with_no_backscal(tmp_path):
+    file_path = tmp_path / "no_backscal.fits"
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
+
+    with fits.open(file_path) as hdul:
+        del hdul[1].header["BACKSCAL"]
+        hdul.writeto(file_path, overwrite=True)
+
+    return file_path
+
+
+def test_loading_file_with_no_backscal(file_with_no_backscal):
+    with pytest.raises(ValueError):
+        Observation.from_pha_file(file_with_no_backscal)
+
+
+@pytest.fixture
+def file_with_no_areascal(tmp_path):
+    file_path = tmp_path / "no_areascal.fits"
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
+
+    with fits.open(file_path) as hdul:
+        del hdul[1].header["AREASCAL"]
+        hdul.writeto(file_path, overwrite=True)
+
+    return file_path
+
+
+def test_loading_file_with_no_areascal(file_with_no_areascal):
+    with pytest.raises(ValueError):
+        Observation.from_pha_file(file_with_no_areascal)

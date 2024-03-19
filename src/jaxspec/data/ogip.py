@@ -220,7 +220,7 @@ class DataRMF:
 
         elif "SPECRESP MATRIX" in extension_names:
             matrix_extension = "SPECRESP MATRIX"
-            raise NotImplementedError("SPECRESP MATRIX extension is not yet supported")
+            # raise NotImplementedError("SPECRESP MATRIX extension is not yet supported")
 
         else:
             raise ValueError("No MATRIX or SPECRESP MATRIX extension found in the RMF file")
