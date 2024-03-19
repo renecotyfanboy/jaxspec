@@ -1,7 +1,8 @@
 # jaxspec
 
-[![Read the Docs](https://img.shields.io/readthedocs/jaxspec?style=for-the-badge)](https://jaxspec.readthedocs.io/en/latest/)
+[![PyPI - Version](https://img.shields.io/pypi/v/jaxspec?style=for-the-badge&logo=pypi&color=rgb(37%2C%20150%2C%20190))](https://pypi.org/project/jaxspec/)
 [![Python package](https://img.shields.io/pypi/pyversions/jaxspec?style=for-the-badge)](https://pypi.org/project/jaxspec/)
+[![Read the Docs](https://img.shields.io/readthedocs/jaxspec?style=for-the-badge)](https://jaxspec.readthedocs.io/en/latest/)
 [![Codecov](https://img.shields.io/codecov/c/github/renecotyfanboy/jaxspec?style=for-the-badge)](https://app.codecov.io/gh/renecotyfanboy/jaxspec)
 [![Slack](https://img.shields.io/badge/Slack-4A154B?style=for-the-badge&logo=slack&logoColor=white)](https://join.slack.com/t/jaxspec/shared_invite/zt-2cuxkdl2f-t0EEAKP~HBEHKvIUZJL2sg)
 
