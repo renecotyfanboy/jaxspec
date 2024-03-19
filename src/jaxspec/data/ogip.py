@@ -7,6 +7,12 @@ from astropy.io import fits
 
 
 class DataPHA:
+    r"""
+    Class to handle PHA data defined with OGIP standards.
+    ??? info "References"
+        * [The OGIP standard PHA file format](https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html)
+    """
+
     def __init__(
         self,
         channel,
@@ -145,6 +151,13 @@ class DataARF:
 
 
 class DataRMF:
+    r"""
+    Class to handle RMF data defined with OGIP standards.
+    ??? info "References"
+        * [The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats)](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html)
+        * [The Calibration Requirements for Spectral Analysis Addendum: Changes log](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html)
+    """
+
     def __init__(self, energ_lo, energ_hi, n_grp, f_chan, n_chan, matrix, channel, e_min, e_max, low_threshold=0.0):
         # RMF stuff
         self.energ_lo = energ_lo  # "Entry" energies

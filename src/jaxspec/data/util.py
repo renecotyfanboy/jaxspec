@@ -1,11 +1,9 @@
 import importlib.resources
-import os
 import numpyro
 import jax
 import numpy as np
 import haiku as hk
 from pathlib import Path
-from difflib import get_close_matches
 from numpy.typing import ArrayLike
 from collections.abc import Mapping
 from typing import TypeVar
@@ -264,8 +262,4 @@ def find_file_or_compressed_in_dir(path: str | Path, directory: str | Path) -> s
             return str(file)
 
     else:
-        raise FileNotFoundError(
-            f"Can't find {path}(.gz) in {directory}. \n"
-            f"Closest file in {directory} is "
-            f"{get_close_matches(str(path), os.listdir(str(directory.absolute())), n=1)[0]}"
-        )
+        raise FileNotFoundError(f"Can't find {path}(.gz) in {directory}.")
