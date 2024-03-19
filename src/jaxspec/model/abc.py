@@ -107,7 +107,7 @@ class SpectralModel:
     def params(self):
         return self.transformed_func_photon.init(None, jnp.ones(10), jnp.ones(10))
 
-    def photon_flux(self, params, e_low, e_high, n_points=10):
+    def photon_flux(self, params, e_low, e_high, n_points=2):
         r"""
         Compute the expected counts between $E_\min$ and $E_\max$ by integrating the model.
 
@@ -135,7 +135,7 @@ class SpectralModel:
 
         return self.transformed_func_photon.apply(params, e_low, e_high, n_points=n_points)
 
-    def energy_flux(self, params, e_low, e_high, n_points=10):
+    def energy_flux(self, params, e_low, e_high, n_points=2):
         r"""
         Compute the expected energy flux between $E_\min$ and $E_\max$ by integrating the model.
 

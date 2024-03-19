@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import astropy.units as u
+import sparse
 from astropy.table import QTable
 from astropy.io import fits
 
@@ -8,7 +9,6 @@ from astropy.io import fits
 class DataPHA:
     r"""
     Class to handle PHA data defined with OGIP standards.
-
     ??? info "References"
         * [The OGIP standard PHA file format](https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html)
     """
@@ -26,30 +26,40 @@ class DataPHA:
         backscal=1.0,
         areascal=1.0,
     ):
-        self.channel = channel
-        self.counts = counts
-        self.exposure = exposure
+        self.channel = np.asarray(channel, dtype=int)
+        self.counts = np.asarray(counts, dtype=int)
+        self.exposure = float(exposure)
 
-        self.quality = quality
+        self.quality = np.asarray(quality, dtype=int)
         self.backfile = backfile
         self.respfile = respfile
         self.ancrfile = ancrfile
-        self.backscal = backscal
-        self.areascal = areascal
+        self.backscal = np.asarray(backscal, dtype=float)
+        self.areascal = np.asarray(areascal, dtype=float)
 
         if grouping is not None:
-            # Indices array of beginning of each group
+            # Indices array of the beginning of each group
             b_grp = np.where(grouping == 1)[0]
-            # Indices array of ending of each group
+            # Indices array of the ending of each group
             e_grp = np.hstack((b_grp[1:], len(channel)))
-            # Matrix to multiply with counts/channel to have counts/group
-            grp_matrix = np.zeros((len(b_grp), len(channel)), dtype=bool)
+
+            # Prepare data for sparse matrix
+            rows = []
+            cols = []
+            data = []
 
             for i in range(len(b_grp)):
-                grp_matrix[i, b_grp[i] : e_grp[i]] = 1
+                for j in range(b_grp[i], e_grp[i]):
+                    rows.append(i)
+                    cols.append(j)
+                    data.append(True)
+
+            # Create a COO sparse matrix
+            grp_matrix = sparse.COO((data, (rows, cols)), shape=(len(b_grp), len(channel)), fill_value=0)
 
         else:
-            grp_matrix = np.eye(len(channel))
+            # Identity matrix case, use sparse for efficiency
+            grp_matrix = sparse.eye(len(channel), format="coo", dtype=bool)
 
         self.grouping = grp_matrix
 
@@ -65,24 +75,44 @@ class DataPHA:
         data = QTable.read(pha_file, "SPECTRUM")
         header = fits.getheader(pha_file, "SPECTRUM")
 
-        if "QUALITY" in data.colnames:
+        if header.get("GROUPING") == 0:
+            grouping = None
+        elif "GROUPING" in data.colnames:
+            grouping = data["GROUPING"]
+        else:
+            raise ValueError("No grouping column found in the PHA file.")
+
+        if header.get("QUALITY") == 0:
+            quality = np.zeros(len(data["CHANNEL"]), dtype=bool)
+        elif "QUALITY" in data.colnames:
             quality = data["QUALITY"]
         else:
-            if header.get("QUALITY") == 0:
-                quality = np.ones(len(data["CHANNEL"]), dtype=bool)
-            else:
-                raise ValueError("No quality column found in the PHA file.")
+            raise ValueError("No QUALITY column found in the PHA file.")
+
+        if "BACKSCAL" in header:
+            backscal = header["BACKSCAL"] * np.ones_like(data["CHANNEL"])
+        elif "BACKSCAL" in data.colnames:
+            backscal = data["BACKSCAL"]
+        else:
+            raise ValueError("No BACKSCAL found in the PHA file.")
+
+        if "AREASCAL" in header:
+            areascal = header["AREASCAL"]
+        elif "AREASCAL" in data.colnames:
+            areascal = data["AREASCAL"]
+        else:
+            raise ValueError("No AREASCAL found in the PHA file.")
 
         # Grouping and quality parameters are in binned PHA dataset
         # Backfile, respfile and ancrfile are in primary header
         kwargs = {
-            "grouping": data["GROUPING"] if "GROUPING" in data.colnames else None,
+            "grouping": grouping,
             "quality": quality,
             "backfile": header.get("BACKFILE"),
             "respfile": header.get("RESPFILE"),
             "ancrfile": header.get("ANCRFILE"),
-            "backscal": header.get("BACKSCAL", 1.0),
-            "areascal": header.get("AREASCAL", 1.0),
+            "backscal": backscal,
+            "areascal": areascal,
         }
 
         return cls(data["CHANNEL"], data["COUNTS"], header["EXPOSURE"], **kwargs)
@@ -123,18 +153,16 @@ class DataARF:
 class DataRMF:
     r"""
     Class to handle RMF data defined with OGIP standards.
-
     ??? info "References"
         * [The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats)](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html)
         * [The Calibration Requirements for Spectral Analysis Addendum: Changes log](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html)
-
     """
 
-    def __init__(self, energ_lo, energ_hi, n_grp, f_chan, n_chan, matrix, channel, e_min, e_max):
+    def __init__(self, energ_lo, energ_hi, n_grp, f_chan, n_chan, matrix, channel, e_min, e_max, low_threshold=0.0):
         # RMF stuff
         self.energ_lo = energ_lo  # "Entry" energies
         self.energ_hi = energ_hi  # "Entry" energies
-        self.n_grp = n_grp  # "Entry" energies
+        self.n_grp = n_grp
         self.f_chan = f_chan
         self.n_chan = n_chan
         self.matrix_entry = matrix
@@ -144,35 +172,51 @@ class DataRMF:
         self.e_min = e_min
         self.e_max = e_max
 
-        self.full_matrix = np.zeros(self.n_grp.shape + self.channel.shape)
+        # Prepare data for sparse matrix
+        rows = []
+        cols = []
+        data = []
 
-        for i, n_grp in enumerate(self.n_grp):
+        for i, n_grp_val in enumerate(self.n_grp):
             base = 0
 
             if np.size(self.f_chan[i]) == 1:
-                # ravel()[0] allows to get the value of the array without triggering numpy's conversion from
-                # multidimensional array to scalar
                 low = int(self.f_chan[i].ravel()[0])
                 high = min(
                     int(self.f_chan[i].ravel()[0] + self.n_chan[i].ravel()[0]),
-                    self.full_matrix.shape[1],
+                    len(self.channel),
                 )
 
-                self.full_matrix[i, low:high] = self.matrix_entry[i][0 : high - low]
+                rows.extend([i] * (high - low))
+                cols.extend(range(low, high))
+                data.extend(self.matrix_entry[i][0 : high - low])
 
             else:
-                for j in range(n_grp):
+                for j in range(n_grp_val):
                     low = self.f_chan[i][j]
-                    high = min(self.f_chan[i][j] + self.n_chan[i][j], self.full_matrix.shape[1])
+                    high = min(self.f_chan[i][j] + self.n_chan[i][j], len(self.channel))
 
-                    self.full_matrix[i, low:high] = self.matrix_entry[i][base : base + self.n_chan[i][j]]
+                    rows.extend([i] * (high - low))
+                    cols.extend(range(low, high))
+                    data.extend(self.matrix_entry[i][base : base + self.n_chan[i][j]])
 
                     base += self.n_chan[i][j]
 
-        # Transposed matrix so that we just have to multiply by the spectrum
-        self.matrix = self.full_matrix.T
-        # self.matrix = bsr_matrix(self.full_matrix.T).T
-        # self.sparse_matrix = sparse.BCOO.fromdense(jnp.copy(self.full_matrix))
+        # Convert lists to numpy arrays
+        rows = np.array(rows)
+        cols = np.array(cols)
+        data = np.array(data)
+
+        # Sometimes, zero elements are given in the matrix rows, so we get rid of them
+        idxs = data > low_threshold
+
+        # Create a COO sparse matrix and then convert to CSR for efficiency
+        coo = sparse.COO([rows[idxs], cols[idxs]], data[idxs], shape=(len(self.energ_lo), len(self.channel)))
+        self.sparse_matrix = coo.T  # .tocsr()
+
+    @property
+    def matrix(self):
+        return np.asarray(self.sparse_matrix.todense())
 
     @classmethod
     def from_file(cls, rmf_file: str | os.PathLike):
@@ -182,15 +226,31 @@ class DataRMF:
         Parameters:
             rmf_file: The RMF file path.
         """
+        extension_names = [hdu[1] for hdu in fits.info(rmf_file, output=False)]
 
-        matrix_table = QTable.read(rmf_file, "MATRIX")
+        if "MATRIX" in extension_names:
+            matrix_extension = "MATRIX"
+
+        elif "SPECRESP MATRIX" in extension_names:
+            matrix_extension = "SPECRESP MATRIX"
+            # raise NotImplementedError("SPECRESP MATRIX extension is not yet supported")
+
+        else:
+            raise ValueError("No MATRIX or SPECRESP MATRIX extension found in the RMF file")
+
+        matrix_table = QTable.read(rmf_file, matrix_extension)
         ebounds_table = QTable.read(rmf_file, "EBOUNDS")
+
+        matrix_header = fits.getheader(rmf_file, matrix_extension)
+
+        f_chan_column_pos = list(matrix_table.columns).index("F_CHAN") + 1
+        tlmin_fchan = int(matrix_header[f"TLMIN{f_chan_column_pos}"])
 
         return cls(
             matrix_table["ENERG_LO"],
             matrix_table["ENERG_HI"],
             matrix_table["N_GRP"],
-            matrix_table["F_CHAN"],
+            matrix_table["F_CHAN"] - tlmin_fchan,
             matrix_table["N_CHAN"],
             matrix_table["MATRIX"],
             ebounds_table["CHANNEL"],

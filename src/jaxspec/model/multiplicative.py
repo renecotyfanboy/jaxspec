@@ -221,4 +221,4 @@ class Tbpcf(MultiplicativeComponent):
         f = hk.get_parameter("f", [], init=HaikuConstant(0.2))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
 
-        return f*jnp.exp(-nh * sigma) + (1-f)
+        return f * jnp.exp(-nh * sigma) + (1 - f)

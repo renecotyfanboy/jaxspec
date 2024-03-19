@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import xarray as xr
+from matplotlib import colors
 from .ogip import DataARF, DataRMF
 
 
@@ -64,21 +65,26 @@ class Instrument(xr.Dataset):
         )
 
     @classmethod
-    def from_ogip_file(cls, arf_file: str | os.PathLike, rmf_file: str | os.PathLike, **kwargs):
+    def from_ogip_file(cls, rmf_path: str | os.PathLike, arf_path: str | os.PathLike = None):
         """
         Load the data from OGIP files.
 
         Parameters:
-            arf_file: The ARF file path.
-            rmf_file: The RMF file path.
+            rmf_path: The RMF file path.
+            arf_path: The ARF file path.
             exposure: The exposure time in second.
             grouping: The grouping matrix.
         """
 
-        arf = DataARF.from_file(arf_file)
-        rmf = DataRMF.from_file(rmf_file)
+        rmf = DataRMF.from_file(rmf_path)
 
-        return cls.from_matrix(rmf.matrix, arf.specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max)
+        if arf_path is not None:
+            specresp = DataARF.from_file(arf_path).specresp
+
+        else:
+            specresp = np.ones(rmf.energ_lo.shape)
+
+        return cls.from_matrix(rmf.sparse_matrix, specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max)
 
     def plot_redistribution(self, **kwargs):
         """
@@ -95,9 +101,8 @@ class Instrument(xr.Dataset):
             y="e_max_channel",
             xscale="log",
             yscale="log",
-            cmap=cmr.cosmic,
-            vmin=0,
-            vmax=0.075,
+            cmap=cmr.ember_r,
+            norm=colors.LogNorm(vmin=1e-6, vmax=1),
             add_labels=True,
             **kwargs,
         )

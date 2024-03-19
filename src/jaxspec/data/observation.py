@@ -43,31 +43,40 @@ class Observation(xr.Dataset):
             attributes = {}
 
         if background is None:
-            background = np.zeros_like(counts, dtype=int)
+            background = np.zeros_like(counts, dtype=np.int64)
 
         data_dict = {
-            "counts": (["instrument_channel"], np.array(counts, dtype=np.int64), {"description": "Counts", "unit": "photons"}),
+            "counts": (["instrument_channel"], np.asarray(counts, dtype=np.int64), {"description": "Counts", "unit": "photons"}),
             "folded_counts": (
                 ["folded_channel"],
-                np.array(grouping @ counts, dtype=int),
+                np.asarray(np.ma.filled(grouping @ counts), dtype=np.int64),
                 {"description": "Folded counts, after grouping", "unit": "photons"},
             ),
             "grouping": (
                 ["folded_channel", "instrument_channel"],
-                np.array(grouping, dtype=bool),
+                grouping,
                 {"description": "Grouping matrix."},
             ),
-            "quality": (["instrument_channel"], np.array(quality, dtype=int), {"description": "Quality flag."}),
+            "quality": (["instrument_channel"], np.asarray(quality, dtype=np.int64), {"description": "Quality flag."}),
             "exposure": ([], float(exposure), {"description": "Total exposure", "unit": "s"}),
-            "backratio": ([], float(backratio), {"description": "Background scaling (SRC_BACKSCAL/BKG_BACKSCAL)"}),
+            "backratio": (
+                ["instrument_channel"],
+                np.asarray(backratio, dtype=float),
+                {"description": "Background scaling (SRC_BACKSCAL/BKG_BACKSCAL)"},
+            ),
+            "folded_backratio": (
+                ["folded_channel"],
+                np.asarray(np.ma.filled(grouping @ backratio), dtype=float),
+                {"description": "Background scaling after grouping"},
+            ),
             "background": (
                 ["instrument_channel"],
-                np.array(background, dtype=int),
+                np.asarray(background, dtype=np.int64),
                 {"description": "Background counts", "unit": "photons"},
             ),
             "folded_background": (
                 ["folded_channel"],
-                np.array(grouping @ background, dtype=int),
+                np.asarray(np.ma.filled(grouping @ background), dtype=np.int64),
                 {"description": "Background counts", "unit": "photons"},
             ),
         }
@@ -75,7 +84,7 @@ class Observation(xr.Dataset):
         return cls(
             data_dict,
             coords={
-                "channel": (["instrument_channel"], np.array(channel, dtype=np.int64), {"description": "Channel number"}),
+                "channel": (["instrument_channel"], np.asarray(channel, dtype=np.int64), {"description": "Channel number"}),
                 "grouped_channel": (
                     ["folded_channel"],
                     np.arange(len(grouping @ counts), dtype=np.int64),
@@ -92,9 +101,9 @@ class Observation(xr.Dataset):
         pha, arf, rmf, bkg, metadata = data_loader(pha_file)
 
         if bkg is not None:
-            backratio = (pha.backscal * pha.exposure * pha.areascal) / (bkg.backscal * bkg.exposure * bkg.areascal)
+            backratio = np.nan_to_num((pha.backscal * pha.exposure * pha.areascal) / (bkg.backscal * bkg.exposure * bkg.areascal))
         else:
-            backratio = 1.0
+            backratio = np.ones_like(pha.counts)
 
         return cls.from_matrix(
             pha.counts,
@@ -133,7 +142,7 @@ class Observation(xr.Dataset):
         ax = fig.add_subplot(gs[1, 0])
         ax_histx = fig.add_subplot(gs[0, 0], sharex=ax)
         ax_histy = fig.add_subplot(gs[1, 1], sharey=ax)
-        sns.heatmap(self.grouping.T, ax=ax, cbar=False)
+        sns.heatmap(self.grouping.data.todense().T, ax=ax, cbar=False)
         ax_histx.step(np.arange(len(self.folded_counts)), self.folded_counts, where="post")
         ax_histy.step(self.counts, np.arange(len(self.counts)), where="post")
 

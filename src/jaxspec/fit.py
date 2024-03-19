@@ -7,6 +7,7 @@ from typing import Callable, TypeVar
 from abc import ABC
 from jax import random
 from jax.tree_util import tree_map
+from jax.experimental.sparse import BCSR
 from .analysis.results import ChainResult
 from .model.abc import SpectralModel
 from .data import ObsConfiguration
@@ -45,16 +46,19 @@ def build_numpyro_model(
     model: SpectralModel,
     background_model: BackgroundModel,
     name: str = "",
+    sparse: bool = False,
 ) -> Callable:
     def numpro_model(prior_params, observed=True):
         # prior_params = build_prior(prior_distributions, name=name)
-        transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, obs)(par)))
+        transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, obs, sparse=sparse)(par)))
 
         if (getattr(obs, "folded_background", None) is not None) and (background_model is not None):
-            # TODO : Raise warning when setting a background model but there is no background spectra loaded
             bkg_countrate = background_model.numpyro_model(
                 obs.out_energies, obs.folded_background.data, name=name + "bkg", observed=observed
             )
+        elif (getattr(obs, "folded_background", None) is None) and (background_model is not None):
+            raise ValueError("Trying to fit a background model but no background is linked to this observation")
+
         else:
             bkg_countrate = 0.0
 
@@ -65,7 +69,7 @@ def build_numpyro_model(
         with numpyro.plate(name + "obs_plate", len(obs.folded_counts)):
             numpyro.sample(
                 name + "obs",
-                Poisson(countrate + bkg_countrate * obs.backratio.data),
+                Poisson(countrate + bkg_countrate / obs.folded_backratio.data),
                 obs=obs.folded_counts.data if observed else None,
             )
 
@@ -77,11 +81,16 @@ class CountForwardModel(hk.Module):
     A haiku module which allows to build the function that simulates the measured counts
     """
 
-    def __init__(self, model: SpectralModel, folding: ObsConfiguration):
+    def __init__(self, model: SpectralModel, folding: ObsConfiguration, sparse=False):
         super().__init__()
         self.model = model
         self.energies = jnp.asarray(folding.in_energies)
-        self.transfer_matrix = jnp.asarray(folding.transfer_matrix.data)
+
+        if sparse:  # folding.transfer_matrix.data.density > 0.015 is a good criterion to consider sparsify
+            self.transfer_matrix = BCSR.from_scipy_sparse(folding.transfer_matrix.data.to_scipy_sparse().tocsr())  #
+
+        else:
+            self.transfer_matrix = jnp.asarray(folding.transfer_matrix.data.todense())
 
     def __call__(self, parameters):
         """
@@ -119,7 +128,7 @@ class BayesianModelAbstract(ABC):
         num_samples: int = 1000,
         max_tree_depth: int = 10,
         target_accept_prob: float = 0.8,
-        dense_mass=True,
+        dense_mass=False,
         mcmc_kwargs: dict = {},
     ) -> ChainResult:
         """
@@ -184,13 +193,14 @@ class BayesianModelAbstract(ABC):
 
 class BayesianModel(BayesianModelAbstract):
     """
-    Class to fit a model to a given set of observation using a Bayesian approach.
+    Class to fit a model to a given observation using a Bayesian approach.
     """
 
-    def __init__(self, model, observation, background_model: BackgroundModel = None):
+    def __init__(self, model, observation, background_model: BackgroundModel = None, sparsify_matrix: bool = False):
         super().__init__(model)
         self.observation = observation
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
+        self.sparse = sparsify_matrix
         self.background_model = background_model
 
     def numpyro_model(self, prior_distributions: HaikuDict[Distribution]) -> Callable:
@@ -204,7 +214,7 @@ class BayesianModel(BayesianModelAbstract):
 
         def model(observed=True):
             prior_params = build_prior(prior_distributions)
-            obs_model = build_numpyro_model(self.observation, self.model, self.background_model)
+            obs_model = build_numpyro_model(self.observation, self.model, self.background_model, sparse=self.sparse)
             obs_model(prior_params, observed=observed)
 
         return model
