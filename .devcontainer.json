@@ -1,0 +1,4 @@
+{
+  "name": "jaxspec-xspec-container",
+  "dockerFile": "Dockerfile"
+}

@@ -5,7 +5,7 @@ your favorite spectral fitting library. The following example shows how to build
 models using additive and multiplicative components.
 
 ```python
-from jaxspec.model.additive import Powerlaw
+from jaxspec.model._additive import Powerlaw
 from jaxspec.model.multiplicative import Tbabs
 
 model_simple = Tbabs() * Powerlaw()
@@ -30,7 +30,7 @@ build arbitrary complex models, in the same fashion as you would do in other
 spectral fitting libraries.
 
 ```python
-from jaxspec.model.additive import Blackbody, Powerlaw
+from jaxspec.model._additive import Blackbody, Powerlaw
 from jaxspec.model.multiplicative import Tbabs, Phabs
 
 model_complex = Tbabs() * (Powerlaw() + Phabs() * Blackbody()) + Blackbody()
