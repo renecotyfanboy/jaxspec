@@ -33,7 +33,7 @@ def instruments():
 
 @pytest.fixture
 def obs_model_prior(folding_models):
-    from jaxspec.model.additive import Powerlaw, Cutoffpl
+    from jaxspec.model._additive import Powerlaw, Cutoffpl
     from jaxspec.model.multiplicative import Tbabs
     import numpyro.distributions as dist
 
