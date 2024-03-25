@@ -309,7 +309,7 @@ class SpectralModel:
         if component.type == "additive":
 
             def lam_func(e):
-                return component().continuum(e) + component().emission_lines(e, e + 1)[0]
+                return component(**kwargs).continuum(e) + component(**kwargs).emission_lines(e, e + 1)[0]
 
         elif component.type == "multiplicative":
 
@@ -326,7 +326,7 @@ class SpectralModel:
             "component_type": component.type,
             "name": component.__name__.lower(),
             "component": component,
-            "params": hk.transform(lam_func).init(None, jnp.ones(1)),
+            # "params": hk.transform(lam_func).init(None, jnp.ones(1)),
             "fine_structure": False,
             "kwargs": kwargs,
             "depth": 0,
@@ -454,7 +454,7 @@ class ComponentMetaClass(type(hk.Module)):
     syntax while style enabling the components to be used as haiku modules.
     """
 
-    def __call__(self, **kwargs):
+    def __call__(self, **kwargs) -> SpectralModel:
         """
         This method enable to use model components as haiku modules when folded in a haiku transform
         function and also to instantiate them as SpectralModel when out of a haiku transform

@@ -7,7 +7,6 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 import astropy.units as u
 import astropy.constants
-
 from haiku.initializers import Constant as HaikuConstant
 from ..util.integrate import integrate_interval
 from .abc import AdditiveComponent

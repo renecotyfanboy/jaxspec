@@ -12,25 +12,40 @@ from ..abc import AdditiveComponent
 
 @jax.jit
 def lerp(x, x0, x1, y0, y1):
+    """
+    Linear interpolation routine
+    Return y(x) =  (y0 * (x1 - x) + y1 * (x - x0)) / (x1 - x0)
+    """
     return (y0 * (x1 - x) + y1 * (x - x0)) / (x1 - x0)
 
 
 @jax.jit
-def interp_along_array(energy_low, energy_high, energy_ref, continuum_ref, end_index):
+def interp_along_array(energy_low, energy_high, energy_ref, continuum_ref):
     """
+    This function interpolate the values of a tabulated reference continuum between two energy limits
     Sorry for the boilerplate here, but be sure that it works !
+
+    Parameters:
+        energy_low: lower limit of the integral
+        energy_high: upper limit of the integral
+        energy_ref: energy grid of the reference continuum
+        continuum_ref: continuum values evaluated at energy_ref
+
     """
+
+    start_index = jnp.searchsorted(energy_ref, energy_low, side="left") - 1
+    end_index = jnp.searchsorted(energy_ref, energy_high, side="left") + 1
 
     def body_func(index, value):
         integrated_flux, previous_energy, previous_continuum = value
         current_energy, current_continuum = energy_ref[index], continuum_ref[index]
 
         # 5 cases
-        # - Neither current and previous energies are within the integral limits -> nothing is added to the integrated flux
-        # - The left limit of the integral is between the current and previous energy -> previous energy is set to the limit, previous continuum is interpolated, and then added to the integrated flux
-        # - The right limit of the integral is between the current and previous energy -> current energy is set to the limit, current continuum is interpolated, and then added to the integrated flux
-        # - Both current and previous energies are within the integral limits -> add to the integrated flux
-        # - Within
+        # Neither current and previous energies are within the integral limits > nothing is added to the integrated flux
+        # The left limit of the integral is between the current and previous energy > previous energy is set to the limit, previous continuum is interpolated, and then added to the integrated flux
+        # The right limit of the integral is between the current and previous energy > current energy is set to the limit, current continuum is interpolated, and then added to the integrated flux
+        # Both current and previous energies are within the integral limits -> add to the integrated flux
+        # Within
 
         current_energy_is_between = (energy_low <= current_energy) * (current_energy < energy_high)
         previous_energy_is_between = (energy_low <= previous_energy) * (previous_energy < energy_high)
@@ -63,20 +78,20 @@ def interp_along_array(energy_low, energy_high, energy_ref, continuum_ref, end_i
 
         return integrated_flux + term_to_add, current_energy, current_continuum
 
-    integrated_flux, _, _ = fori_loop(0, end_index, body_func, (0.0, 0.0, 0.0))
+    integrated_flux, _, _ = fori_loop(start_index, end_index, body_func, (0.0, 0.0, 0.0))
 
     return integrated_flux
 
 
 @jax.jit
-def interp_flux(energy, energy_ref, continuum_ref, end_index):
+def interp_flux(energy, energy_ref, continuum_ref):
     """
     Iterate through an array of shape (energy_ref,) and compute the flux between the bins defined by energy
     """
 
     def scanned_func(carry, unpack):
         e_low, e_high = unpack
-        continuum = interp_along_array(e_low, e_high, energy_ref, continuum_ref, end_index)
+        continuum = interp_along_array(e_low, e_high, energy_ref, continuum_ref)
 
         return carry, continuum
 
@@ -86,27 +101,31 @@ def interp_flux(energy, energy_ref, continuum_ref, end_index):
 
 
 @jax.jit
-def interp_flux_elements(energy, energy_ref, continuum_ref, abundances, end_indexes):
+def interp_flux_elements(energy, energy_ref, continuum_ref, abundances):
     """
-    Iterate through an array of shape (abundance, energy_ref) and compute the flux between the bins defined by energy and weight the flux depending of the abundance of each element
+    Iterate through an array of shape (abundance, energy_ref) and compute the flux between the bins defined by energy
+    and weight the flux depending on the abundance of each element
     """
 
     flux = jnp.zeros_like(energy[:-1])
 
     def scanned_func(flux, unpack):
-        energy_ref, continuum_ref, abun, end_index = unpack
-        element_flux = abun * interp_flux(energy, energy_ref, continuum_ref, end_index)
+        energy_ref, continuum_ref, abun = unpack
+        element_flux = abun * interp_flux(energy, energy_ref, continuum_ref)
         flux = flux + element_flux
 
         return flux, None
 
-    flux, _ = scan(scanned_func, flux, (energy_ref, continuum_ref, abundances, end_indexes))
+    flux, _ = scan(scanned_func, flux, (energy_ref, continuum_ref, abundances))
 
     return flux
 
 
 @jax.jit
-def get_lines_between_energies(energy_low, energy_high, line_energy, line_emissivity, line_element, abundances, end_index):
+def get_lines_between_energies(energy_low, energy_high, line_energy, line_emissivity, line_element, abundances):
+    start_index = jnp.searchsorted(line_energy, energy_low, side="left")
+    end_index = jnp.searchsorted(line_energy, energy_high, side="right")
+
     def body_func(index, value):
         energy = line_energy[index]
         emissivity = line_emissivity[index]
@@ -118,17 +137,15 @@ def get_lines_between_energies(energy_low, energy_high, line_energy, line_emissi
 
         return value + flux
 
-    return fori_loop(0, end_index, body_func, 0.0)
+    return fori_loop(start_index, end_index, body_func, 0.0)
 
 
 @jax.jit
-def get_lines_contribution(energy, line_energy, line_emissivity, line_element, abundances, end_index):
+def get_lines_contribution(energy, line_energy, line_emissivity, line_element, abundances):
     def scanned_func(_, unpack):
         energy_low, energy_high = unpack
 
-        flux = get_lines_between_energies(
-            energy_low, energy_high, line_energy, line_emissivity, line_element, abundances, end_index
-        )
+        flux = get_lines_between_energies(energy_low, energy_high, line_energy, line_emissivity, line_element, abundances)
 
         return _, flux
 
@@ -170,6 +187,12 @@ def apec_table_getter():
 
 
 class Vvapec(AdditiveComponent):
+    def __init__(self, continuum=True, pseudo=True, lines=True, **kwargs):
+        super(Vvapec, self).__init__(**kwargs)
+        self.continuum_to_compute = continuum
+        self.pseudo_to_compute = pseudo
+        self.lines_to_compute = lines
+
     def get_parameters(self):
         T = hk.get_parameter("T", [], init=HaikuConstant(6.5))
         abund = jnp.zeros((30,))
@@ -197,29 +220,40 @@ class Vvapec(AdditiveComponent):
         T_low, T_high = temperature[idx], temperature[idx + 1]
         energy = energy / (1 + z)
 
-        continuum_low = interp_flux_elements(
-            energy, continuum_energy_array[idx], continuum_emissivity_array[idx], abundances, end_index_continuum[idx]
-        )
+        if self.continuum_to_compute:
+            continuum_low = interp_flux_elements(energy, continuum_energy_array[idx], continuum_emissivity_array[idx], abundances)
 
-        continuum_high = interp_flux_elements(
-            energy, continuum_energy_array[idx + 1], continuum_emissivity_array[idx + 1], abundances, end_index_continuum[idx + 1]
-        )
+            continuum_high = interp_flux_elements(
+                energy, continuum_energy_array[idx + 1], continuum_emissivity_array[idx + 1], abundances
+            )
 
-        pcontinuum_low = interp_flux_elements(
-            energy, pseudo_energy_array[idx], pseudo_emissivity_array[idx], abundances, end_index_pseudo[idx]
-        )
+        else:
+            continuum_low = 0.0
+            continuum_high = 0.0
 
-        pcontinuum_high = interp_flux_elements(
-            energy, pseudo_energy_array[idx + 1], pseudo_emissivity_array[idx + 1], abundances, end_index_pseudo[idx + 1]
-        )
+        if self.pseudo_to_compute:
+            pcontinuum_low = interp_flux_elements(energy, pseudo_energy_array[idx], pseudo_emissivity_array[idx], abundances)
 
-        line_low = get_lines_contribution(
-            energy, line_energy_array[idx], line_emissivity_array[idx], line_element_array[idx], abundances, end_index_lines[idx]
-        )
+            pcontinuum_high = interp_flux_elements(
+                energy, pseudo_energy_array[idx + 1], pseudo_emissivity_array[idx + 1], abundances
+            )
 
-        line_high = get_lines_contribution(
-            energy, line_energy_array[idx], line_emissivity_array[idx], line_element_array[idx], abundances, end_index_lines[idx]
-        )
+        else:
+            pcontinuum_low = 0.0
+            pcontinuum_high = 0.0
+
+        if self.lines_to_compute:
+            line_low = get_lines_contribution(
+                energy, line_energy_array[idx], line_emissivity_array[idx], line_element_array[idx], abundances
+            )
+
+            line_high = get_lines_contribution(
+                energy, line_energy_array[idx], line_emissivity_array[idx], line_element_array[idx], abundances
+            )
+
+        else:
+            line_low = 0.0
+            line_high = 0.0
 
         interp_cont = lerp(
             T, T_low, T_high, continuum_low + pcontinuum_low + line_low, continuum_high + pcontinuum_high + line_high
