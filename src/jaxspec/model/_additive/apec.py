@@ -3,10 +3,13 @@ import jax.numpy as jnp
 import jax
 import haiku as hk
 import importlib.resources
+import astropy.units as u
 from jax import lax
 from jax.lax import scan, fori_loop
+from jax.scipy.stats import norm as gaussian
 from ...util.abundance import abundance_table
 from haiku.initializers import Constant as HaikuConstant
+from astropy.constants import c
 from ..abc import AdditiveComponent
 
 
@@ -155,6 +158,18 @@ def get_lines_contribution(energy, line_energy, line_emissivity, line_element, a
 
 
 @jax.jit
+def get_lines_contribution_broadening(energy, line_energy, line_emissivity, line_element, abundances, end_index, broadening):
+    def body_func(i, flux):
+        l_energy, l_emissivity, l_element = line_energy[i], line_emissivity[i], line_element[i]
+        l_flux = gaussian.cdf(energy[1:], l_energy, broadening) - gaussian.cdf(energy[:-1], l_energy, broadening)
+        l_flux = l_flux * l_emissivity * abundances[l_element.astype(int)]
+
+        return flux + l_flux
+
+    return fori_loop(0, end_index, body_func, jnp.zeros_like(energy[:-1]))
+
+
+@jax.jit
 def apec_table_getter():
     with jax.ensure_compile_time_eval():
         ref = importlib.resources.files("jaxspec") / "tables/apec.nc"
@@ -202,8 +217,9 @@ class Vvapec(AdditiveComponent):
 
         z = hk.get_parameter("z", [], init=HaikuConstant(0.0))
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1.0))
+        broadening = hk.get_parameter("broadening", [], init=HaikuConstant(100.0)) / c.to(u.km / u.s).value
 
-        return T, z, norm, abund
+        return T, z, norm, abund, broadening
 
     def emission_lines(self, e_low, e_high):
         misc_arrays, end_indexes, line_data, continuum_data, pseudo_data = apec_table_getter()
@@ -214,7 +230,7 @@ class Vvapec(AdditiveComponent):
         pseudo_energy_array, pseudo_emissivity_array = pseudo_data
 
         energy = jnp.hstack([e_low, e_high[-1]])
-        T, z, norm, abund = self.get_parameters()
+        T, z, norm, abund, broadening = self.get_parameters()
         abundances = abund  # self.abund.at[self.metals].set(Z)
         idx = jnp.searchsorted(temperature, T) - 1
         T_low, T_high = temperature[idx], temperature[idx + 1]
@@ -243,12 +259,24 @@ class Vvapec(AdditiveComponent):
             pcontinuum_high = 0.0
 
         if self.lines_to_compute:
-            line_low = get_lines_contribution(
-                energy, line_energy_array[idx], line_emissivity_array[idx], line_element_array[idx], abundances
+            line_low = get_lines_contribution_broadening(
+                energy,
+                line_energy_array[idx],
+                line_emissivity_array[idx],
+                line_element_array[idx],
+                abundances,
+                end_index_lines[idx],
+                broadening,
             )
 
-            line_high = get_lines_contribution(
-                energy, line_energy_array[idx], line_emissivity_array[idx], line_element_array[idx], abundances
+            line_high = get_lines_contribution_broadening(
+                energy,
+                line_energy_array[idx + 1],
+                line_emissivity_array[idx + 1],
+                line_element_array[idx + 1],
+                abundances,
+                end_index_lines[idx + 1],
+                broadening,
             )
 
         else:
