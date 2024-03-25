@@ -10,6 +10,7 @@ import astropy.constants
 from haiku.initializers import Constant as HaikuConstant
 from ..util.integrate import integrate_interval
 from .abc import AdditiveComponent
+from ._additive.apec import Vvapec  # noqa: F401
 
 
 class Powerlaw(AdditiveComponent):
