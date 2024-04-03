@@ -28,6 +28,7 @@ seaborn = "^0.13.1"
 mkdocstrings = "^0.24.0"
 sparse = "^0.15.1"
 scipy = "<1.13"
+mendeleev = "^0.15.0"
 
 
 [tool.poetry.group.docs.dependencies]

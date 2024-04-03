@@ -16,6 +16,9 @@ nav:
     - Add a background : examples/background.md
     - Work with arviz : examples/result_analysis.ipynb
     - Build a custom model : examples/build_custom_model.ipynb
+  - Models:
+      - models/index.md
+      - APEC: models/apec.md
   - API Reference:
     - Spectral model base: references/model.md
     - Additive models: references/additive.md

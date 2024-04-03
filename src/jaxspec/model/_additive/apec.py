@@ -7,9 +7,10 @@ import astropy.units as u
 from jax import lax
 from jax.lax import scan, fori_loop
 from jax.scipy.stats import norm as gaussian
-from ...util.abundance import abundance_table
+from typing import Literal
+from ...util.abundance import abundance_table, element_data
 from haiku.initializers import Constant as HaikuConstant
-from astropy.constants import c
+from astropy.constants import c, m_p
 from ..abc import AdditiveComponent
 
 
@@ -25,7 +26,7 @@ def lerp(x, x0, x1, y0, y1):
 @jax.jit
 def interp_along_array(energy_low, energy_high, energy_ref, continuum_ref):
     """
-    This function interpolate the values of a tabulated reference continuum between two energy limits
+    This function interpolate & integrate the values of a tabulated reference continuum between two energy limits
     Sorry for the boilerplate here, but be sure that it works !
 
     Parameters:
@@ -158,9 +159,12 @@ def get_lines_contribution(energy, line_energy, line_emissivity, line_element, a
 
 
 @jax.jit
-def get_lines_contribution_broadening(energy, line_energy, line_emissivity, line_element, abundances, end_index, broadening):
+def get_lines_contribution_broadening(
+    energy, line_energy, line_emissivity, line_element, abundances, end_index, total_broadening
+):
     def body_func(i, flux):
         l_energy, l_emissivity, l_element = line_energy[i], line_emissivity[i], line_element[i]
+        broadening = l_energy * total_broadening[l_element.astype(int)]
         l_flux = gaussian.cdf(energy[1:], l_energy, broadening) - gaussian.cdf(energy[:-1], l_energy, broadening)
         l_flux = l_flux * l_emissivity * abundances[l_element.astype(int)]
 
@@ -188,11 +192,10 @@ def apec_table_getter():
         end_index_pseudo = jnp.sum(~jnp.isnan(pseudo_energy_array), axis=-1)
         end_index_lines = jnp.sum(~jnp.isnan(line_energy_array), axis=-1)
 
-        abund = jnp.ones(30)
         metals = jnp.asarray([6, 7, 8, 10, 12, 13, 14, 16, 18, 20, 26, 28], dtype=int) - 1
         trace_elements = jnp.asarray([3, 4, 5, 9, 11, 15, 17, 19, 21, 22, 23, 24, 25, 27, 29, 30], dtype=int) - 1
 
-        misc_arrays = (temperature, metals, trace_elements, abund)
+        misc_arrays = (temperature, metals, trace_elements)
         end_indexes = (end_index_continuum, end_index_pseudo, end_index_lines)
         line_data = (line_energy_array, line_element_array, line_emissivity_array)
         continuum_data = (continuum_energy_array, continuum_emissivity_array)
@@ -201,37 +204,99 @@ def apec_table_getter():
         return misc_arrays, end_indexes, line_data, continuum_data, pseudo_data
 
 
-class Vvapec(AdditiveComponent):
-    def __init__(self, continuum=True, pseudo=True, lines=True, **kwargs):
-        super(Vvapec, self).__init__(**kwargs)
+class APEC(AdditiveComponent):
+    """
+    APEC model implementation in pure JAX for X-ray spectral fitting.
+
+    !!! warning
+        This implementation is optimised for the CPU, it shows poor performance on the GPU.
+    """
+
+    def __init__(
+        self,
+        continuum=True,
+        pseudo=True,
+        lines=True,
+        thermal_broadening=True,
+        turbulent_broadening=True,
+        abundance_table: Literal["angr", "aspl", "feld", "aneb", "grsa", "wilm", "lodd", "lgpp", "lgps"] = "angr",
+        **kwargs,
+    ):
+        super(APEC, self).__init__(**kwargs)
+
+        self.atomic_weights = jnp.asarray(element_data["atomic_weight"].to_numpy())
+        self.abundance_table = abundance_table
+        self.thermal_broadening = thermal_broadening
+        self.turbulent_broadening = turbulent_broadening
         self.continuum_to_compute = continuum
         self.pseudo_to_compute = pseudo
         self.lines_to_compute = lines
 
+    def get_thermal_broadening(self):
+        r"""
+        Compute the thermal broadening $\sigma_T$ for each element using :
+
+        $$ \frac{\sigma_T}{E_{\text{line}}} = \frac{1}{c}\sqrt{\frac{k_{B} T}{A m_p}}$$
+
+        where $E_{\text{line}}$ is the energy of the line, $c$ is the speed of light, $k_{B}$ is the Boltzmann constant,
+        $T$ is the temperature, $A$ is the atomic weight of the element and $m_p$ is the proton mass.
+        """
+
+        if self.thermal_broadening:
+            kT = hk.get_parameter("T", [], init=HaikuConstant(6.5))
+            factor = 1 / c * (1 / m_p) ** (1 / 2)
+            factor = factor.to(u.keV ** (-1 / 2)).value
+
+            # Multiply this factor by Line_Energy * sqrt(kT/A) to get the broadening for a line
+            # This return value must be multiplied by the energy of the line to get actual broadening
+            return factor * jnp.sqrt(kT / self.atomic_weights)
+
+        else:
+            return jnp.zeros((30,))
+
+    def get_turbulent_broadening(self):
+        r"""
+        Return the turbulent broadening  using :
+
+        $$\frac{\sigma_\text{turb}}{E_{\text{line}}} = \frac{\sigma_{v ~ ||}}{c}$$
+
+        where $\sigma_{v ~ ||}$ is the velocity dispersion along the line of sight in km/s.
+        """
+        if self.turbulent_broadening:
+            # This return value must be multiplied by the energy of the line to get actual broadening
+            return hk.get_parameter("broadening", [], init=HaikuConstant(100.0)) / c.to(u.km / u.s).value
+        else:
+            return 0.0
+
     def get_parameters(self):
-        T = hk.get_parameter("T", [], init=HaikuConstant(6.5))
+        # Set abundances
         abund = jnp.zeros((30,))
 
         for i, element in enumerate(abundance_table["Element"]):
             abund = abund.at[i].set(hk.get_parameter(element, [], init=HaikuConstant(1.0)))
 
+        abund = abund * jnp.asarray(abundance_table[self.abundance_table] / abundance_table["angr"])
+
+        # Set the temperature, redshift, normalisation
+        T = hk.get_parameter("T", [], init=HaikuConstant(6.5))
         z = hk.get_parameter("z", [], init=HaikuConstant(0.0))
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1.0))
-        broadening = hk.get_parameter("broadening", [], init=HaikuConstant(100.0)) / c.to(u.km / u.s).value
 
-        return T, z, norm, abund, broadening
+        return T, z, norm, abund
 
     def emission_lines(self, e_low, e_high):
+        # Unpack the data
         misc_arrays, end_indexes, line_data, continuum_data, pseudo_data = apec_table_getter()
-        temperature, metals, trace_elements, abund = misc_arrays
+        temperature, metals, trace_elements = misc_arrays
         end_index_continuum, end_index_pseudo, end_index_lines = end_indexes
         line_energy_array, line_element_array, line_emissivity_array = line_data
         continuum_energy_array, continuum_emissivity_array = continuum_data
         pseudo_energy_array, pseudo_emissivity_array = pseudo_data
 
+        # Get the parameters and extract the relevant data
         energy = jnp.hstack([e_low, e_high[-1]])
-        T, z, norm, abund, broadening = self.get_parameters()
-        abundances = abund  # self.abund.at[self.metals].set(Z)
+        T, z, norm, abundances = self.get_parameters()  # self.abund.at[self.metals].set(Z)
+        total_broadening = self.get_thermal_broadening() + self.get_turbulent_broadening()
         idx = jnp.searchsorted(temperature, T) - 1
         T_low, T_high = temperature[idx], temperature[idx + 1]
         energy = energy / (1 + z)
@@ -266,7 +331,7 @@ class Vvapec(AdditiveComponent):
                 line_element_array[idx],
                 abundances,
                 end_index_lines[idx],
-                broadening,
+                total_broadening,
             )
 
             line_high = get_lines_contribution_broadening(
@@ -276,7 +341,7 @@ class Vvapec(AdditiveComponent):
                 line_element_array[idx + 1],
                 abundances,
                 end_index_lines[idx + 1],
-                broadening,
+                total_broadening,
             )
 
         else:

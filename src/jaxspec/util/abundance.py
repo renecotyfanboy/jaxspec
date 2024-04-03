@@ -1,10 +1,16 @@
 import importlib.resources
+import pandas as pd
+from mendeleev.fetch import fetch_table
 from astropy.io import ascii
 
+abundance_table: pd.DataFrame = ascii.read(importlib.resources.files("jaxspec") / "tables/abundances.dat").to_pandas()
+element_data: pd.DataFrame = fetch_table("elements")[0:30][
+    ["symbol", "atomic_number", "atomic_radius", "atomic_volume", "atomic_weight"]
+].rename(columns={"symbol": "Element"})
 
-abundance_table = ascii.read(importlib.resources.files("jaxspec") / "tables/abundances.dat")
+abundance_table: pd.DataFrame
 """
-Table containing various abundances that can be used in `jaxspec`. It is adapted from
+Dataframe containing various abundances that can be used in `jaxspec`. It is adapted from
 [XSPEC's abundance table](https://heasarc.gsfc.nasa.gov/xanadu/xspec/manual/node116.html). The following table are available:
 
 | Name   | Reference                                                                                      | Note                         |
@@ -20,7 +26,7 @@ Table containing various abundances that can be used in `jaxspec`. It is adapted
 | `lgps` | [Lodders, Palme & Gail (2009)](https://ui.adsabs.harvard.edu/abs/2009LanB...4B..712L/abstract) | Proto-solar, using Table 10. |
 
 
-The table is a `astropy.table.Table` object, and can be accessed as such. For example, to get the abundance of iron in the `aspl` table, one can do:
+The table is a `pandas.Dataframe` object, and can be accessed as such. For example, to get the abundance of iron in the `aspl` table, one can do:
 
 ```python
 from jaxspec.util.abundance import abundance_table
@@ -62,6 +68,44 @@ The full table is displayed below:
 | Ni | 1.78e-06 | 1.66e-06 | 1.78e-06 | 1.81e-06 | 1.78e-06 | 1.12e-06 | 1.66e-06 | 1.7e-06 | 1.89e-06 |
 | Cu | 1.62e-08 | 1.55e-08 | 1.62e-08 | 1.89e-08 | 1.62e-08 | 0.0 | 1.82e-08 | 1.62e-08 | 2.09e-08 |
 | Zn | 3.98e-08 | 3.63e-08 | 3.98e-08 | 4.63e-08 | 3.98e-08 | 0.0 | 4.27e-08 | 4.17e-08 | 5.02e-08 |
+"""
 
+element_data: pd.DataFrame
+"""
+Dataframe containing various properties of the 30 first elements. It is adapted from
+[`mendeleev`](https://mendeleev.readthedocs.io/en/stable/). The full table is displayed below:
+
+| Element   |   atomic_number |   atomic_radius |   atomic_volume |   atomic_weight |
+|:----------|----------------:|----------------:|----------------:|----------------:|
+| H         |               1 |              25 |           14.1  |         1.008   |
+| He        |               2 |             120 |           31.8  |         4.0026  |
+| Li        |               3 |             145 |           13.1  |         6.94    |
+| Be        |               4 |             105 |            5    |         9.01218 |
+| B         |               5 |              85 |            4.6  |        10.81    |
+| C         |               6 |              70 |            5.3  |        12.011   |
+| N         |               7 |              65 |           17.3  |        14.007   |
+| O         |               8 |              60 |           14    |        15.999   |
+| F         |               9 |              50 |           17.1  |        18.9984  |
+| Ne        |              10 |             160 |           16.8  |        20.1797  |
+| Na        |              11 |             180 |           23.7  |        22.9898  |
+| Mg        |              12 |             150 |           14    |        24.305   |
+| Al        |              13 |             125 |           10    |        26.9815  |
+| Si        |              14 |             110 |           12.1  |        28.085   |
+| P         |              15 |             100 |           17    |        30.9738  |
+| S         |              16 |             100 |           15.5  |        32.06    |
+| Cl        |              17 |             100 |           18.7  |        35.45    |
+| Ar        |              18 |              71 |           24.2  |        39.948   |
+| K         |              19 |             220 |           45.3  |        39.0983  |
+| Ca        |              20 |             180 |           29.9  |        40.078   |
+| Sc        |              21 |             160 |           15    |        44.9559  |
+| Ti        |              22 |             140 |           10.6  |        47.867   |
+| V         |              23 |             135 |            8.35 |        50.9415  |
+| Cr        |              24 |             140 |            7.23 |        51.9961  |
+| Mn        |              25 |             140 |            7.39 |        54.938   |
+| Fe        |              26 |             140 |            7.1  |        55.845   |
+| Co        |              27 |             135 |            6.7  |        58.9332  |
+| Ni        |              28 |             135 |            6.6  |        58.6934  |
+| Cu        |              29 |             135 |            7.1  |        63.546   |
+| Zn        |              30 |             135 |            9.2  |        65.38    |
 
 """
