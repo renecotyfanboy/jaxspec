@@ -364,18 +364,17 @@ class Diskbb(AdditiveComponent):
     `Diskpbb` with $p=0.75$
 
     ??? abstract "Parameters"
+        * $T_{\text{in}}$ : Temperature at inner disk radius $\left[ \mathrm{keV}\right]$
         * $\text{norm}$ : $\cos i(r_{\text{in}}/d)^{2}$,
         where $r_{\text{in}}$ is "an apparent" inner disk radius $\left[\text{km}\right]$,
-        * $d$ the distance to the source in units of $10 \text{kpc}$,
-        * $i$ the angle of the disk ($i=0$ is face-on)
-        * $T_{\text{in}}$ : Temperature at inner disk radius $\left[ \mathrm{keV}\right]$
+        $d$ the distance to the source in units of $10 \text{kpc}$, $i$ the angle of the disk ($i=0$ is face-on)
     """
 
     def continuum(self, energy):
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
         p = 0.75
-        tin = hk.get_parameter("Tin", [], init=HaikuConstant(1))
         tout = 0.0
+        tin = hk.get_parameter("Tin", [], init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
 
         # Tout is set to 0 as it is evaluated at R=infinity
         def integrand(kT, e, tin, p):
