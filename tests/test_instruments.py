@@ -132,6 +132,9 @@ def test_plot_exemple_observations(observations: List[Observation]):
 def file_with_no_grouping(tmp_path):
     file_path = tmp_path / "no_grouping.fits"
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.arf", tmp_path / "PN.arf")
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.rmf", tmp_path / "PN.rmf")
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PNbackground_spectrum.fits", tmp_path / "PNbackground_spectrum.fits")
 
     with fits.open(file_path) as hdul:
         hdul[1].columns.del_col("GROUPING")
@@ -149,6 +152,9 @@ def test_loading_file_with_no_grouping(file_with_no_grouping):
 def file_with_no_backscal(tmp_path):
     file_path = tmp_path / "no_backscal.fits"
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.arf", tmp_path / "PN.arf")
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.rmf", tmp_path / "PN.rmf")
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PNbackground_spectrum.fits", tmp_path / "PNbackground_spectrum.fits")
 
     with fits.open(file_path) as hdul:
         del hdul[1].header["BACKSCAL"]
@@ -166,6 +172,9 @@ def test_loading_file_with_no_backscal(file_with_no_backscal):
 def file_with_no_areascal(tmp_path):
     file_path = tmp_path / "no_areascal.fits"
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.arf", tmp_path / "PN.arf")
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.rmf", tmp_path / "PN.rmf")
+    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PNbackground_spectrum.fits", tmp_path / "PNbackground_spectrum.fits")
 
     with fits.open(file_path) as hdul:
         del hdul[1].header["AREASCAL"]
