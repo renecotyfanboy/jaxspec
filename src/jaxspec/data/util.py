@@ -6,9 +6,9 @@ import haiku as hk
 from pathlib import Path
 from numpy.typing import ArrayLike
 from collections.abc import Mapping
-from typing import TypeVar
+from typing import TypeVar, Tuple
+from astropy.io import fits
 
-from .ogip import DataPHA, DataARF, DataRMF
 from . import Observation, Instrument, ObsConfiguration
 from ..model.abc import SpectralModel
 from ..fit import CountForwardModel
@@ -201,46 +201,32 @@ def fakeit_for_multiple_parameters(
     return fakeits[0] if len(fakeits) == 1 else fakeits
 
 
-def data_loader(pha_path: str, arf_path=None, rmf_path=None, bkg_path=None):
+def data_path_finder(pha_path: str) -> Tuple[str | None, str | None, str | None]:
     """
-    This function is a convenience function that allows to load PHA, ARF and RMF data
-    from a given PHA file, using either the ARF/RMF/BKG filenames in the header or the
-    specified filenames overwritten by the user.
-
+    This function tries its best to find the ARF, RMF and BKG files associated with a given PHA file.
     Parameters:
         pha_path: The PHA file path.
+
+    Returns:
         arf_path: The ARF file path.
         rmf_path: The RMF file path.
         bkg_path: The BKG file path.
     """
 
-    pha = DataPHA.from_file(pha_path)
+    def find_path(file_name: str, directory: str) -> str | None:
+        if file_name.lower() != "none" and file_name != "":
+            return find_file_or_compressed_in_dir(file_name, directory)
+        else:
+            return None
+
+    header = fits.getheader(pha_path, "SPECTRUM")
     directory = str(Path(pha_path).parent)
 
-    if arf_path is None:
-        if pha.ancrfile != "none" and pha.ancrfile != "":
-            arf_path = find_file_or_compressed_in_dir(pha.ancrfile, directory)
+    arf_path = find_path(header.get("ANCRFILE", "none"), directory)
+    rmf_path = find_path(header.get("RESPFILE", "none"), directory)
+    bkg_path = find_path(header.get("BACKFILE", "none"), directory)
 
-    if rmf_path is None:
-        if pha.respfile != "none" and pha.respfile != "":
-            rmf_path = find_file_or_compressed_in_dir(pha.respfile, directory)
-
-    if bkg_path is None:
-        if pha.backfile.lower() != "none" and pha.backfile != "":
-            bkg_path = find_file_or_compressed_in_dir(pha.backfile, directory)
-
-    arf = DataARF.from_file(arf_path) if arf_path is not None else None
-    rmf = DataRMF.from_file(rmf_path) if rmf_path is not None else None
-    bkg = DataPHA.from_file(bkg_path) if bkg_path is not None else None
-
-    metadata = {
-        "observation_file": pha_path,
-        "background_file": bkg_path,
-        "response_matrix_file": rmf_path,
-        "ancillary_response_file": arf_path,
-    }
-
-    return pha, arf, rmf, bkg, metadata
+    return arf_path, rmf_path, bkg_path
 
 
 def find_file_or_compressed_in_dir(path: str | Path, directory: str | Path) -> str:

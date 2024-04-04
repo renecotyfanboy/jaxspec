@@ -1,12 +1,9 @@
 import numpy as np
 import xarray as xr
 import sparse
+import scipy
 from .instrument import Instrument
 from .observation import Observation
-
-
-def densify_xarray(xarray):
-    return xr.DataArray(xarray.data.todense(), dims=xarray.dims, coords=xarray.coords, attrs=xarray.attrs, name=xarray.name)
 
 
 class ObsConfiguration(xr.Dataset):
@@ -56,8 +53,8 @@ class ObsConfiguration(xr.Dataset):
 
         out_energies = np.stack(
             (
-                np.asarray(self.coords["e_min_folded"].data.todense(), dtype=np.float64),
-                np.asarray(self.coords["e_max_folded"].data.todense(), dtype=np.float64),
+                np.asarray(self.coords["e_min_folded"].data, dtype=np.float64),
+                np.asarray(self.coords["e_max_folded"].data, dtype=np.float64),
             )
         )
 
@@ -67,34 +64,16 @@ class ObsConfiguration(xr.Dataset):
     def from_pha_file(
         cls, pha_path, rmf_path=None, arf_path=None, bkg_path=None, low_energy: float = 1e-20, high_energy: float = 1e20
     ):
-        from .util import data_loader
+        from .util import data_path_finder
 
-        pha, arf, rmf, bkg, metadata = data_loader(pha_path, arf_path=arf_path, rmf_path=rmf_path, bkg_path=bkg_path)
+        arf_path_default, rmf_path_default, bkg_path_default = data_path_finder(pha_path)
 
-        instrument = Instrument.from_matrix(
-            rmf.sparse_matrix,
-            arf.specresp if arf is not None else np.ones_like(rmf.energ_lo),
-            rmf.energ_lo,
-            rmf.energ_hi,
-            rmf.e_min,
-            rmf.e_max,
-        )
+        arf_path = arf_path_default if arf_path is None else arf_path
+        rmf_path = rmf_path_default if rmf_path is None else rmf_path
+        bkg_path = bkg_path_default if bkg_path is None else bkg_path
 
-        if bkg is not None:
-            backratio = np.where(bkg.backscal > 0.0, pha.backscal / np.where(bkg.backscal > 0, bkg.backscal, 1.0), 0.0)
-        else:
-            backratio = np.ones_like(pha.counts)
-
-        observation = Observation.from_matrix(
-            pha.counts,
-            pha.grouping,
-            pha.channel,
-            pha.quality,
-            pha.exposure,
-            background=bkg.counts if bkg is not None else None,
-            backratio=backratio,
-            attributes=metadata,
-        )
+        instrument = Instrument.from_ogip_file(rmf_path, arf_path=arf_path)
+        observation = Observation.from_pha_file(pha_path, bkg_path=bkg_path)
 
         return cls.from_instrument(instrument, observation, low_energy=low_energy, high_energy=high_energy)
 
@@ -102,57 +81,108 @@ class ObsConfiguration(xr.Dataset):
     def from_instrument(
         cls, instrument: Instrument, observation: Observation, low_energy: float = 1e-20, high_energy: float = 1e20
     ):
-        # Exclude the bins flagged with bad quality
-        quality_filter = observation.quality == 0
-        grouping = observation.grouping * quality_filter
+        # First we unpack all the xarray data to classical np array for efficiency
+        # We also exclude the bins that are flagged with bad quality on the instrument
+        quality_filter = observation.quality.data == 0
+        grouping = scipy.sparse.csr_array(observation.grouping.data.to_scipy_sparse()) * quality_filter
+        e_min_channel = instrument.coords["e_min_channel"].data
+        e_max_channel = instrument.coords["e_max_channel"].data
+        e_min_unfolded = instrument.coords["e_min_unfolded"].data
+        e_max_unfolded = instrument.coords["e_max_unfolded"].data
+        redistribution = scipy.sparse.csr_array(instrument.redistribution.data.to_scipy_sparse())
+        area = instrument.area.data
+        exposure = observation.exposure.data
 
         # Computing the lower and upper energies of the bins after grouping
         # This is just a trick to compute it without 10 lines of code
-        e_min = (xr.where(grouping > 0, grouping, np.nan) * instrument.coords["e_min_channel"]).min(
-            skipna=True, dim="instrument_channel"
-        )
+        grouping_nan = observation.grouping.data * quality_filter
+        grouping_nan.fill_value = np.nan
+        e_min = sparse.nanmin(grouping_nan * e_min_channel, axis=1).todense()
+        e_max = sparse.nanmax(grouping_nan * e_max_channel, axis=1).todense()
 
-        e_max = (xr.where(grouping > 0, grouping, np.nan) * instrument.coords["e_max_channel"]).max(
-            skipna=True, dim="instrument_channel"
-        )
-
-        transfer_matrix = grouping @ (instrument.redistribution * instrument.area * observation.exposure)
-        transfer_matrix = transfer_matrix.assign_coords({"e_min_folded": e_min, "e_max_folded": e_max})
+        # Compute the transfer matrix
+        transfer_matrix = grouping @ (redistribution * area * exposure)
 
         # Exclude bins out of the considered energy range, and bins without contribution from the RMF
-        row_idx = densify_xarray(((e_min > low_energy) & (e_max < high_energy)) * (grouping.sum(dim="instrument_channel") > 0))
 
-        col_idx = densify_xarray(
-            (instrument.coords["e_min_unfolded"] > 0) * (instrument.redistribution.sum(dim="instrument_channel") > 0)
-        )
+        row_idx = (e_min > low_energy) & (e_max < high_energy) & (grouping.sum(axis=1) > 0)
+        col_idx = (e_min_unfolded > 0) & (redistribution.sum(axis=0) > 0)
 
-        # The transfer matrix is converted locally to csr format to allow FAST slicing
-        transfer_matrix_scipy = transfer_matrix.data.to_scipy_sparse().tocsr()
-        transfer_matrix_reduced = transfer_matrix_scipy[row_idx.data][:, col_idx.data]
-        transfer_matrix_reduced = sparse.COO.from_scipy_sparse(transfer_matrix_reduced)
-
-        # A dummy zero matrix is put so that the slicing in xarray is fast
-        transfer_matrix.data = sparse.zeros_like(transfer_matrix.data)
-        transfer_matrix = transfer_matrix[row_idx][:, col_idx]
-
-        # The reduced transfer matrix is put back in the xarray
-        transfer_matrix.data = transfer_matrix_reduced
-
-        folded_counts = observation.folded_counts.copy().where(row_idx, drop=True)
+        # Apply this reduction to all the relevant arrays
+        transfer_matrix = sparse.COO.from_scipy_sparse(transfer_matrix[row_idx][:, col_idx])
+        folded_counts = observation.folded_counts.data[row_idx]
+        folded_backratio = observation.folded_backratio.data[row_idx]
+        area = instrument.area.data[col_idx]
+        e_min_folded = e_min[row_idx]
+        e_max_folded = e_max[row_idx]
+        e_min_unfolded = e_min_unfolded[col_idx]
+        e_max_unfolded = e_max_unfolded[col_idx]
 
         if observation.folded_background is not None:
-            folded_background = observation.folded_background.copy().where(row_idx, drop=True)
-
+            folded_background = observation.folded_background.data[row_idx]
         else:
-            folded_background = None
+            folded_background = np.zeros_like(folded_counts)
+
+        data_dict = {
+            "transfer_matrix": (
+                ["folded_channel", "unfolded_channel"],
+                transfer_matrix,
+                {
+                    "description": "Transfer matrix to use to fold the incoming spectrum. It is built and restricted using the grouping, redistribution matrix, effective area, quality flags and energy bands defined by the user."
+                },
+            ),
+            "area": (
+                ["unfolded_channel"],
+                area,
+                {"description": "Effective area with the same restrictions as the transfer matrix.", "units": "cm^2"},
+            ),
+            "exposure": ([], exposure, {"description": "Total exposure", "unit": "s"}),
+            "folded_counts": (
+                ["folded_channel"],
+                folded_counts,
+                {
+                    "description": "Folded counts after grouping, with the same restrictions as the transfer matrix.",
+                    "unit": "photons",
+                },
+            ),
+            "folded_backratio": (
+                ["folded_channel"],
+                folded_backratio,
+                {"description": "Background scaling after grouping, with the same restrictions as the transfer matrix."},
+            ),
+            "folded_background": (
+                ["folded_channel"],
+                folded_background,
+                {
+                    "description": "Folded background counts after grouping, with the same restrictions as the transfer matrix.",
+                    "unit": "photons",
+                },
+            ),
+        }
 
         return cls(
-            {
-                "transfer_matrix": transfer_matrix,
-                "area": instrument.area.copy().where(col_idx, drop=True),
-                "exposure": observation.exposure,
-                "folded_backratio": observation.folded_backratio.copy().where(row_idx, drop=True),
-                "folded_counts": folded_counts,
-                "folded_background": folded_background,
-            }
+            data_dict,
+            coords={
+                "e_min_folded": (
+                    ["folded_channel"],
+                    e_min_folded,
+                    {"description": "Low energy of folded channel"},
+                ),
+                "e_max_folded": (
+                    ["folded_channel"],
+                    e_max_folded,
+                    {"description": "High energy of folded channel"},
+                ),
+                "e_min_unfolded": (
+                    ["unfolded_channel"],
+                    e_min_unfolded,
+                    {"description": "Low energy of unfolded channel"},
+                ),
+                "e_max_unfolded": (
+                    ["unfolded_channel"],
+                    e_max_unfolded,
+                    {"description": "High energy of unfolded channel"},
+                ),
+            },
+            attrs=observation.attrs | instrument.attrs,
         )

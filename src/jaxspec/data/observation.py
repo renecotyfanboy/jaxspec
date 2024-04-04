@@ -1,6 +1,6 @@
-import os
 import numpy as np
 import xarray as xr
+from .ogip import DataPHA
 
 
 class Observation(xr.Dataset):
@@ -95,11 +95,7 @@ class Observation(xr.Dataset):
         )
 
     @classmethod
-    def from_pha_file(cls, pha_file: str | os.PathLike, **kwargs):
-        from .util import data_loader
-
-        pha, arf, rmf, bkg, metadata = data_loader(pha_file)
-
+    def from_ogip_container(cls, pha: DataPHA, bkg: DataPHA | None = None, **metadata):
         if bkg is not None:
             backratio = np.nan_to_num((pha.backscal * pha.exposure * pha.areascal) / (bkg.backscal * bkg.exposure * bkg.areascal))
         else:
@@ -115,6 +111,28 @@ class Observation(xr.Dataset):
             background=bkg.counts if bkg is not None else None,
             attributes=metadata,
         )
+
+    @classmethod
+    def from_pha_file(cls, pha_path: str, bkg_path: str | None = None, **metadata):
+        from .util import data_path_finder
+
+        arf_path, rmf_path, bkg_path_default = data_path_finder(pha_path)
+        bkg_path = bkg_path_default if bkg_path is None else bkg_path
+
+        pha = DataPHA.from_file(pha_path)
+        bkg = DataPHA.from_file(bkg_path) if bkg_path is not None else None
+
+        if metadata is None:
+            metadata = {}
+
+        metadata.update(
+            observation_file=pha_path,
+            background_file=bkg_path,
+            response_matrix_file=rmf_path,
+            ancillary_response_file=arf_path,
+        )
+
+        return cls.from_ogip_container(pha, bkg=bkg, **metadata)
 
     def plot_counts(self, **kwargs):
         """
