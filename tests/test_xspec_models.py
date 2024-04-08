@@ -26,7 +26,7 @@ class AdditiveModelTestSetup:
     required_tol: float = 1e-2  # Required tolerance between xspec and jaxspec
     weight: float = 1  # Weight of the XSPEC model when systematic biases are present (e.g. add an epsilon to the model)
     energy_range: tuple[float, float, int] = (0.2, 20, 10000)  # Energy range to test, lower, upper, number of bins
-    model_string: Optional[list] = None  # Model string to use in XSPEC
+    model_string: Optional[list[tuple[str, str]]] = None  # Model string to use in XSPEC
 
 
 models_to_test = [
