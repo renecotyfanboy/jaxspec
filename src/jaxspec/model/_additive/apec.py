@@ -181,12 +181,14 @@ class APEC(AdditiveComponent):
 
     def __init__(
         self,
-        continuum=True,
-        pseudo=True,
-        lines=True,
-        thermal_broadening=True,
-        turbulent_broadening=True,
+        continuum: bool = True,
+        pseudo: bool = True,
+        lines: bool = True,
+        thermal_broadening: bool = True,
+        turbulent_broadening: bool = True,
+        variant: Literal["none", "v", "vv"] = "none",
         abundance_table: Literal["angr", "aspl", "feld", "aneb", "grsa", "wilm", "lodd", "lgpp", "lgps"] = "angr",
+        trace_abundance: float = 1.0,
         **kwargs,
     ):
         super(APEC, self).__init__(**kwargs)
@@ -198,6 +200,8 @@ class APEC(AdditiveComponent):
         self.continuum_to_compute = continuum
         self.pseudo_to_compute = pseudo
         self.lines_to_compute = lines
+        self.trace_abundance = trace_abundance
+        self.variant = variant
 
     def get_thermal_broadening(self):
         r"""
@@ -236,12 +240,29 @@ class APEC(AdditiveComponent):
             return 0.0
 
     def get_parameters(self):
-        # Set abundances
+        none_elements = ["C", "N", "O", "Ne", "Mg", "Al", "Si", "S", "Ar", "Ca", "Fe", "Ni"]
+        v_elements = ["He", "C", "N", "O", "Ne", "Mg", "Al", "Si", "S", "Ar", "Ca", "Fe", "Ni"]
+        trace_elements = jnp.asarray([3, 4, 5, 9, 11, 15, 17, 19, 21, 22, 23, 24, 25, 27, 29, 30], dtype=int) - 1
         abund = jnp.ones((30,))
 
-        for i, element in enumerate(abundance_table["Element"]):
-            if element != "H":
-                abund = abund.at[i].set(hk.get_parameter(element, [], init=HaikuConstant(1.0)))
+        # Set abundances of trace element (will be overwritten in the vv case)
+        abund = abund.at[trace_elements].multiply(self.trace_abundance)
+
+        if self.variant == "vv":
+            for i, element in enumerate(abundance_table["Element"]):
+                if element != "H":
+                    abund = abund.at[i].set(hk.get_parameter(element, [], init=HaikuConstant(1.0)))
+
+        elif self.variant == "v":
+            for i, element in enumerate(abundance_table["Element"]):
+                if element != "H" and element in v_elements:
+                    abund = abund.at[i].set(hk.get_parameter(element, [], init=HaikuConstant(1.0)))
+
+        else:
+            Z = hk.get_parameter("Abundance", [], init=HaikuConstant(1.0))
+            for i, element in enumerate(abundance_table["Element"]):
+                if element != "H" and element in none_elements:
+                    abund = abund.at[i].set(Z)
 
         if abund != "angr":
             abund = abund * jnp.asarray(abundance_table[self.abundance_table] / abundance_table["angr"])
@@ -264,7 +285,7 @@ class APEC(AdditiveComponent):
 
         # Get the parameters and extract the relevant data
         energy = jnp.hstack([e_low, e_high[-1]])
-        T, z, norm, abundances = self.get_parameters()  # self.abund.at[self.metals].set(Z)
+        T, z, norm, abundances = self.get_parameters()
         total_broadening = jnp.hypot(self.get_thermal_broadening(), self.get_turbulent_broadening())
         idx = jnp.searchsorted(temperature, T) - 1
         T_low, T_high = temperature[idx], temperature[idx + 1]
