@@ -1,8 +1,6 @@
-import h5netcdf
 import jax.numpy as jnp
 import jax
 import haiku as hk
-import importlib.resources
 import astropy.units as u
 from jax import lax
 from jax.lax import scan, fori_loop
@@ -12,6 +10,7 @@ from ...util.abundance import abundance_table, element_data
 from haiku.initializers import Constant as HaikuConstant
 from astropy.constants import c, m_p
 from ..abc import AdditiveComponent
+from .apec_loaders import get_temperature, get_continuum, get_pseudo, get_lines
 
 
 @jax.jit
@@ -24,7 +23,7 @@ def lerp(x, x0, x1, y0, y1):
 
 
 @jax.jit
-def interp_along_array(energy_low, energy_high, energy_ref, continuum_ref, end_index):
+def interp_and_integrate(energy_low, energy_high, energy_ref, continuum_ref, end_index):
     """
     This function interpolate & integrate the values of a tabulated reference continuum between two energy limits
     Sorry for the boilerplate here, but be sure that it works !
@@ -87,15 +86,23 @@ def interp_along_array(energy_low, energy_high, energy_ref, continuum_ref, end_i
     return integrated_flux
 
 
-@jax.jit
-def interp_flux(energy, energy_ref, continuum_ref, end_index):
+def interp(e_low, e_high, energy_ref, continuum_ref, end_index):
+    energy_ref = jnp.where(jnp.arange(energy_ref.shape[0]) < end_index, energy_ref, jnp.nan)
+
+    return (jnp.interp(e_high, energy_ref, continuum_ref) - jnp.interp(e_low, energy_ref, continuum_ref)) / (e_high - e_low)
+
+
+def interp_flux(energy, energy_ref, continuum_ref, end_index, integrate=True):
     """
     Iterate through an array of shape (energy_ref,) and compute the flux between the bins defined by energy
     """
 
     def scanned_func(carry, unpack):
         e_low, e_high = unpack
-        continuum = interp_along_array(e_low, e_high, energy_ref, continuum_ref, end_index)
+        if integrate:
+            continuum = interp_and_integrate(e_low, e_high, energy_ref, continuum_ref, end_index)
+        else:
+            continuum = interp(e_low, e_high, energy_ref, continuum_ref, end_index)
 
         return carry, continuum
 
@@ -104,30 +111,26 @@ def interp_flux(energy, energy_ref, continuum_ref, end_index):
     return continuum
 
 
-@jax.jit
-def interp_flux_elements(energy, energy_ref, continuum_ref, end_index, abundances):
+def interp_flux_elements(energy_ref, continuum_ref, end_index, energy, abundances, integrate=True):
     """
     Iterate through an array of shape (abundance, energy_ref) and compute the flux between the bins defined by energy
     and weight the flux depending on the abundance of each element
     """
 
-    flux = jnp.zeros_like(energy[:-1])
+    def scanned_func(_, unpack):
+        energy_ref, continuum_ref, end_idx = unpack
+        element_flux = interp_flux(energy, energy_ref, continuum_ref, end_idx, integrate=integrate)
 
-    def scanned_func(flux, unpack):
-        energy_ref, continuum_ref, abun, end_idx = unpack
-        element_flux = abun * interp_flux(energy, energy_ref, continuum_ref, end_idx)
-        flux = flux + element_flux
+        return _, element_flux
 
-        return flux, None
+    _, flux = scan(scanned_func, 0.0, (energy_ref, continuum_ref, end_index))
 
-    flux, _ = scan(scanned_func, flux, (energy_ref, continuum_ref, abundances, end_index))
-
-    return flux
+    return abundances @ flux
 
 
 @jax.jit
 def get_lines_contribution_broadening(
-    energy, line_energy, line_emissivity, line_element, abundances, end_index, total_broadening
+    line_energy, line_element, line_emissivity, end_index, energy, abundances, total_broadening
 ):
     def body_func(i, flux):
         # Notice the -1 in line element to match the 0-based indexing
@@ -142,33 +145,119 @@ def get_lines_contribution_broadening(
 
 
 @jax.jit
-def apec_table_getter():
-    with jax.ensure_compile_time_eval():
-        ref = importlib.resources.files("jaxspec") / "tables/apec.nc"
+def get_lines_contribution_broadening_derivative(
+    line_energy, line_element, line_emissivity, end_index, energy, abundances, total_broadening
+):
+    def body_func(i, flux):
+        # Notice the -1 in line element to match the 0-based indexing
+        l_energy, l_emissivity, l_element = line_energy[i], line_emissivity[i], line_element[i] - 1
+        broadening = l_energy * total_broadening[l_element]
+        l_flux = gaussian.cdf(energy[1:], l_energy, broadening) - gaussian.cdf(energy[:-1], l_energy, broadening)
+        l_flux = l_flux * l_emissivity * abundances[l_element]
 
-        with h5netcdf.File(ref, "r") as f:
-            temperature = jnp.asarray(f["/temperature"])
-            line_energy_array = jnp.asarray(f["/line_energy"])
-            line_element_array = jnp.asarray(f["/line_element"])
-            line_emissivity_array = jnp.asarray(f["/line_emissivity"])
-            continuum_energy_array = jnp.asarray(f["/continuum_energy"])
-            continuum_emissivity_array = jnp.asarray(f["/continuum_emissivity"])
-            pseudo_energy_array = jnp.asarray(f["/pseudo_energy"])
-            pseudo_emissivity_array = jnp.asarray(f["/pseudo_emissivity"])
-            end_index_continuum = jnp.asarray(f["/continuum_end_index"])
-            end_index_pseudo = jnp.asarray(f["/pseudo_end_index"])
-            end_index_lines = jnp.asarray(f["/line_end_index"])
+        return flux + l_flux
 
-        metals = jnp.asarray([6, 7, 8, 10, 12, 13, 14, 16, 18, 20, 26, 28], dtype=int) - 1
-        trace_elements = jnp.asarray([3, 4, 5, 9, 11, 15, 17, 19, 21, 22, 23, 24, 25, 27, 29, 30], dtype=int) - 1
+    return fori_loop(0, end_index, body_func, jnp.zeros_like(energy[:-1]))
 
-        misc_arrays = (temperature, metals, trace_elements)
-        end_indexes = (end_index_continuum, end_index_pseudo, end_index_lines)
-        line_data = (line_energy_array, line_element_array, line_emissivity_array)
-        continuum_data = (continuum_energy_array, continuum_emissivity_array)
-        pseudo_data = (pseudo_energy_array, pseudo_emissivity_array)
 
-        return misc_arrays, end_indexes, line_data, continuum_data, pseudo_data
+@jax.custom_jvp
+@jax.jit
+def continuum_func(energy, kT, abundances):
+    idx, kT_low, kT_high = get_temperature(kT)
+    continuum_low = interp_flux_elements(*get_continuum(idx), energy, abundances)
+    continuum_high = interp_flux_elements(*get_continuum(idx + 1), energy, abundances)
+
+    return lerp(kT, kT_low, kT_high, continuum_low, continuum_high)
+
+
+@jax.jit
+@continuum_func.defjvp
+def continuum_jvp(primals, tangents):
+    energy, kT, abundances = primals
+    energy_dot, kT_dot, abundances_dot = tangents
+
+    idx, kT_low, kT_high = get_temperature(kT)
+    continuum_low_pars = get_continuum(idx)
+    continuum_high_pars = get_continuum(idx + 1)
+
+    # Energy derivative
+    dcontinuum_low_denerg = interp_flux_elements(*continuum_low_pars, energy, abundances, integrate=False)
+    dcontinuum_high_denerg = interp_flux_elements(*continuum_high_pars, energy, abundances, integrate=False)
+    energy_derivative = lerp(kT, kT_low, kT_high, dcontinuum_low_denerg, dcontinuum_high_denerg) * jnp.diff(energy_dot)
+
+    # Temperature derivative
+    continuum_low = interp_flux_elements(*continuum_low_pars, energy, abundances)
+    continuum_high = interp_flux_elements(*continuum_high_pars, energy, abundances)
+    kT_derivative = (continuum_high - continuum_low) / (kT_high - kT_low) * kT_dot
+
+    # Abundances derivative
+    dcontinuum_low_dabund = interp_flux_elements(*continuum_low_pars, energy, abundances_dot)
+    dcontinuum_high_dabund = interp_flux_elements(*continuum_high_pars, energy, abundances_dot)
+    abundances_derivative = lerp(kT, kT_low, kT_high, dcontinuum_low_dabund, dcontinuum_high_dabund)
+
+    primals_out = continuum_func(*primals)
+
+    return primals_out, energy_derivative + kT_derivative + abundances_derivative
+
+
+@jax.custom_jvp
+@jax.jit
+def pseudo_func(energy, kT, abundances):
+    idx, kT_low, kT_high = get_temperature(kT)
+    continuum_low = interp_flux_elements(*get_continuum(idx), energy, abundances)
+    continuum_high = interp_flux_elements(*get_continuum(idx + 1), energy, abundances)
+
+    return lerp(kT, kT_low, kT_high, continuum_low, continuum_high)
+
+
+@jax.jit
+@pseudo_func.defjvp
+def pseudo_jvp(primals, tangents):
+    energy, kT, abundances = primals
+    energy_dot, kT_dot, abundances_dot = tangents
+
+    idx, kT_low, kT_high = get_temperature(kT)
+    continuum_low_pars = get_pseudo(idx)
+    continuum_high_pars = get_pseudo(idx + 1)
+
+    # Energy derivative
+    dcontinuum_low_denerg = interp_flux_elements(*continuum_low_pars, energy, abundances, integrate=False)
+    dcontinuum_high_denerg = interp_flux_elements(*continuum_high_pars, energy, abundances, integrate=False)
+    energy_derivative = lerp(kT, kT_low, kT_high, dcontinuum_low_denerg, dcontinuum_high_denerg) * jnp.diff(energy_dot)
+
+    # Temperature derivative
+    continuum_low = interp_flux_elements(*continuum_low_pars, energy, abundances)
+    continuum_high = interp_flux_elements(*continuum_high_pars, energy, abundances)
+    kT_derivative = (continuum_high - continuum_low) / (kT_high - kT_low) * kT_dot
+
+    # Abundances derivative
+    dcontinuum_low_dabund = interp_flux_elements(*continuum_low_pars, energy, abundances_dot)
+    dcontinuum_high_dabund = interp_flux_elements(*continuum_high_pars, energy, abundances_dot)
+    abundances_derivative = lerp(kT, kT_low, kT_high, dcontinuum_low_dabund, dcontinuum_high_dabund)
+
+    primals_out = pseudo_func(*primals)
+
+    return primals_out, energy_derivative + kT_derivative + abundances_derivative
+
+
+@jax.custom_jvp
+@jax.jit
+def lines_func(energy, kT, abundances, broadening):
+    idx, kT_low, kT_high = get_temperature(kT)
+    line_low = get_lines_contribution_broadening(*get_lines(idx), energy, abundances, broadening)
+    line_high = get_lines_contribution_broadening(*get_lines(idx + 1), energy, abundances, broadening)
+
+    return lerp(kT, kT_low, kT_high, line_low, line_high)
+
+
+@jax.jit
+@lines_func.defjvp
+def lines_jvp(primals, tangents):
+    energy, kT, abundances, broadening = primals
+    energy_dot, kT_dot, abundances_dot, broadening_dot = tangents
+
+    primals_out = lines_func(*primals)
+    return primals_out, jnp.zeros_like(primals_out)
 
 
 class APEC(AdditiveComponent):
@@ -194,6 +283,7 @@ class APEC(AdditiveComponent):
         super(APEC, self).__init__(**kwargs)
 
         self.atomic_weights = jnp.asarray(element_data["atomic_weight"].to_numpy())
+
         self.abundance_table = abundance_table
         self.thermal_broadening = thermal_broadening
         self.turbulent_broadening = turbulent_broadening
@@ -243,10 +333,9 @@ class APEC(AdditiveComponent):
         none_elements = ["C", "N", "O", "Ne", "Mg", "Al", "Si", "S", "Ar", "Ca", "Fe", "Ni"]
         v_elements = ["He", "C", "N", "O", "Ne", "Mg", "Al", "Si", "S", "Ar", "Ca", "Fe", "Ni"]
         trace_elements = jnp.asarray([3, 4, 5, 9, 11, 15, 17, 19, 21, 22, 23, 24, 25, 27, 29, 30], dtype=int) - 1
-        abund = jnp.ones((30,))
 
         # Set abundances of trace element (will be overwritten in the vv case)
-        abund = abund.at[trace_elements].multiply(self.trace_abundance)
+        abund = jnp.ones((30,)).at[trace_elements].multiply(self.trace_abundance)
 
         if self.variant == "vv":
             for i, element in enumerate(abundance_table["Element"]):
@@ -268,86 +357,21 @@ class APEC(AdditiveComponent):
             abund = abund * jnp.asarray(abundance_table[self.abundance_table] / abundance_table["angr"])
 
         # Set the temperature, redshift, normalisation
-        T = hk.get_parameter("kT", [], init=HaikuConstant(6.5))
+        kT = hk.get_parameter("kT", [], init=HaikuConstant(6.5))
         z = hk.get_parameter("Redshift", [], init=HaikuConstant(0.0))
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1.0))
 
-        return T, z, norm, abund
+        return kT, z, norm, abund
 
     def emission_lines(self, e_low, e_high):
-        # Unpack the data
-        misc_arrays, end_indexes, line_data, continuum_data, pseudo_data = apec_table_getter()
-        temperature, metals, trace_elements = misc_arrays
-        end_index_continuum, end_index_pseudo, end_index_lines = end_indexes
-        line_energy_array, line_element_array, line_emissivity_array = line_data
-        continuum_energy_array, continuum_emissivity_array = continuum_data
-        pseudo_energy_array, pseudo_emissivity_array = pseudo_data
-
         # Get the parameters and extract the relevant data
         energy = jnp.hstack([e_low, e_high[-1]])
-        T, z, norm, abundances = self.get_parameters()
+        kT, z, norm, abundances = self.get_parameters()
         total_broadening = jnp.hypot(self.get_thermal_broadening(), self.get_turbulent_broadening())
-        idx = jnp.searchsorted(temperature, T) - 1
-        T_low, T_high = temperature[idx], temperature[idx + 1]
         energy = energy * (1 + z)
 
-        if self.continuum_to_compute:
-            continuum_low = interp_flux_elements(
-                energy, continuum_energy_array[idx], continuum_emissivity_array[idx], end_index_continuum[idx], abundances
-            )
+        continuum = continuum_func(energy, kT, abundances) if self.continuum_to_compute else 0.0
+        pseudo_continuum = pseudo_func(energy, kT, abundances) if self.pseudo_to_compute else 0.0
+        lines = lines_func(energy, kT, abundances, total_broadening) if self.lines_to_compute else 0.0
 
-            continuum_high = interp_flux_elements(
-                energy,
-                continuum_energy_array[idx + 1],
-                continuum_emissivity_array[idx + 1],
-                end_index_continuum[idx + 1],
-                abundances,
-            )
-
-        else:
-            continuum_low = 0.0
-            continuum_high = 0.0
-
-        if self.pseudo_to_compute:
-            pcontinuum_low = interp_flux_elements(
-                energy, pseudo_energy_array[idx], pseudo_emissivity_array[idx], end_index_pseudo[idx], abundances
-            )
-
-            pcontinuum_high = interp_flux_elements(
-                energy, pseudo_energy_array[idx + 1], pseudo_emissivity_array[idx + 1], end_index_pseudo[idx + 1], abundances
-            )
-
-        else:
-            pcontinuum_low = 0.0
-            pcontinuum_high = 0.0
-
-        if self.lines_to_compute:
-            line_low = get_lines_contribution_broadening(
-                energy,
-                line_energy_array[idx],
-                line_emissivity_array[idx],
-                line_element_array[idx],
-                abundances,
-                end_index_lines[idx],
-                total_broadening,
-            )
-
-            line_high = get_lines_contribution_broadening(
-                energy,
-                line_energy_array[idx + 1],
-                line_emissivity_array[idx + 1],
-                line_element_array[idx + 1],
-                abundances,
-                end_index_lines[idx + 1],
-                total_broadening,
-            )
-
-        else:
-            line_low = 0.0
-            line_high = 0.0
-
-        interp_cont = lerp(
-            T, T_low, T_high, continuum_low + pcontinuum_low + line_low, continuum_high + pcontinuum_high + line_high
-        )
-
-        return interp_cont * norm * 1e14 / (1 + z), (e_low + e_high) / 2
+        return (continuum + pseudo_continuum + lines) * norm * 1e14 / (1 + z), (e_low + e_high) / 2
