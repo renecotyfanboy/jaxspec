@@ -69,7 +69,7 @@ def _plot_binned_samples_with_error(
 
         percentiles = np.percentile(y_samples, percentile, axis=0)
 
-        # The legend cannot handle fill_between, so we pass a fill to get a fancy icone
+        # The legend cannot handle fill_between, so we pass a fill to get a fancy icon
         (envelope,) = ax.fill(np.nan, np.nan, alpha=0.3, facecolor=color)
 
         ax.fill_between(
@@ -112,13 +112,17 @@ def format_parameters(parameter_name):
 
 
 class ChainResult:
-    # TODO : Add docstring
+    """
+    This class is the container for the result of a fit using the BayesianModel class.
+    """
+
     # TODO : Add type hints
     # TODO : Add proper separation between params and samples, cf from haiku and numpyro
+    # TODO : Remove samples and directly use the inference_data
     def __init__(
         self,
         model: SpectralModel,
-        folding_model: ObsConfiguration,
+        obsconf: ObsConfiguration | dict[str, ObsConfiguration],
         inference_data: az.InferenceData,
         samples,
         structure: Mapping[K, V],
@@ -127,7 +131,7 @@ class ChainResult:
         self.model = model
         self._structure = structure
         self.inference_data = inference_data
-        self.folding_model = folding_model
+        self.obsconfs = {"Observation": obsconf} if isinstance(obsconf, ObsConfiguration) else obsconf
         self.samples = samples
         self.background_model = background_model
         self._structure = structure
@@ -138,6 +142,14 @@ class ChainResult:
             metadata = getattr(self.inference_data, group_name).attrs
             metadata["model"] = str(model)
             # TODO : Store metadata about observations used in the fitting process
+
+    @property
+    def converged(self):
+        """
+        Convergence of the chain as computed by the $\hat{R}$ statistic.
+        """
+
+        return all(az.rhat(self.inference_data) < 1.01)
 
     def photon_flux(
         self,
@@ -271,7 +283,11 @@ class ChainResult:
 
         return params
 
-    def plot_ppc(self, percentile: Tuple[int, int] = (14, 86)) -> plt.Figure:
+    def plot_ppc(
+        self,
+        percentile: Tuple[int, int] = (14, 86),
+        x_units: Literal["keV", "Angstrom"] = "keV",
+    ) -> plt.Figure:
         r"""
         Plot the posterior predictive distribution of the model. It also features a residual plot, defined using the
         following formula:
@@ -286,110 +302,119 @@ class ChainResult:
             The matplotlib two panel figure.
         """
 
-        folding_model = self.folding_model
-        count = az.extract(self.inference_data, var_names="obs", group="posterior_predictive").values.T
-        bkg_count = (
-            None
-            if self.background_model is None
-            else az.extract(self.inference_data, var_names="bkg", group="posterior_predictive").values.T
-        )
-
-        legend_plots = []
-        legend_labels = []
+        obsconf_container = self.obsconfs
 
         color = (0.15, 0.25, 0.45)
 
         with plt.style.context("default"):
-            # Note to Simon : do not change folding_model.out_energies[1] - folding_model.out_energies[0] to
+            # Note to Simon : do not change obsconf.out_energies[1] - obsconf.out_energies[0] to
             # np.diff, you already did this twice and forgot that it does not work since diff keeps the dimensions
             # and enable weird broadcasting that makes the plot fail
 
-            fig, axs = plt.subplots(2, 1, figsize=(6, 6), sharex=True, height_ratios=[0.7, 0.3])
-
-            mid_bins_arf = folding_model.in_energies.mean(axis=0)
-
-            e_grid = np.linspace(*folding_model.out_energies, 10)
-            interpolated_arf = np.interp(e_grid, mid_bins_arf, folding_model.area)
-            integrated_arf = trapezoid(interpolated_arf, x=e_grid, axis=0) / (
-                folding_model.out_energies[1] - folding_model.out_energies[0]
+            fig, axs = plt.subplots(
+                2, len(obsconf_container), figsize=(6 * len(obsconf_container), 6), sharex=True, height_ratios=[0.7, 0.3]
             )
 
-            if folding_model.out_energies[0][0] < 1 < folding_model.out_energies[1][-1]:
-                xticks = [np.floor(folding_model.out_energies[0][0] * 10) / 10, 1.0, np.floor(folding_model.out_energies[1][-1])]
-            else:
-                xticks = [np.floor(folding_model.out_energies[0][0] * 10) / 10, np.floor(folding_model.out_energies[1][-1])]
+            plot_ylabels_once = True
 
-            denominator = (
-                (folding_model.out_energies[1] - folding_model.out_energies[0]) * folding_model.exposure.data * integrated_arf
-            )
+            for name, obsconf, ax in zip(
+                obsconf_container.keys(), obsconf_container.values(), axs.T if len(obsconf_container) > 1 else [axs]
+            ):
+                legend_plots = []
+                legend_labels = []
+                count = az.extract(self.inference_data, var_names=f"{name}_obs", group="posterior_predictive").values.T
+                bkg_count = (
+                    None
+                    if self.background_model is None
+                    else az.extract(self.inference_data, var_names=f"{name}_bkg", group="posterior_predictive").values.T
+                )
 
-            # Use the helper function to plot the data and posterior predictive
-            legend_plots += _plot_binned_samples_with_error(
-                axs[0],
-                folding_model.out_energies,
-                y_samples=count,
-                y_observed=folding_model.folded_counts.data,
-                denominator=denominator,
-                color=color,
-                percentile=percentile,
-            )
+                # This compute the total effective area within all bins
+                mid_bins_arf = obsconf.in_energies.mean(axis=0)
+                e_grid = np.linspace(*obsconf.out_energies, 10)
+                interpolated_arf = np.interp(e_grid, mid_bins_arf, obsconf.area)
+                integrated_arf = trapezoid(interpolated_arf, x=e_grid, axis=0) / (
+                    obsconf.out_energies[1] - obsconf.out_energies[0]
+                )
 
-            legend_labels.append("Source + Background")
+                if obsconf.out_energies[0][0] < 1 < obsconf.out_energies[1][-1]:
+                    xticks = [np.floor(obsconf.out_energies[0][0] * 10) / 10, 1.0, np.floor(obsconf.out_energies[1][-1])]
+                else:
+                    xticks = [np.floor(obsconf.out_energies[0][0] * 10) / 10, np.floor(obsconf.out_energies[1][-1])]
 
-            if self.background_model is not None:
-                # We plot the background only if it is included in the fit, i.e. by subtracting
+                denominator = (obsconf.out_energies[1] - obsconf.out_energies[0]) * obsconf.exposure.data * integrated_arf
+
+                # Use the helper function to plot the data and posterior predictive
                 legend_plots += _plot_binned_samples_with_error(
-                    axs[0],
-                    folding_model.out_energies,
-                    y_observed=folding_model.folded_background.data,
-                    y_samples=bkg_count,
-                    denominator=denominator * folding_model.folded_backratio.data,
-                    color=(0.26787604, 0.60085972, 0.63302651),
+                    ax[0],
+                    obsconf.out_energies,
+                    y_samples=count,
+                    y_observed=obsconf.folded_counts.data,
+                    denominator=denominator,
+                    color=color,
                     percentile=percentile,
                 )
 
-                legend_labels.append("Background")
+                legend_labels.append("Source + Background")
 
-            residuals = np.percentile(
-                (folding_model.folded_counts.data - count) / np.diff(np.percentile(count, percentile, axis=0), axis=0),
-                percentile,
-                axis=0,
-            )
+                if self.background_model is not None:
+                    # We plot the background only if it is included in the fit, i.e. by subtracting
+                    legend_plots += _plot_binned_samples_with_error(
+                        ax[0],
+                        obsconf.out_energies,
+                        y_observed=obsconf.folded_background.data,
+                        y_samples=bkg_count,
+                        denominator=denominator * obsconf.folded_backratio.data,
+                        color=(0.26787604, 0.60085972, 0.63302651),
+                        percentile=percentile,
+                    )
 
-            axs[1].fill_between(
-                list(folding_model.out_energies[0]) + [folding_model.out_energies[1][-1]],
-                list(residuals[0]) + [residuals[0][-1]],
-                list(residuals[1]) + [residuals[1][-1]],
-                alpha=0.3,
-                step="post",
-                facecolor=color,
-            )
+                    legend_labels.append("Background")
 
-            max_residuals = np.max(np.abs(residuals))
+                residuals = np.percentile(
+                    (obsconf.folded_counts.data - count) / np.diff(np.percentile(count, percentile, axis=0), axis=0),
+                    percentile,
+                    axis=0,
+                )
 
-            axs[0].loglog()
-            axs[0].set_ylabel("Folded spectrum\n" + r"[Counts s$^{-1}$ keV$^{-1}$ cm$^{-2}$]")
+                ax[1].fill_between(
+                    list(obsconf.out_energies[0]) + [obsconf.out_energies[1][-1]],
+                    list(residuals[0]) + [residuals[0][-1]],
+                    list(residuals[1]) + [residuals[1][-1]],
+                    alpha=0.3,
+                    step="post",
+                    facecolor=color,
+                )
 
-            axs[1].set_ylim(-max(3.5, max_residuals), +max(3.5, max_residuals))
-            axs[1].set_ylabel("Residuals \n" + r"[$\sigma$]")
-            axs[1].set_xlabel("Energy \n[keV]")
+                max_residuals = np.max(np.abs(residuals))
 
-            axs[1].axhline(0, color=color, ls="--")
-            axs[1].axhline(-3, color=color, ls=":")
-            axs[1].axhline(3, color=color, ls=":")
+                ax[0].loglog()
 
-            axs[1].set_xticks(xticks, labels=xticks)
-            axs[1].set_yticks([-3, 0, 3], labels=[-3, 0, 3])
-            axs[1].set_yticks(range(-3, 4), minor=True)
+                ax[1].set_ylim(-max(3.5, max_residuals), +max(3.5, max_residuals))
 
-            axs[0].set_xlim(folding_model.out_energies.min(), folding_model.out_energies.max())
+                if plot_ylabels_once:
+                    ax[0].set_ylabel("Folded spectrum\n" + r"[Counts s$^{-1}$ keV$^{-1}$ cm$^{-2}$]")
+                    ax[1].set_ylabel("Residuals \n" + r"[$\sigma$]")
+                    plot_ylabels_once = False
 
-            axs[0].legend(legend_plots, legend_labels)
-            fig.suptitle(self.model.to_string())
+                ax[1].set_xlabel("Energy \n[keV]")
 
-            fig.align_ylabels()
-            plt.subplots_adjust(hspace=0.0)
-            fig.tight_layout()
+                ax[1].axhline(0, color=color, ls="--")
+                ax[1].axhline(-3, color=color, ls=":")
+                ax[1].axhline(3, color=color, ls=":")
+
+                ax[1].set_xticks(xticks, labels=xticks)
+                ax[1].set_yticks([-3, 0, 3], labels=[-3, 0, 3])
+                ax[1].set_yticks(range(-3, 4), minor=True)
+
+                ax[0].set_xlim(obsconf.out_energies.min(), obsconf.out_energies.max())
+
+                ax[0].legend(legend_plots, legend_labels)
+                fig.suptitle(self.model.to_string())
+
+                fig.align_ylabels()
+                plt.subplots_adjust(hspace=0.0)
+                fig.tight_layout()
 
             return fig
 

@@ -4,7 +4,7 @@ import numpyro
 import arviz as az
 import jax
 from typing import Callable, TypeVar
-from abc import ABC
+from abc import ABC, abstractmethod
 from jax import random
 from jax.tree_util import tree_map
 from jax.experimental.sparse import BCSR
@@ -22,8 +22,7 @@ from numpyro.infer.reparam import TransformReparam
 T = TypeVar("T")
 
 
-class HaikuDict(dict[str, dict[str, T]]):
-    ...
+class HaikuDict(dict[str, dict[str, T]]): ...
 
 
 def build_prior(prior: HaikuDict[Distribution | ArrayLike], expand_shape: tuple = ()):
@@ -32,7 +31,8 @@ def build_prior(prior: HaikuDict[Distribution | ArrayLike], expand_shape: tuple 
     for i, (m, n, sample) in enumerate(hk.data_structures.traverse(prior)):
         match sample:
             case Distribution():
-                parameters[m][n] = numpyro.sample(f"{m}_{n}", sample.expand(expand_shape))
+                parameters[m][n] = jnp.ones(expand_shape) * numpyro.sample(f"{m}_{n}", sample)
+                # parameters[m][n] = numpyro.sample(f"{m}_{n}", sample.expand(expand_shape)) build a free parameter for each obs
             case float() | ArrayLike():
                 parameters[m][n] = jnp.ones(expand_shape) * sample
             case _:
@@ -119,6 +119,10 @@ class BayesianModelAbstract(ABC):
         self.model = model
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
 
+    @property
+    @abstractmethod
+    def observation_container(self): ...
+
     def fit(
         self,
         prior_distributions: HaikuDict[Distribution],
@@ -174,7 +178,15 @@ class BayesianModelAbstract(ABC):
         prior = Predictive(bayesian_model, num_samples=num_samples)(keys[2], observed=False)
         inference_data = az.from_numpyro(mcmc, prior=prior, posterior_predictive=posterior_predictive)
 
-        predictive_parameters = ["obs", "bkg"] if self.background_model is not None else ["obs"]
+        predictive_parameters = []
+
+        for key, value in self.observation_container.items():
+            if self.background_model is not None:
+                predictive_parameters.append(f"{key}_obs")
+                predictive_parameters.append(f"{key}_bkg")
+            else:
+                predictive_parameters.append(f"{key}_obs")
+
         inference_data.posterior_predictive = inference_data.posterior_predictive[predictive_parameters]
 
         parameters = [x for x in inference_data.posterior.keys() if not x.endswith("_base")]
@@ -183,7 +195,7 @@ class BayesianModelAbstract(ABC):
 
         return ChainResult(
             self.model,
-            self.observation,
+            self.observation_container,
             inference_data,
             mcmc.get_samples(),
             self.model.params,
@@ -192,62 +204,48 @@ class BayesianModelAbstract(ABC):
 
 
 class BayesianModel(BayesianModelAbstract):
-    """
-    Class to fit a model to a given observation using a Bayesian approach.
-    """
-
-    def __init__(self, model, observation, background_model: BackgroundModel = None, sparsify_matrix: bool = False):
+    def __init__(
+        self,
+        model,
+        observations: list[ObsConfiguration] | dict[str, ObsConfiguration],
+        background_model: BackgroundModel = None,
+        sparsify_matrix: bool = False,
+    ):
         super().__init__(model)
-        self.observation = observation
+        self._observations = observations
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
+        self.background_model = background_model
         self.sparse = sparsify_matrix
-        self.background_model = background_model
 
-    def numpyro_model(self, prior_distributions: HaikuDict[Distribution]) -> Callable:
+    @property
+    def observation_container(self) -> dict[str, ObsConfiguration]:
         """
-        Build the numpyro model for the Bayesian fit. It returns a callable which can be used
-        to fit the model using numpyro's various samplers.
-
-        Parameters:
-            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
+        The observations used in the fit as a dictionary of observations.
         """
 
-        def model(observed=True):
-            prior_params = build_prior(prior_distributions)
-            obs_model = build_numpyro_model(self.observation, self.model, self.background_model, sparse=self.sparse)
-            obs_model(prior_params, observed=observed)
+        if isinstance(self._observations, dict):
+            return self._observations
 
-        return model
+        elif isinstance(self._observations, list):
+            return {f"Data_{i}": obs for i, obs in enumerate(self._observations)}
 
+        elif isinstance(self._observations, ObsConfiguration):
+            return {"Data": self._observations}
 
-"""
-class MultipleObservationMCMC(BayesianModelAbstract):
-
-    def __init__(self, model, observations, background_model: BackgroundModel = None):
-
-        super().__init__(model)
-        self.observations = observations
-        self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
-        self.background_model = background_model
+        else:
+            raise ValueError(f"Invalid type for observations : {type(self._observations)}")
 
     def numpyro_model(self, prior_distributions: HaikuDict[Distribution]) -> Callable:
-
         def model(observed=True):
+            prior_params = build_prior(prior_distributions, expand_shape=(len(self.observation_container),))
 
-            prior_params = build_prior(prior_distributions, expand_shape=(len(self.observations),))
-
-            for i, (key, observation) in enumerate(self.observations.items()):
-
+            for i, (key, observation) in enumerate(self.observation_container.items()):
                 params = tree_map(lambda x: x[i], prior_params)
 
                 obs_model = build_numpyro_model(
-                    observation,
-                    self.model,
-                    self.background_model,
-                    name=key + '_'
+                    observation, self.model, self.background_model, name=key + "_", sparse=self.sparse
                 )
 
                 obs_model(params, observed=observed)
 
         return model
-"""

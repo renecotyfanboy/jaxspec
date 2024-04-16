@@ -16,7 +16,7 @@ Documentation : https://jaxspec.readthedocs.io/en/latest/
 
 ## Installation
 
-We recommend the users to start from a fresh Python 3.10 [conda environment](https://conda.io/projects/conda/en/latest/user-guide/install/index.html). 
+We recommend the users to start from a fresh Python 3.10 [conda environment](https://conda.io/projects/conda/en/latest/user-guide/install/index.html).
 
 ```
 conda create -n jaxspec python=3.10
