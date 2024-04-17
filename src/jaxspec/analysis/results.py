@@ -117,14 +117,11 @@ class ChainResult:
     """
 
     # TODO : Add type hints
-    # TODO : Add proper separation between params and samples, cf from haiku and numpyro
-    # TODO : Remove samples and directly use the inference_data
     def __init__(
         self,
         model: SpectralModel,
         obsconf: ObsConfiguration | dict[str, ObsConfiguration],
         inference_data: az.InferenceData,
-        samples,
         structure: Mapping[K, V],
         background_model: BackgroundModel = None,
     ):
@@ -132,7 +129,6 @@ class ChainResult:
         self._structure = structure
         self.inference_data = inference_data
         self.obsconfs = {"Observation": obsconf} if isinstance(obsconf, ObsConfiguration) else obsconf
-        self.samples = samples
         self.background_model = background_model
         self._structure = structure
 
@@ -244,7 +240,7 @@ class ChainResult:
 
         return value
 
-    def chain(self, name: str, parameters: Literal["model", "bkg"] = "model") -> Chain:
+    def to_chain(self, name: str, parameters: Literal["model", "bkg"] = "model") -> Chain:
         """
         Return a ChainConsumer Chain object from the posterior distribution of the parameters.
 
@@ -269,9 +265,31 @@ class ChainResult:
         return chain
 
     @property
-    def params(self):
+    def samples_haiku(self):
         """
-        Haiku-like structure for the parameters
+        Haiku-like structure for the samples e.g.
+
+        ```
+        {
+            'powerlaw_1' :
+            {
+                'alpha': ...,
+                'amplitude': ...
+            },
+
+            'blackbody_1':
+            {
+                'kT': ...,
+                'norm': ...
+            },
+
+            'tbabs_1':
+            {
+                'nH': ...
+            }
+        }
+        ```
+
         """
 
         params = {}
@@ -283,10 +301,30 @@ class ChainResult:
 
         return params
 
+    @property
+    def samples_flat(self):
+        """
+        Flat structure for the samples e.g.
+
+        ```
+        {
+            'powerlaw_1_alpha': ...,
+            'powerlaw_1_amplitude': ...,
+            'blackbody_1_kT': ...,
+            'blackbody_1_norm': ...,
+            'tbabs_1_nH': ...,
+        }
+        ```
+        """
+        var_names = [f"{m}_{n}" for m, n, _ in traverse(self._structure)]
+        posterior = az.extract(self.inference_data, var_names=var_names)
+        return {key: posterior[key].data for key in var_names}
+
     def plot_ppc(
         self,
         percentile: Tuple[int, int] = (14, 86),
-        x_units: Literal["keV", "Angstrom"] = "keV",
+        x_units: str | u.Unit = "keV",
+        y_type: Literal["counts", "countrate", "photon_flux", "photon_flux_density"] = "photon_flux_density",
     ) -> plt.Figure:
         r"""
         Plot the posterior predictive distribution of the model. It also features a residual plot, defined using the
@@ -297,17 +335,35 @@ class ChainResult:
 
         Parameters:
             percentile: The percentile of the posterior predictive distribution to plot.
+            x_units: The units of the x-axis. It can be either a string (parsable by astropy.units) or an astropy unit.
+            It must be homogeneous to either a length, a frequency or an energy.
+            y_type: The type of the y-axis. It can be either "counts", "countrate", "photon_flux" or "photon_flux_density".
 
         Returns:
-            The matplotlib two panel figure.
+            The matplotlib figure.
         """
 
         obsconf_container = self.obsconfs
+        x_units = u.Unit(x_units)
+
+        match y_type:
+            case "counts":
+                y_units = u.photon
+            case "countrate":
+                y_units = u.photon / u.s
+            case "photon_flux":
+                y_units = u.photon / u.cm**2 / u.s
+            case "photon_flux_density":
+                y_units = u.photon / u.cm**2 / u.s / x_units
+            case _:
+                raise ValueError(
+                    f"Unknown y_type: {y_type}. Must be 'counts', 'countrate', 'photon_flux' or 'photon_flux_density'"
+                )
 
         color = (0.15, 0.25, 0.45)
 
         with plt.style.context("default"):
-            # Note to Simon : do not change obsconf.out_energies[1] - obsconf.out_energies[0] to
+            # Note to Simon : do not change xbins[1] - xbins[0] to
             # np.diff, you already did this twice and forgot that it does not work since diff keeps the dimensions
             # and enable weird broadcasting that makes the plot fail
 
@@ -329,28 +385,51 @@ class ChainResult:
                     else az.extract(self.inference_data, var_names=f"{name}_bkg", group="posterior_predictive").values.T
                 )
 
+                xbins = obsconf.out_energies * u.keV
+                xbins = xbins.to(x_units, u.spectral())
+
                 # This compute the total effective area within all bins
-                mid_bins_arf = obsconf.in_energies.mean(axis=0)
-                e_grid = np.linspace(*obsconf.out_energies, 10)
+                # This is a bit weird since the following computation is equivalent to ignoring the RMF
+                exposure = obsconf.exposure.data * u.s
+                mid_bins_arf = obsconf.in_energies.mean(axis=0) * u.keV
+                mid_bins_arf = mid_bins_arf.to(x_units, u.spectral())
+                e_grid = np.linspace(*xbins, 10)
                 interpolated_arf = np.interp(e_grid, mid_bins_arf, obsconf.area)
-                integrated_arf = trapezoid(interpolated_arf, x=e_grid, axis=0) / (
-                    obsconf.out_energies[1] - obsconf.out_energies[0]
+                integrated_arf = (
+                    trapezoid(interpolated_arf, x=e_grid, axis=0)
+                    / (
+                        np.abs(xbins[1] - xbins[0])  # Must fold in abs because some units reverse the ordering of the bins
+                    )
+                    * u.cm**2
                 )
 
-                if obsconf.out_energies[0][0] < 1 < obsconf.out_energies[1][-1]:
-                    xticks = [np.floor(obsconf.out_energies[0][0] * 10) / 10, 1.0, np.floor(obsconf.out_energies[1][-1])]
+                """
+                if xbins[0][0] < 1 < xbins[1][-1]:
+                    xticks = [np.floor(xbins[0][0] * 10) / 10, 1.0, np.floor(xbins[1][-1])]
                 else:
-                    xticks = [np.floor(obsconf.out_energies[0][0] * 10) / 10, np.floor(obsconf.out_energies[1][-1])]
+                    xticks = [np.floor(xbins[0][0] * 10) / 10, np.floor(xbins[1][-1])]
+                """
 
-                denominator = (obsconf.out_energies[1] - obsconf.out_energies[0]) * obsconf.exposure.data * integrated_arf
+                match y_type:
+                    case "counts":
+                        denominator = 1
+                    case "countrate":
+                        denominator = exposure
+                    case "photon_flux":
+                        denominator = integrated_arf * exposure
+                    case "photon_flux_density":
+                        denominator = (xbins[1] - xbins[0]) * integrated_arf * exposure
+
+                y_samples = (count * u.photon / denominator).to(y_units)
+                y_observed = (obsconf.folded_counts.data * u.photon / denominator).to(y_units)
 
                 # Use the helper function to plot the data and posterior predictive
                 legend_plots += _plot_binned_samples_with_error(
                     ax[0],
-                    obsconf.out_energies,
-                    y_samples=count,
-                    y_observed=obsconf.folded_counts.data,
-                    denominator=denominator,
+                    xbins.value,
+                    y_samples=y_samples.value,
+                    y_observed=y_observed.value,
+                    denominator=np.ones_like(y_observed).value,
                     color=color,
                     percentile=percentile,
                 )
@@ -359,12 +438,15 @@ class ChainResult:
 
                 if self.background_model is not None:
                     # We plot the background only if it is included in the fit, i.e. by subtracting
+                    ratio = obsconf.folded_backratio.data
+                    y_samples_bkg = (bkg_count * u.photon / (denominator * ratio)).to(y_units)
+                    y_observed_bkg = (obsconf.folded_background.data * u.photon / (denominator * ratio)).to(y_units)
                     legend_plots += _plot_binned_samples_with_error(
                         ax[0],
-                        obsconf.out_energies,
-                        y_observed=obsconf.folded_background.data,
-                        y_samples=bkg_count,
-                        denominator=denominator * obsconf.folded_backratio.data,
+                        xbins.value,
+                        y_samples=y_samples_bkg.value,
+                        y_observed=y_observed_bkg.value,
+                        denominator=np.ones_like(y_observed).value,
                         color=(0.26787604, 0.60085972, 0.63302651),
                         percentile=percentile,
                     )
@@ -378,7 +460,7 @@ class ChainResult:
                 )
 
                 ax[1].fill_between(
-                    list(obsconf.out_energies[0]) + [obsconf.out_energies[1][-1]],
+                    list(xbins.value[0]) + [xbins.value[1][-1]],
                     list(residuals[0]) + [residuals[0][-1]],
                     list(residuals[1]) + [residuals[1][-1]],
                     alpha=0.3,
@@ -389,29 +471,38 @@ class ChainResult:
                 max_residuals = np.max(np.abs(residuals))
 
                 ax[0].loglog()
-
                 ax[1].set_ylim(-max(3.5, max_residuals), +max(3.5, max_residuals))
 
                 if plot_ylabels_once:
-                    ax[0].set_ylabel("Folded spectrum\n" + r"[Counts s$^{-1}$ keV$^{-1}$ cm$^{-2}$]")
+                    ax[0].set_ylabel(f"Folded spectrum\n [{y_units:latex_inline}]")
                     ax[1].set_ylabel("Residuals \n" + r"[$\sigma$]")
                     plot_ylabels_once = False
 
-                ax[1].set_xlabel("Energy \n[keV]")
+                match getattr(x_units, "physical_type"):
+                    case "length":
+                        ax[1].set_xlabel(f"Wavelength \n[{x_units:latex_inline}]")
+                    case "energy":
+                        ax[1].set_xlabel(f"Energy \n[{x_units:latex_inline}]")
+                    case "frequency":
+                        ax[1].set_xlabel(f"Frequency \n[{x_units:latex_inline}]")
+                    case _:
+                        RuntimeError(
+                            f"Unknown physical type for x_units: {x_units}. " f"Must be 'length', 'energy' or 'frequency'"
+                        )
 
                 ax[1].axhline(0, color=color, ls="--")
                 ax[1].axhline(-3, color=color, ls=":")
                 ax[1].axhline(3, color=color, ls=":")
 
-                ax[1].set_xticks(xticks, labels=xticks)
+                # ax[1].set_xticks(xticks, labels=xticks)
+                # ax[1].xaxis.set_minor_formatter(ticker.LogFormatter(minor_thresholds=(np.inf, np.inf)))
                 ax[1].set_yticks([-3, 0, 3], labels=[-3, 0, 3])
                 ax[1].set_yticks(range(-3, 4), minor=True)
 
-                ax[0].set_xlim(obsconf.out_energies.min(), obsconf.out_energies.max())
+                ax[0].set_xlim(xbins.value.min(), xbins.value.max())
 
                 ax[0].legend(legend_plots, legend_labels)
                 fig.suptitle(self.model.to_string())
-
                 fig.align_ylabels()
                 plt.subplots_adjust(hspace=0.0)
                 fig.tight_layout()
@@ -424,7 +515,7 @@ class ChainResult:
         """
 
         consumer = ChainConsumer()
-        consumer.add_chain(self.chain(self.model.to_string()))
+        consumer.add_chain(self.to_chain(self.model.to_string()))
 
         return consumer.analysis.get_latex_table(caption="Results of the fit", label="tab:results")
 
@@ -444,7 +535,7 @@ class ChainResult:
         """
 
         consumer = ChainConsumer()
-        consumer.add_chain(self.chain(self.model.to_string()))
+        consumer.add_chain(self.to_chain(self.model.to_string()))
         consumer.set_plot_config(config)
 
         # Context for default mpl style

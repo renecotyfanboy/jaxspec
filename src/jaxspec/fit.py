@@ -197,7 +197,6 @@ class BayesianModelAbstract(ABC):
             self.model,
             self.observation_container,
             inference_data,
-            mcmc.get_samples(),
             self.model.params,
             background_model=self.background_model,
         )
