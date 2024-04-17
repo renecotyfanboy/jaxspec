@@ -104,6 +104,7 @@ def fakeit(
     model: SpectralModel,
     parameters: Mapping[K, V],
     rng_key: int = 0,
+    sparsify_matrix=False,
 ) -> ArrayLike | list[ArrayLike]:
     """
     This function is a convenience function that allows to simulate spectra from a given model and a set of parameters.
@@ -122,7 +123,9 @@ def fakeit(
     fakeits = []
 
     for i, instrument in enumerate(instruments):
-        transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, instrument)(par)))
+        transformed_model = hk.without_apply_rng(
+            hk.transform(lambda par: CountForwardModel(model, instrument, sparse=sparsify_matrix)(par))
+        )
 
         def obs_model(p):
             return transformed_model.apply(None, p)
@@ -160,6 +163,7 @@ def fakeit_for_multiple_parameters(
     parameters: Mapping[K, V],
     rng_key: int = 0,
     apply_stat=True,
+    sparsify_matrix=False,
 ):
     """
     This function is a convenience function that allows to simulate spectra multiple spectra from a given model and a
@@ -179,7 +183,9 @@ def fakeit_for_multiple_parameters(
     fakeits = []
 
     for i, obs in enumerate(instruments):
-        transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, obs)(par)))
+        transformed_model = hk.without_apply_rng(
+            hk.transform(lambda par: CountForwardModel(model, obs, sparse=sparsify_matrix)(par))
+        )
 
         @jax.jit
         @jax.vmap

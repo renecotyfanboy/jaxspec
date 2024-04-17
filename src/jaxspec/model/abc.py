@@ -309,7 +309,7 @@ class SpectralModel:
         if component.type == "additive":
 
             def lam_func(e):
-                return component().continuum(e) + component().emission_lines(e, e + 1)[0]
+                return component(**kwargs).continuum(e) + component(**kwargs).emission_lines(e, e + 1)[0]
 
         elif component.type == "multiplicative":
 
@@ -326,7 +326,7 @@ class SpectralModel:
             "component_type": component.type,
             "name": component.__name__.lower(),
             "component": component,
-            "params": hk.transform(lam_func).init(None, jnp.ones(1)),
+            # "params": hk.transform(lam_func).init(None, jnp.ones(1)),
             "fine_structure": False,
             "kwargs": kwargs,
             "depth": 0,
@@ -454,7 +454,7 @@ class ComponentMetaClass(type(hk.Module)):
     syntax while style enabling the components to be used as haiku modules.
     """
 
-    def __call__(self, **kwargs):
+    def __call__(self, **kwargs) -> SpectralModel:
         """
         This method enable to use model components as haiku modules when folded in a haiku transform
         function and also to instantiate them as SpectralModel when out of a haiku transform
@@ -476,3 +476,51 @@ class ModelComponent(hk.Module, ABC, metaclass=ComponentMetaClass):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+
+class AdditiveComponent(ModelComponent, ABC):
+    type = "additive"
+
+    def continuum(self, energy):
+        """
+        Method for computing the continuum associated to the model.
+        By default, this is set to 0, which means that the model has no continuum.
+        This should be overloaded by the user if the model has a continuum.
+        """
+
+        return jnp.zeros_like(energy)
+
+    def emission_lines(self, e_min, e_max) -> (jax.Array, jax.Array):
+        """
+        Method for computing the fine structure of an additive model between two energies.
+        By default, this is set to 0, which means that the model has no emission lines.
+        This should be overloaded by the user if the model has a fine structure.
+        """
+
+        return jnp.zeros_like(e_min), (e_min + e_max) / 2
+
+    '''
+    def integral(self, e_min, e_max):
+        r"""
+        Method for integrating an additive model between two energies. It relies on
+        double exponential quadrature for finite intervals to compute an approximation
+        of the integral of a model.
+
+        references
+        ----------
+        * $Takahasi and Mori (1974) <https://ems.press/journals/prims/articles/2686>$_
+        * $Mori and Sugihara (2001) <https://doi.org/10.1016/S0377-0427(00)00501-X>$_
+        * $Tanh-sinh quadrature <https://en.wikipedia.org/wiki/Tanh-sinh_quadrature>$_ from Wikipedia
+
+        """
+
+        t = jnp.linspace(-4, 4, 71) # The number of points used is hardcoded and this is not ideal
+        # Quadrature nodes as defined in reference
+        phi = jnp.tanh(jnp.pi / 2 * jnp.sinh(t))
+        dphi = jnp.pi / 2 * jnp.cosh(t) * (1 / jnp.cosh(jnp.pi / 2 * jnp.sinh(t)) ** 2)
+        # Change of variable to turn the integral from E_min to E_max into an integral from -1 to 1
+        x = (e_max - e_min) / 2 * phi + (e_max + e_min) / 2
+        dx = (e_max - e_min) / 2 * dphi
+
+        return jnp.trapz(self(x) * dx, x=t)
+    '''

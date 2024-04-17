@@ -97,7 +97,7 @@ class CountForwardModel(hk.Module):
         Compute the count functions for a given observation.
         """
 
-        expected_counts = self.transfer_matrix @ self.model(parameters, *self.energies)
+        expected_counts = self.transfer_matrix @ self.model.photon_flux(parameters, *self.energies)
 
         return jnp.clip(expected_counts, a_min=1e-6)
 
