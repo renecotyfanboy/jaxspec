@@ -323,7 +323,7 @@ class ChainResult:
     def plot_ppc(
         self,
         percentile: Tuple[int, int] = (14, 86),
-        x_units: str | u.Unit = "keV",
+        x_unit: str | u.Unit = "keV",
         y_type: Literal["counts", "countrate", "photon_flux", "photon_flux_density"] = "photon_flux_density",
     ) -> plt.Figure:
         r"""
@@ -335,7 +335,7 @@ class ChainResult:
 
         Parameters:
             percentile: The percentile of the posterior predictive distribution to plot.
-            x_units: The units of the x-axis. It can be either a string (parsable by astropy.units) or an astropy unit.
+            x_unit: The units of the x-axis. It can be either a string (parsable by astropy.units) or an astropy unit.
             It must be homogeneous to either a length, a frequency or an energy.
             y_type: The type of the y-axis. It can be either "counts", "countrate", "photon_flux" or "photon_flux_density".
 
@@ -344,7 +344,7 @@ class ChainResult:
         """
 
         obsconf_container = self.obsconfs
-        x_units = u.Unit(x_units)
+        x_unit = u.Unit(x_unit)
 
         match y_type:
             case "counts":
@@ -354,7 +354,7 @@ class ChainResult:
             case "photon_flux":
                 y_units = u.photon / u.cm**2 / u.s
             case "photon_flux_density":
-                y_units = u.photon / u.cm**2 / u.s / x_units
+                y_units = u.photon / u.cm**2 / u.s / x_unit
             case _:
                 raise ValueError(
                     f"Unknown y_type: {y_type}. Must be 'counts', 'countrate', 'photon_flux' or 'photon_flux_density'"
@@ -386,13 +386,13 @@ class ChainResult:
                 )
 
                 xbins = obsconf.out_energies * u.keV
-                xbins = xbins.to(x_units, u.spectral())
+                xbins = xbins.to(x_unit, u.spectral())
 
                 # This compute the total effective area within all bins
                 # This is a bit weird since the following computation is equivalent to ignoring the RMF
                 exposure = obsconf.exposure.data * u.s
                 mid_bins_arf = obsconf.in_energies.mean(axis=0) * u.keV
-                mid_bins_arf = mid_bins_arf.to(x_units, u.spectral())
+                mid_bins_arf = mid_bins_arf.to(x_unit, u.spectral())
                 e_grid = np.linspace(*xbins, 10)
                 interpolated_arf = np.interp(e_grid, mid_bins_arf, obsconf.area)
                 integrated_arf = (
@@ -478,16 +478,16 @@ class ChainResult:
                     ax[1].set_ylabel("Residuals \n" + r"[$\sigma$]")
                     plot_ylabels_once = False
 
-                match getattr(x_units, "physical_type"):
+                match getattr(x_unit, "physical_type"):
                     case "length":
-                        ax[1].set_xlabel(f"Wavelength \n[{x_units:latex_inline}]")
+                        ax[1].set_xlabel(f"Wavelength \n[{x_unit:latex_inline}]")
                     case "energy":
-                        ax[1].set_xlabel(f"Energy \n[{x_units:latex_inline}]")
+                        ax[1].set_xlabel(f"Energy \n[{x_unit:latex_inline}]")
                     case "frequency":
-                        ax[1].set_xlabel(f"Frequency \n[{x_units:latex_inline}]")
+                        ax[1].set_xlabel(f"Frequency \n[{x_unit:latex_inline}]")
                     case _:
                         RuntimeError(
-                            f"Unknown physical type for x_units: {x_units}. " f"Must be 'length', 'energy' or 'frequency'"
+                            f"Unknown physical type for x_units: {x_unit}. " f"Must be 'length', 'energy' or 'frequency'"
                         )
 
                 ax[1].axhline(0, color=color, ls="--")

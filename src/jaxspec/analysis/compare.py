@@ -16,6 +16,6 @@ def plot_corner_comparison(obs_dict: Dict[str, ChainResult], **kwargs):
     c = ChainConsumer()
 
     for name, obs in obs_dict.items():
-        c.add_chain(obs.chain(name))
+        c.add_chain(obs.to_chain(name))
 
     return c.plotter.plot(**kwargs)
