@@ -7,6 +7,7 @@ from typing import Callable, TypeVar
 from abc import ABC, abstractmethod
 from jax import random
 from jax.tree_util import tree_map
+from jax.flatten_util import ravel_pytree
 from jax.experimental.sparse import BCSR
 from .analysis.results import ChainResult
 from .model.abc import SpectralModel
@@ -17,6 +18,9 @@ from numpyro.distributions import Distribution, TransformedDistribution
 from numpyro.distributions import Poisson
 from jax.typing import ArrayLike
 from numpyro.infer.reparam import TransformReparam
+from numpyro.infer.util import initialize_model
+from jax.random import PRNGKey
+import jaxopt
 
 
 T = TypeVar("T")
@@ -54,7 +58,7 @@ def build_numpyro_model(
 
         if (getattr(obs, "folded_background", None) is not None) and (background_model is not None):
             bkg_countrate = background_model.numpyro_model(
-                obs.out_energies, obs.folded_background.data, name=name + "bkg", observed=observed
+                obs.out_energies, obs.folded_background.data, name="bkg_" + name, observed=observed
             )
         elif (getattr(obs, "folded_background", None) is None) and (background_model is not None):
             raise ValueError("Trying to fit a background model but no background is linked to this observation")
@@ -66,14 +70,33 @@ def build_numpyro_model(
         countrate = obs_model(prior_params)
 
         # This is the case where we fit a model to a TOTAL spectrum as defined in OGIP standard
-        with numpyro.plate(name + "obs_plate", len(obs.folded_counts)):
+        with numpyro.plate("obs_plate_" + name, len(obs.folded_counts)):
             numpyro.sample(
-                name + "obs",
+                "obs_" + name,
                 Poisson(countrate + bkg_countrate / obs.folded_backratio.data),
                 obs=obs.folded_counts.data if observed else None,
             )
 
     return numpro_model
+
+
+def filter_inference_data(inference_data, observation_container, background_model=None) -> az.InferenceData:
+    predictive_parameters = []
+
+    for key, value in observation_container.items():
+        if background_model is not None:
+            predictive_parameters.append(f"obs_{key}")
+            predictive_parameters.append(f"bkg_{key}")
+        else:
+            predictive_parameters.append(f"obs_{key}")
+
+    inference_data.posterior_predictive = inference_data.posterior_predictive[predictive_parameters]
+
+    parameters = [x for x in inference_data.posterior.keys() if not x.endswith("_base")]
+    inference_data.posterior = inference_data.posterior[parameters]
+    inference_data.prior = inference_data.prior[parameters]
+
+    return inference_data
 
 
 class CountForwardModel(hk.Module):
@@ -102,7 +125,7 @@ class CountForwardModel(hk.Module):
         return jnp.clip(expected_counts, a_min=1e-6)
 
 
-class BayesianModelAbstract(ABC):
+class ModelFitter(ABC):
     """
     Abstract class to fit a model to a given set of observation.
     """
@@ -115,13 +138,68 @@ class BayesianModelAbstract(ABC):
     """The background model."""
     pars: dict
 
-    def __init__(self, model: SpectralModel):
+    def __init__(
+        self,
+        model,
+        observations: list[ObsConfiguration] | dict[str, ObsConfiguration],
+        background_model: BackgroundModel = None,
+        sparsify_matrix: bool = False,
+    ):
         self.model = model
+        self._observations = observations
+        self.background_model = background_model
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
+        self.sparse = sparsify_matrix
 
     @property
+    def observation_container(self) -> dict[str, ObsConfiguration]:
+        """
+        The observations used in the fit as a dictionary of observations.
+        """
+
+        if isinstance(self._observations, dict):
+            return self._observations
+
+        elif isinstance(self._observations, list):
+            return {f"data_{i}": obs for i, obs in enumerate(self._observations)}
+
+        elif isinstance(self._observations, ObsConfiguration):
+            return {"data": self._observations}
+
+        else:
+            raise ValueError(f"Invalid type for observations : {type(self._observations)}")
+
+    def numpyro_model(self, prior_distributions: HaikuDict[Distribution]) -> Callable:
+        def model(observed=True):
+            prior_params = build_prior(prior_distributions, expand_shape=(len(self.observation_container),))
+
+            for i, (key, observation) in enumerate(self.observation_container.items()):
+                params = tree_map(lambda x: x[i], prior_params)
+
+                obs_model = build_numpyro_model(observation, self.model, self.background_model, name=key, sparse=self.sparse)
+
+                obs_model(params, observed=observed)
+
+        return model
+
     @abstractmethod
-    def observation_container(self): ...
+    def fit(self, *args, **kwargs) -> ChainResult:
+        """
+        Fit the model to the data.
+
+        Parameters:
+            *args: additional arguments to pass to the fit method.
+            **kwargs: additional keyword arguments to pass to the fit method.
+
+        Returns:
+            A [`ChainResult`][jaxspec.analysis.results.ChainResult] instance containing the results of the fit.
+        """
+
+
+class BayesianModel(ModelFitter):
+    """
+    Abstract class to fit a model to a given set of observation.
+    """
 
     def fit(
         self,
@@ -178,20 +256,7 @@ class BayesianModelAbstract(ABC):
         prior = Predictive(bayesian_model, num_samples=num_samples)(keys[2], observed=False)
         inference_data = az.from_numpyro(mcmc, prior=prior, posterior_predictive=posterior_predictive)
 
-        predictive_parameters = []
-
-        for key, value in self.observation_container.items():
-            if self.background_model is not None:
-                predictive_parameters.append(f"{key}_obs")
-                predictive_parameters.append(f"{key}_bkg")
-            else:
-                predictive_parameters.append(f"{key}_obs")
-
-        inference_data.posterior_predictive = inference_data.posterior_predictive[predictive_parameters]
-
-        parameters = [x for x in inference_data.posterior.keys() if not x.endswith("_base")]
-        inference_data.posterior = inference_data.posterior[parameters]
-        inference_data.prior = inference_data.prior[parameters]
+        inference_data = filter_inference_data(inference_data, self.observation_container, self.background_model)
 
         return ChainResult(
             self.model,
@@ -202,49 +267,73 @@ class BayesianModelAbstract(ABC):
         )
 
 
-class BayesianModel(BayesianModelAbstract):
-    def __init__(
+class MinimizationModel(ModelFitter):
+    def fit(
         self,
-        model,
-        observations: list[ObsConfiguration] | dict[str, ObsConfiguration],
-        background_model: BackgroundModel = None,
-        sparsify_matrix: bool = False,
-    ):
-        super().__init__(model)
-        self._observations = observations
-        self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
-        self.background_model = background_model
-        self.sparse = sparsify_matrix
-
-    @property
-    def observation_container(self) -> dict[str, ObsConfiguration]:
+        prior_distributions: HaikuDict[Distribution],
+        rng_key: int = 0,
+        num_iter_max: int = 10_000,
+        num_samples: int = 1_000,
+    ) -> ChainResult:
         """
-        The observations used in the fit as a dictionary of observations.
+        Fit the model to the data using L-BFGS algorithm.
+
+        Parameters:
+            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
+            rng_key: the random key used to initialize the sampler.
+            num_iter_max: the maximum number of iteration in the minimization algorithm.
+            num_samples: the number of sample to draw from the best-fit covariance.
+
+        Returns:
+            A [`ChainResult`][jaxspec.analysis.results.ChainResult] instance containing the results of the fit.
         """
 
-        if isinstance(self._observations, dict):
-            return self._observations
+        bayesian_model = self.numpyro_model(prior_distributions)
 
-        elif isinstance(self._observations, list):
-            return {f"Data_{i}": obs for i, obs in enumerate(self._observations)}
+        param_info, potential_fn, postprocess_fn, *_ = initialize_model(
+            PRNGKey(0),
+            bayesian_model,
+            model_args=tuple(),
+            dynamic_args=True,  # <- this is important!
+        )
 
-        elif isinstance(self._observations, ObsConfiguration):
-            return {"Data": self._observations}
+        # get negative log-density from the potential function
+        @jax.jit
+        def nll_fn(position):
+            func = potential_fn()
+            return func(position)
 
-        else:
-            raise ValueError(f"Invalid type for observations : {type(self._observations)}")
+        solver = jaxopt.LBFGS(fun=nll_fn, maxiter=10_000)
+        params, state = solver.run(param_info.z)
+        keys = random.split(random.PRNGKey(rng_key), 3)
 
-    def numpyro_model(self, prior_distributions: HaikuDict[Distribution]) -> Callable:
-        def model(observed=True):
-            prior_params = build_prior(prior_distributions, expand_shape=(len(self.observation_container),))
+        value_flat, unflatten_fun = ravel_pytree(params)
+        covariance = jnp.linalg.inv(jax.hessian(lambda p: nll_fn(unflatten_fun(p)))(value_flat))
 
-            for i, (key, observation) in enumerate(self.observation_container.items()):
-                params = tree_map(lambda x: x[i], prior_params)
+        samples_flat = jax.random.multivariate_normal(keys[0], value_flat, covariance, shape=(num_samples,))
+        samples = jax.vmap(unflatten_fun)(samples_flat.block_until_ready())
+        posterior_samples = postprocess_fn()(samples)
 
-                obs_model = build_numpyro_model(
-                    observation, self.model, self.background_model, name=key + "_", sparse=self.sparse
-                )
+        posterior_predictive = Predictive(bayesian_model, posterior_samples)(keys[1], observed=False)
+        prior = Predictive(bayesian_model, num_samples=num_samples)(keys[2], observed=False)
+        log_likelihood = numpyro.infer.log_likelihood(bayesian_model, posterior_samples)
 
-                obs_model(params, observed=observed)
+        def sanitize_chain(chain):
+            return tree_map(lambda x: x[None, ...], chain)
 
-        return model
+        inference_data = az.from_dict(
+            sanitize_chain(posterior_samples),
+            prior=sanitize_chain(prior),
+            posterior_predictive=sanitize_chain(posterior_predictive),
+            log_likelihood=sanitize_chain(log_likelihood),
+        )
+
+        inference_data = filter_inference_data(inference_data, self.observation_container, self.background_model)
+
+        return ChainResult(
+            self.model,
+            self.observation_container,
+            inference_data,
+            self.model.params,
+            background_model=self.background_model,
+        )

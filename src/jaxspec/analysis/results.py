@@ -1,5 +1,6 @@
 import arviz as az
 import numpy as np
+import xarray as xr
 import matplotlib.pyplot as plt
 from ..data import ObsConfiguration
 from ..model.abc import SpectralModel
@@ -320,6 +321,15 @@ class ChainResult:
         posterior = az.extract(self.inference_data, var_names=var_names)
         return {key: posterior[key].data for key in var_names}
 
+    @property
+    def likelihood(self) -> xr.Dataset:
+        """
+        Return the likelihood of each observation
+        """
+        log_likelihood = az.extract(self.inference_data, group="log_likelihood")
+        dimensions_to_reduce = [coord for coord in log_likelihood.coords if coord not in ["sample", "draw", "chain"]]
+        return log_likelihood.sum(dimensions_to_reduce)
+
     def plot_ppc(
         self,
         percentile: Tuple[int, int] = (14, 86),
@@ -378,11 +388,11 @@ class ChainResult:
             ):
                 legend_plots = []
                 legend_labels = []
-                count = az.extract(self.inference_data, var_names=f"{name}_obs", group="posterior_predictive").values.T
+                count = az.extract(self.inference_data, var_names=f"obs_{name}", group="posterior_predictive").values.T
                 bkg_count = (
                     None
                     if self.background_model is None
-                    else az.extract(self.inference_data, var_names=f"{name}_bkg", group="posterior_predictive").values.T
+                    else az.extract(self.inference_data, var_names=f"bkg_{name}", group="posterior_predictive").values.T
                 )
 
                 xbins = obsconf.out_energies * u.keV
