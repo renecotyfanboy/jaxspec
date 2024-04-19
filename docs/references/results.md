@@ -1,4 +1,4 @@
-::: jaxspec.analysis.results.ChainResult
+::: jaxspec.analysis.results.FitResult
     options:
       members:
         - converged
@@ -11,4 +11,3 @@
         - plot_corner
         - table
       show_root_heading: true
-      show_root_toc_entry: false

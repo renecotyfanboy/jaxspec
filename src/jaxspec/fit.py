@@ -9,7 +9,7 @@ from jax import random
 from jax.tree_util import tree_map
 from jax.flatten_util import ravel_pytree
 from jax.experimental.sparse import BCSR
-from .analysis.results import ChainResult
+from .analysis.results import FitResult
 from .model.abc import SpectralModel
 from .data import ObsConfiguration
 from .model.background import BackgroundModel
@@ -130,21 +130,22 @@ class ModelFitter(ABC):
     Abstract class to fit a model to a given set of observation.
     """
 
-    model: SpectralModel
-    """The model to fit to the data."""
-    numpyro_model: Callable
-    """The numpyro model defining the likelihood."""
-    background_model: BackgroundModel
-    """The background model."""
-    pars: dict
-
     def __init__(
         self,
-        model,
-        observations: list[ObsConfiguration] | dict[str, ObsConfiguration],
+        model: SpectralModel,
+        observations: ObsConfiguration | list[ObsConfiguration] | dict[str, ObsConfiguration],
         background_model: BackgroundModel = None,
         sparsify_matrix: bool = False,
     ):
+        """
+        Initialize the fitter.
+
+        Parameters:
+            model: the spectral model to fit.
+            observations: the observations to fit the model to.
+            background_model: the background model to fit.
+            sparsify_matrix: whether to sparsify the transfer matrix.
+        """
         self.model = model
         self._observations = observations
         self.background_model = background_model
@@ -152,7 +153,7 @@ class ModelFitter(ABC):
         self.sparse = sparsify_matrix
 
     @property
-    def observation_container(self) -> dict[str, ObsConfiguration]:
+    def _observation_container(self) -> dict[str, ObsConfiguration]:
         """
         The observations used in the fit as a dictionary of observations.
         """
@@ -170,35 +171,35 @@ class ModelFitter(ABC):
             raise ValueError(f"Invalid type for observations : {type(self._observations)}")
 
     def numpyro_model(self, prior_distributions: HaikuDict[Distribution]) -> Callable:
-        def model(observed=True):
-            prior_params = build_prior(prior_distributions, expand_shape=(len(self.observation_container),))
+        """
+        Build the numpyro model using the observed data, the prior distributions and the spectral model.
 
-            for i, (key, observation) in enumerate(self.observation_container.items()):
+        Parameters:
+            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
+
+        Returns:
+            A model function that can be used with numpyro.
+        """
+
+        def model(observed=True):
+            prior_params = build_prior(prior_distributions, expand_shape=(len(self._observation_container),))
+
+            for i, (key, observation) in enumerate(self._observation_container.items()):
                 params = tree_map(lambda x: x[i], prior_params)
 
                 obs_model = build_numpyro_model(observation, self.model, self.background_model, name=key, sparse=self.sparse)
-
                 obs_model(params, observed=observed)
 
         return model
 
     @abstractmethod
-    def fit(self, *args, **kwargs) -> ChainResult:
-        """
-        Fit the model to the data.
-
-        Parameters:
-            *args: additional arguments to pass to the fit method.
-            **kwargs: additional keyword arguments to pass to the fit method.
-
-        Returns:
-            A [`ChainResult`][jaxspec.analysis.results.ChainResult] instance containing the results of the fit.
-        """
+    def fit(self, prior_distributions: HaikuDict[Distribution], **kwargs) -> FitResult: ...
 
 
-class BayesianModel(ModelFitter):
+class BayesianFitter(ModelFitter):
     """
-    Abstract class to fit a model to a given set of observation.
+    A class to fit a model to a given set of observation using a Bayesian approach. This class uses the NUTS sampler
+    from numpyro to perform the inference on the model parameters.
     """
 
     def fit(
@@ -210,11 +211,11 @@ class BayesianModel(ModelFitter):
         num_samples: int = 1000,
         max_tree_depth: int = 10,
         target_accept_prob: float = 0.8,
-        dense_mass=False,
+        dense_mass: bool = False,
         mcmc_kwargs: dict = {},
-    ) -> ChainResult:
+    ) -> FitResult:
         """
-        Fit the model to the data using NUTS sampler from numpyro. This is the default sampler in jaxspec.
+        Fit the model to the data using NUTS sampler from numpyro.
 
         Parameters:
             prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
@@ -228,7 +229,7 @@ class BayesianModel(ModelFitter):
             mcmc_kwargs: additional arguments to pass to the MCMC sampler. See [`MCMC`][numpyro.infer.mcmc.MCMC] for more details.
 
         Returns:
-            A [`ChainResult`][jaxspec.analysis.results.ChainResult] instance containing the results of the fit.
+            A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
         """
 
         transform_dict = {}
@@ -256,25 +257,32 @@ class BayesianModel(ModelFitter):
         prior = Predictive(bayesian_model, num_samples=num_samples)(keys[2], observed=False)
         inference_data = az.from_numpyro(mcmc, prior=prior, posterior_predictive=posterior_predictive)
 
-        inference_data = filter_inference_data(inference_data, self.observation_container, self.background_model)
+        inference_data = filter_inference_data(inference_data, self._observation_container, self.background_model)
 
-        return ChainResult(
+        return FitResult(
             self.model,
-            self.observation_container,
+            self._observation_container,
             inference_data,
             self.model.params,
             background_model=self.background_model,
         )
 
 
-class MinimizationModel(ModelFitter):
+class MinimizationFitter(ModelFitter):
+    """
+    A class to fit a model to a given set of observation using a minimization algorithm. This class uses the L-BFGS
+    algorithm from jaxopt to perform the minimization on the model parameters. The uncertainties are computed using the
+    Hessian of the log-likelihood, assuming that it is a multivariate Gaussian in the unbounded space defined by
+    numpyro.
+    """
+
     def fit(
         self,
         prior_distributions: HaikuDict[Distribution],
         rng_key: int = 0,
         num_iter_max: int = 10_000,
         num_samples: int = 1_000,
-    ) -> ChainResult:
+    ) -> FitResult:
         """
         Fit the model to the data using L-BFGS algorithm.
 
@@ -285,7 +293,7 @@ class MinimizationModel(ModelFitter):
             num_samples: the number of sample to draw from the best-fit covariance.
 
         Returns:
-            A [`ChainResult`][jaxspec.analysis.results.ChainResult] instance containing the results of the fit.
+            A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
         """
 
         bayesian_model = self.numpyro_model(prior_distributions)
@@ -328,11 +336,11 @@ class MinimizationModel(ModelFitter):
             log_likelihood=sanitize_chain(log_likelihood),
         )
 
-        inference_data = filter_inference_data(inference_data, self.observation_container, self.background_model)
+        inference_data = filter_inference_data(inference_data, self._observation_container, self.background_model)
 
-        return ChainResult(
+        return FitResult(
             self.model,
-            self.observation_container,
+            self._observation_container,
             inference_data,
             self.model.params,
             background_model=self.background_model,

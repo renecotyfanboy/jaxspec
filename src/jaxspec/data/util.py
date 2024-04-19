@@ -104,7 +104,7 @@ def fakeit(
     model: SpectralModel,
     parameters: Mapping[K, V],
     rng_key: int = 0,
-    sparsify_matrix=False,
+    sparsify_matrix: bool = False,
 ) -> ArrayLike | list[ArrayLike]:
     """
     This function is a convenience function that allows to simulate spectra from a given model and a set of parameters.
@@ -117,6 +117,7 @@ def fakeit(
         model: The model to use.
         parameters: The parameters of the model.
         rng_key: The random number generator seed.
+        sparsify_matrix: Whether to sparsify the matrix or not.
     """
 
     instruments = [instrument] if isinstance(instrument, ObsConfiguration) else instrument
@@ -162,8 +163,8 @@ def fakeit_for_multiple_parameters(
     model: SpectralModel,
     parameters: Mapping[K, V],
     rng_key: int = 0,
-    apply_stat=True,
-    sparsify_matrix=False,
+    apply_stat: bool = True,
+    sparsify_matrix: bool = False,
 ):
     """
     This function is a convenience function that allows to simulate spectra multiple spectra from a given model and a
@@ -177,6 +178,7 @@ def fakeit_for_multiple_parameters(
         parameters: The parameters of the model.
         rng_key: The random number generator seed.
         apply_stat: Whether to apply Poisson statistic on the folded spectra or not.
+        sparsify_matrix: Whether to sparsify the matrix or not.
     """
 
     instruments = [instrument] if isinstance(instrument, ObsConfiguration) else instrument

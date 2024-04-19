@@ -1,9 +1,9 @@
 from typing import Dict
-from .results import ChainResult
+from .results import FitResult
 from chainconsumer import ChainConsumer
 
 
-def plot_corner_comparison(obs_dict: Dict[str, ChainResult], **kwargs):
+def plot_corner_comparison(obs_dict: Dict[str, FitResult], **kwargs):
     """
     Plot the correlation plot of parameters from different fitted observations. Observations are passed in as a
     dictionary. Each observation is named according to its key. It shall be used to compare the same model independently

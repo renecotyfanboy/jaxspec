@@ -123,9 +123,9 @@ class SpectralModel:
 
         !!! info
             This method is internally used in the inference process and should not be used directly. See
-            [`photon_flux`][jaxspec.analysis.results.ChainResult.photon_flux] to compute
+            [`photon_flux`][jaxspec.analysis.results.FitResult.photon_flux] to compute
             the photon flux associated with a set of fitted parameters in a
-            [`ChainResult`][jaxspec.analysis.results.ChainResult]
+            [`FitResult`][jaxspec.analysis.results.FitResult]
             instead.
         """
 
@@ -151,9 +151,9 @@ class SpectralModel:
 
         !!! info
             This method is internally used in the inference process and should not be used directly. See
-            [`energy_flux`](/references/results/#jaxspec.analysis.results.ChainResult.energy_flux) to compute
+            [`energy_flux`](/references/results/#jaxspec.analysis.results.FitResult.energy_flux) to compute
             the energy flux associated with a set of fitted parameters in a
-            [`ChainResult`](/references/results/#jaxspec.analysis.results.ChainResult)
+            [`FitResult`](/references/results/#jaxspec.analysis.results.FitResult)
             instead.
         """
 

@@ -93,7 +93,9 @@ plugins:
             members_order: alphabetical
             docstring_section_style: spacy
             docstring_style: google
+            show_symbol_type_heading: true
             show_symbol_type_toc: true
+            modernize_annotations: true
 #  - group:
 #      enabled: !ENV INSIDERS
 #      plugins:

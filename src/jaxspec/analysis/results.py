@@ -6,7 +6,7 @@ from ..data import ObsConfiguration
 from ..model.abc import SpectralModel
 from ..model.background import BackgroundModel
 from collections.abc import Mapping
-from typing import TypeVar, Tuple, Literal
+from typing import TypeVar, Tuple, Literal, Any
 from astropy.cosmology import Cosmology, Planck18
 import astropy.units as u
 from astropy.units import Unit
@@ -18,6 +18,10 @@ from scipy.integrate import trapezoid
 
 K = TypeVar("K")
 V = TypeVar("V")
+T = TypeVar("T")
+
+
+class HaikuDict(dict[str, dict[str, T]]): ...
 
 
 def _plot_binned_samples_with_error(
@@ -112,9 +116,9 @@ def format_parameters(parameter_name):
         return rf"${parameter}$" + module
 
 
-class ChainResult:
+class FitResult:
     """
-    This class is the container for the result of a fit using the BayesianModel class.
+    This class is the container for the result of a fit using any ModelFitter class.
     """
 
     # TODO : Add type hints
@@ -141,7 +145,7 @@ class ChainResult:
             # TODO : Store metadata about observations used in the fitting process
 
     @property
-    def converged(self):
+    def converged(self) -> bool:
         """
         Convergence of the chain as computed by the $\hat{R}$ statistic.
         """
@@ -173,7 +177,7 @@ class ChainResult:
         conversion_factor = (u.photon / u.cm**2 / u.s).to(unit)
 
         value = flux * conversion_factor
-
+        # TODO : fix this since sample doesn't exist anymore
         self.samples[rf"Photon flux ({e_min:.1f}-{e_max:.1f} keV)"] = value
 
         return value
@@ -204,6 +208,7 @@ class ChainResult:
 
         value = flux * conversion_factor
 
+        # TODO : fix this since sample doesn't exist anymore
         self.samples[rf"Energy flux ({e_min:.1f}-{e_max:.1f} keV)"] = value
 
         return value
@@ -216,7 +221,7 @@ class ChainResult:
         observer_frame: bool = True,
         cosmology: Cosmology = Planck18,
         unit: Unit = u.erg / u.s,
-    ):
+    ) -> ArrayLike:
         """
         Compute the luminosity of the source specifying its redshift. The luminosity is then added to
         the result parameters so covariance can be plotted.
@@ -237,6 +242,7 @@ class ChainResult:
 
         value = (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(unit)
 
+        # TODO : fix this since sample doesn't exist anymore
         self.samples[rf"Luminosity ({e_min:.1f}-{e_max:.1f} keV)"] = value
 
         return value
@@ -266,7 +272,7 @@ class ChainResult:
         return chain
 
     @property
-    def samples_haiku(self):
+    def samples_haiku(self) -> HaikuDict[ArrayLike]:
         """
         Haiku-like structure for the samples e.g.
 
@@ -303,7 +309,7 @@ class ChainResult:
         return params
 
     @property
-    def samples_flat(self):
+    def samples_flat(self) -> dict[str, ArrayLike]:
         """
         Flat structure for the samples e.g.
 
@@ -345,8 +351,7 @@ class ChainResult:
 
         Parameters:
             percentile: The percentile of the posterior predictive distribution to plot.
-            x_unit: The units of the x-axis. It can be either a string (parsable by astropy.units) or an astropy unit.
-            It must be homogeneous to either a length, a frequency or an energy.
+            x_unit: The units of the x-axis. It can be either a string (parsable by astropy.units) or an astropy unit. It must be homogeneous to either a length, a frequency or an energy.
             y_type: The type of the y-axis. It can be either "counts", "countrate", "photon_flux" or "photon_flux_density".
 
         Returns:
@@ -532,15 +537,13 @@ class ChainResult:
     def plot_corner(
         self,
         config: PlotConfig = PlotConfig(usetex=False, summarise=False, label_font_size=6),
-        style="default",
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> plt.Figure:
         """
         Plot the corner plot of the posterior distribution of the parameters. This method uses the ChainConsumer.
 
         Parameters:
             config: The configuration of the plot.
-            style: The matplotlib style of the plot.
             **kwargs: Additional arguments passed to ChainConsumer.plotter.plot.
         """
 
@@ -549,5 +552,5 @@ class ChainResult:
         consumer.set_plot_config(config)
 
         # Context for default mpl style
-        with plt.style.context(style):
+        with plt.style.context("default"):
             return consumer.plotter.plot(**kwargs)
