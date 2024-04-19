@@ -16,6 +16,9 @@ nav:
     - Add a background : examples/background.md
     - Work with arviz : examples/result_analysis.ipynb
     - Build a custom model : examples/build_custom_model.ipynb
+  - Models:
+      - models/index.md
+      - APEC: models/apec.md
   - API Reference:
     - Spectral model base: references/model.md
     - Additive models: references/additive.md
@@ -24,6 +27,7 @@ nav:
     - Data containers: references/data.md
     - Fitting: references/fitting.md
     - Result containers: references/results.md
+    - Abundance: references/abundance.md
     - Integration: references/integrate.md
   - FAQ:
       - faq/index.md
@@ -89,7 +93,9 @@ plugins:
             members_order: alphabetical
             docstring_section_style: spacy
             docstring_style: google
+            show_symbol_type_heading: true
             show_symbol_type_toc: true
+            modernize_annotations: true
 #  - group:
 #      enabled: !ENV INSIDERS
 #      plugins:

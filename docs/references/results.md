@@ -1,12 +1,13 @@
-::: jaxspec.analysis.results.ChainResult
+::: jaxspec.analysis.results.FitResult
     options:
       members:
+        - converged
+        - samples_haiku
+        - samples_flat
         - photon_flux
         - energy_flux
         - luminosity
         - plot_ppc
         - plot_corner
         - table
-        - chain
       show_root_heading: true
-      show_root_toc_entry: false

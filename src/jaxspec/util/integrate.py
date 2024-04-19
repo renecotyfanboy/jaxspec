@@ -11,11 +11,12 @@ It mainly relies on tanh-sinh (or double exponential) quadrature to perform the 
 
 import jax
 import jax.numpy as jnp
+from jax import Array
 from jax.scipy.integrate import trapezoid
 from typing import Callable
 
 
-def interval_weights(a, b, n):
+def interval_weights(a: float, b: float, n: int) -> tuple[Array, Array, Array]:
     """
     Return the weights for the tanh-sinh quadrature over the interval [a, b].
     """
@@ -28,7 +29,7 @@ def interval_weights(a, b, n):
     return t, x, dx
 
 
-def positive_weights(n):
+def positive_weights(n: int) -> tuple[Array, Array, Array]:
     """
     Return the weights for the tanh-sinh quadrature over the positive real line.
     """
@@ -39,7 +40,7 @@ def positive_weights(n):
     return t, x, dx
 
 
-def integrate_interval(integrand, n: int = 51) -> Callable:
+def integrate_interval(integrand: Callable, n: int = 51) -> Callable:
     r"""
     Build a function which can compute the integral of the provided integrand over the interval $[a, b]$ using
     the tanh-sinh quadrature. Returns a function $F(a, b, \pmb{\theta})$ which takes the limits of the interval and
@@ -100,7 +101,7 @@ def integrate_interval(integrand, n: int = 51) -> Callable:
     return f
 
 
-def integrate_positive(integrand, n: int = 51) -> Callable:
+def integrate_positive(integrand: Callable, n: int = 51) -> Callable:
     r"""
     Build a function which can compute the integral of the provided integrand over the positive real line using
     the tanh-sinh quadrature. Returns a function $F(\pmb{\theta})$ which takes the parameters of the integrand

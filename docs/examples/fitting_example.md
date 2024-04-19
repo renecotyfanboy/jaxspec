@@ -49,7 +49,7 @@ obs = ObsConfiguration.from_pha_file('obs_1.pha', low_energy=0.3, high_energy=12
 
 ``` python
 import numpyro.distributions as dist
-from jaxspec.fit import BayesianModel
+from jaxspec.fit import BayesianFitter
 
 prior = {
     "powerlaw_1": {
@@ -64,7 +64,7 @@ prior = {
         {"N_H": dist.Uniform(0, 1)}
 }
 
-forward = BayesianModel(model, obs)
+forward = BayesianFitter(model, obs)
 result = forward.fit(prior, num_chains=4, num_warmup=5000, num_samples=5000)
 ```
 

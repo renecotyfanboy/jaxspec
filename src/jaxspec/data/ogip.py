@@ -75,6 +75,24 @@ class DataPHA:
         data = QTable.read(pha_file, "SPECTRUM")
         header = fits.getheader(pha_file, "SPECTRUM")
 
+        if header.get("HDUCLAS2") == "NET":
+            raise ValueError(
+                f"The HDUCLAS2={header.get('HDUCLAS2')} keyword in the PHA file is not supported."
+                f"Please open an issue if this is required."
+            )
+
+        if header.get("HDUCLAS3") == "RATE":
+            raise ValueError(
+                f"The HDUCLAS3={header.get('HDUCLAS3')} keyword in the PHA file is not supported."
+                f"Please open an issue if this is required."
+            )
+
+        if header.get("HDUCLAS4") == "TYPE:II":
+            raise ValueError(
+                f"The HDUCLAS4={header.get('HDUCLAS4')} keyword in the PHA file is not supported."
+                f"Please open an issue if this is required."
+            )
+
         if header.get("GROUPING") == 0:
             grouping = None
         elif "GROUPING" in data.colnames:
