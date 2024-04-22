@@ -72,8 +72,6 @@ class Instrument(xr.Dataset):
         Parameters:
             rmf_path: The RMF file path.
             arf_path: The ARF file path.
-            exposure: The exposure time in second.
-            grouping: The grouping matrix.
         """
 
         rmf = DataRMF.from_file(rmf_path)
