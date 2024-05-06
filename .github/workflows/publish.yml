@@ -1,0 +1,15 @@
+name: Python package
+on:
+  push:
+    tags:
+      - "v*.*.*"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build and publish to pypi
+        uses: JRubics/poetry-publish@v2.0
+        with:
+          python: ">=3.10,<3.12"
+          pypi_token: ${{ secrets.PYPI_TOKEN }}
