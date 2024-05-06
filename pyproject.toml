@@ -28,7 +28,7 @@ seaborn = "^0.13.1"
 mkdocstrings = ">=0.24,<0.26"
 sparse = "^0.15.1"
 scipy = "<1.13"
-mendeleev = "^0.15.0"
+mendeleev = ">=0.15,<0.17"
 pyzmq = "<26"
 
 
