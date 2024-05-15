@@ -10,6 +10,7 @@ from typing import TypeVar, Tuple, Literal, Any
 from astropy.cosmology import Cosmology, Planck18
 import astropy.units as u
 from astropy.units import Unit
+from scipy.special import gammaln
 from haiku.data_structures import traverse
 from chainconsumer import Chain, PlotConfig, ChainConsumer
 import jax
@@ -304,7 +305,7 @@ class FitResult:
         for module, parameter, value in traverse(self._structure):
             if params.get(module, None) is None:
                 params[module] = {}
-            params[module][parameter] = self.samples[f"{module}_{parameter}"]
+            params[module][parameter] = self.samples_flat[f"{module}_{parameter}"]
 
         return params
 
@@ -328,13 +329,37 @@ class FitResult:
         return {key: posterior[key].data for key in var_names}
 
     @property
-    def likelihood(self) -> xr.Dataset:
+    def log_likelihood(self) -> xr.Dataset:
         """
-        Return the likelihood of each observation
+        Return the log_likelihood of each observation
         """
         log_likelihood = az.extract(self.inference_data, group="log_likelihood")
         dimensions_to_reduce = [coord for coord in log_likelihood.coords if coord not in ["sample", "draw", "chain"]]
         return log_likelihood.sum(dimensions_to_reduce)
+
+    @property
+    def c_stat(self):
+        """
+        Return the C-statistic of the model
+
+        The C-statistic is defined as:
+
+        $$ C = 2 \sum_{i} M - D*log(M) + D*log(D) - D $$
+        or
+        $$ C = 2 \sum_{i} M - D*log(M)$$
+        for bins with no counts
+
+        """
+
+        exclude_dims = ["chain", "draw", "sample"]
+        all_dims = list(self.inference_data.log_likelihood.dims)
+        reduce_dims = [dim for dim in all_dims if dim not in exclude_dims]
+        data = self.inference_data.observed_data
+        c_stat = -2 * (
+            self.log_likelihood + (gammaln(data + 1) - (xr.where(data > 0, data * (np.log(data) - 1), 0))).sum(dim=reduce_dims)
+        )
+
+        return c_stat
 
     def plot_ppc(
         self,

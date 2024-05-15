@@ -8,17 +8,16 @@ from abc import ABC, abstractmethod
 from jax import random
 from jax.tree_util import tree_map
 from jax.flatten_util import ravel_pytree
-from jax.experimental.sparse import BCSR
+from jax.experimental.sparse import BCOO
 from .analysis.results import FitResult
 from .model.abc import SpectralModel
 from .data import ObsConfiguration
 from .model.background import BackgroundModel
 from numpyro.infer import MCMC, NUTS, Predictive
-from numpyro.distributions import Distribution, TransformedDistribution
-from numpyro.distributions import Poisson
+from numpyro.distributions import Poisson, Distribution, TransformedDistribution
 from jax.typing import ArrayLike
 from numpyro.infer.reparam import TransformReparam
-from numpyro.infer.util import initialize_model
+from numpyro.infer.util import initialize_model, unconstrain_fn
 from jax.random import PRNGKey
 import jaxopt
 
@@ -29,18 +28,18 @@ T = TypeVar("T")
 class HaikuDict(dict[str, dict[str, T]]): ...
 
 
-def build_prior(prior: HaikuDict[Distribution | ArrayLike], expand_shape: tuple = ()):
+def build_prior(prior: HaikuDict[Distribution | ArrayLike], expand_shape: tuple = (), prefix=""):
     parameters = dict(hk.data_structures.to_haiku_dict(prior))
 
     for i, (m, n, sample) in enumerate(hk.data_structures.traverse(prior)):
         match sample:
             case Distribution():
-                parameters[m][n] = jnp.ones(expand_shape) * numpyro.sample(f"{m}_{n}", sample)
+                parameters[m][n] = jnp.ones(expand_shape) * numpyro.sample(f"{prefix}{m}_{n}", sample)
                 # parameters[m][n] = numpyro.sample(f"{m}_{n}", sample.expand(expand_shape)) build a free parameter for each obs
             case float() | ArrayLike():
                 parameters[m][n] = jnp.ones(expand_shape) * sample
             case _:
-                raise ValueError(f"Invalid prior type {type(sample)} for parameter {m}_{n} : {sample}")
+                raise ValueError(f"Invalid prior type {type(sample)} for parameter {prefix}{m}_{n} : {sample}")
 
     return parameters
 
@@ -52,14 +51,12 @@ def build_numpyro_model(
     name: str = "",
     sparse: bool = False,
 ) -> Callable:
-    def numpro_model(prior_params, observed=True):
+    def numpyro_model(prior_params, observed=True):
         # prior_params = build_prior(prior_distributions, name=name)
         transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, obs, sparse=sparse)(par)))
 
         if (getattr(obs, "folded_background", None) is not None) and (background_model is not None):
-            bkg_countrate = background_model.numpyro_model(
-                obs.out_energies, obs.folded_background.data, name="bkg_" + name, observed=observed
-            )
+            bkg_countrate = background_model.numpyro_model(obs, model, name="bkg_" + name, observed=observed)
         elif (getattr(obs, "folded_background", None) is None) and (background_model is not None):
             raise ValueError("Trying to fit a background model but no background is linked to this observation")
 
@@ -77,7 +74,7 @@ def build_numpyro_model(
                 obs=obs.folded_counts.data if observed else None,
             )
 
-    return numpro_model
+    return numpyro_model
 
 
 def filter_inference_data(inference_data, observation_container, background_model=None) -> az.InferenceData:
@@ -110,7 +107,7 @@ class CountForwardModel(hk.Module):
         self.energies = jnp.asarray(folding.in_energies)
 
         if sparse:  # folding.transfer_matrix.data.density > 0.015 is a good criterion to consider sparsify
-            self.transfer_matrix = BCSR.from_scipy_sparse(folding.transfer_matrix.data.to_scipy_sparse().tocsr())  #
+            self.transfer_matrix = BCOO.from_scipy_sparse(folding.transfer_matrix.data.to_scipy_sparse().tocsr())  #
 
         else:
             self.transfer_matrix = jnp.asarray(folding.transfer_matrix.data.todense())
@@ -192,6 +189,15 @@ class ModelFitter(ABC):
 
         return model
 
+    def transformed_numpyro_model(self, prior_distributions: HaikuDict[Distribution]) -> Callable:
+        transform_dict = {}
+
+        for m, n, val in hk.data_structures.traverse(prior_distributions):
+            if isinstance(val, TransformedDistribution):
+                transform_dict[f"{m}_{n}"] = TransformReparam()
+
+        return numpyro.handlers.reparam(self.numpyro_model(prior_distributions), config=transform_dict)
+
     @abstractmethod
     def fit(self, prior_distributions: HaikuDict[Distribution], **kwargs) -> FitResult: ...
 
@@ -212,6 +218,7 @@ class BayesianFitter(ModelFitter):
         max_tree_depth: int = 10,
         target_accept_prob: float = 0.8,
         dense_mass: bool = False,
+        kernel_kwargs: dict = {},
         mcmc_kwargs: dict = {},
     ) -> FitResult:
         """
@@ -232,11 +239,7 @@ class BayesianFitter(ModelFitter):
             A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
         """
 
-        transform_dict = {}
-
-        for m, n, val in hk.data_structures.traverse(prior_distributions):
-            if isinstance(val, TransformedDistribution):
-                transform_dict[f"{m}_{n}"] = TransformReparam()
+        bayesian_model = self.transformed_numpyro_model(prior_distributions)
 
         chain_kwargs = {
             "num_warmup": num_warmup,
@@ -244,9 +247,13 @@ class BayesianFitter(ModelFitter):
             "num_chains": num_chains,
         }
 
-        bayesian_model = numpyro.handlers.reparam(self.numpyro_model(prior_distributions), config=transform_dict)
-
-        kernel = NUTS(bayesian_model, max_tree_depth=max_tree_depth, target_accept_prob=target_accept_prob, dense_mass=dense_mass)
+        kernel = NUTS(
+            bayesian_model,
+            max_tree_depth=max_tree_depth,
+            target_accept_prob=target_accept_prob,
+            dense_mass=dense_mass,
+            **kernel_kwargs,
+        )
 
         mcmc = MCMC(kernel, **(chain_kwargs | mcmc_kwargs))
 
@@ -272,7 +279,7 @@ class MinimizationFitter(ModelFitter):
     """
     A class to fit a model to a given set of observation using a minimization algorithm. This class uses the L-BFGS
     algorithm from jaxopt to perform the minimization on the model parameters. The uncertainties are computed using the
-    Hessian of the log-likelihood, assuming that it is a multivariate Gaussian in the unbounded space defined by
+    Hessian of the log-log_likelihood, assuming that it is a multivariate Gaussian in the unbounded space defined by
     numpyro.
     """
 
@@ -282,6 +289,7 @@ class MinimizationFitter(ModelFitter):
         rng_key: int = 0,
         num_iter_max: int = 10_000,
         num_samples: int = 1_000,
+        init_params=None,
     ) -> FitResult:
         """
         Fit the model to the data using L-BFGS algorithm.
@@ -305,6 +313,18 @@ class MinimizationFitter(ModelFitter):
             dynamic_args=True,  # <- this is important!
         )
 
+        # Bring back the parameters to the constrained space
+        starting_value = postprocess_fn()(param_info.z)
+
+        if init_params is not None:
+            for m, n, val in hk.data_structures.traverse(init_params):
+                if f"{m}_{n}" in starting_value.keys():
+                    starting_value[f"{m}_{n}"] = val
+
+        # Unconstrain the parameters
+        with numpyro.handlers.seed(rng_seed=0):
+            starting_value = unconstrain_fn(bayesian_model, tuple(), dict(), starting_value)
+
         # get negative log-density from the potential function
         @jax.jit
         def nll_fn(position):
@@ -312,7 +332,7 @@ class MinimizationFitter(ModelFitter):
             return func(position)
 
         solver = jaxopt.LBFGS(fun=nll_fn, maxiter=10_000)
-        params, state = solver.run(param_info.z)
+        params, state = solver.run(starting_value)
         keys = random.split(random.PRNGKey(rng_key), 3)
 
         value_flat, unflatten_fun = ravel_pytree(params)
@@ -329,11 +349,20 @@ class MinimizationFitter(ModelFitter):
         def sanitize_chain(chain):
             return tree_map(lambda x: x[None, ...], chain)
 
+        # We export the observed values to the inference_data
+        seeded_model = numpyro.handlers.substitute(
+            numpyro.handlers.seed(bayesian_model, jax.random.PRNGKey(0)),
+            substitute_fn=numpyro.infer.init_to_sample,
+        )
+        trace = numpyro.handlers.trace(seeded_model).get_trace()
+        observations = {name: site["value"] for name, site in trace.items() if site["type"] == "sample" and site["is_observed"]}
+
         inference_data = az.from_dict(
             sanitize_chain(posterior_samples),
             prior=sanitize_chain(prior),
             posterior_predictive=sanitize_chain(posterior_predictive),
             log_likelihood=sanitize_chain(log_likelihood),
+            observed_data=observations,
         )
 
         inference_data = filter_inference_data(inference_data, self._observation_container, self.background_model)

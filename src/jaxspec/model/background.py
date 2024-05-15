@@ -33,7 +33,8 @@ class SubtractedBackground(BackgroundModel):
 
     """
 
-    def numpyro_model(self, energy, observed_counts, name: str = "bkg", observed=True):
+    def numpyro_model(self, obs, spectral_model, name: str = "bkg", observed=True):
+        _, observed_counts = obs.out_energies, obs.folded_background.data
         numpyro.deterministic(f"{name}", observed_counts)
 
         return jnp.zeros_like(observed_counts)
@@ -49,8 +50,9 @@ class BackgroundWithError(BackgroundModel):
         but slower since it performs the fit using MCMC instead of analytical solution.
     """
 
-    def numpyro_model(self, energy, observed_counts, name: str = "bkg", observed=True):
+    def numpyro_model(self, obs, spectral_model, name: str = "bkg", observed=True):
         # Gamma in numpyro is parameterized by concentration and rate (alpha/beta)
+        _, observed_counts = obs.out_energies, obs.folded_background.data
         alpha = observed_counts + 1
         beta = 1
         countrate = numpyro.sample(f"{name}_params", dist.Gamma(alpha, rate=beta))
@@ -97,6 +99,19 @@ class ConjugateBackground(BackgroundModel):
         return countrate
 '''
 
+"""
+class SpectralBackgroundModel(BackgroundModel):
+    # I should pass the current spectral model as an argument to the background model
+    # In the numpyro model function
+    def __init__(self, model, prior):
+        self.model = model
+        self.prior = prior
+
+    def numpyro_model(self, energy, observed_counts, name: str = "bkg", observed=True):
+        #TODO : keep the sparsification from top model
+        transformed_model = hk.without_apply_rng(hk.transform(lambda par: CountForwardModel(model, obs, sparse=False)(par)))
+"""
+
 
 class GaussianProcessBackground(BackgroundModel):
     """
@@ -119,7 +134,7 @@ class GaussianProcessBackground(BackgroundModel):
         self.n_nodes = n_nodes
         self.kernel = kernel
 
-    def numpyro_model(self, energy, observed_counts, name: str = "bkg", observed=True):
+    def numpyro_model(self, obs, spectral_model, name: str = "bkg", observed=True):
         """
         Build the model for the background.
 
@@ -129,6 +144,7 @@ class GaussianProcessBackground(BackgroundModel):
             name: The name of the background model for parameters disambiguation.
             observed: Whether the model is observed or not. Useful for `numpyro.infer.Predictive` calls.
         """
+        energy, observed_counts = obs.out_energies, obs.folded_background.data
 
         if (observed_counts is not None) and (self.n_nodes >= len(observed_counts)):
             raise RuntimeError("More nodes than channels in the observation associated with GaussianProcessBackground.")
