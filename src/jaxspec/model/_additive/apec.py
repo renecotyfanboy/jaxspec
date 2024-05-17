@@ -10,7 +10,7 @@ from ...util.abundance import abundance_table, element_data
 from haiku.initializers import Constant as HaikuConstant
 from astropy.constants import c, m_p
 from ..abc import AdditiveComponent
-from .apec_loaders import get_temperature, get_continuum, get_lines
+from .apec_loaders import get_temperature, get_continuum, get_pseudo, get_lines
 
 
 @jax.jit
@@ -86,23 +86,22 @@ def interp_and_integrate(energy_low, energy_high, energy_ref, continuum_ref, end
     return integrated_flux
 
 
+@jax.jit
 def interp(e_low, e_high, energy_ref, continuum_ref, end_index):
     energy_ref = jnp.where(jnp.arange(energy_ref.shape[0]) < end_index, energy_ref, jnp.nan)
 
     return (jnp.interp(e_high, energy_ref, continuum_ref) - jnp.interp(e_low, energy_ref, continuum_ref)) / (e_high - e_low)
 
 
-def interp_flux(energy, energy_ref, continuum_ref, end_index, integrate=True):
+@jax.jit
+def interp_flux(energy, energy_ref, continuum_ref, end_index):
     """
     Iterate through an array of shape (energy_ref,) and compute the flux between the bins defined by energy
     """
 
     def scanned_func(carry, unpack):
         e_low, e_high = unpack
-        if integrate:
-            continuum = interp_and_integrate(e_low, e_high, energy_ref, continuum_ref, end_index)
-        else:
-            continuum = interp(e_low, e_high, energy_ref, continuum_ref, end_index)
+        continuum = interp_and_integrate(e_low, e_high, energy_ref, continuum_ref, end_index)
 
         return carry, continuum
 
@@ -111,7 +110,8 @@ def interp_flux(energy, energy_ref, continuum_ref, end_index, integrate=True):
     return continuum
 
 
-def interp_flux_elements(energy_ref, continuum_ref, end_index, energy, abundances, integrate=True):
+@jax.jit
+def interp_flux_elements(energy_ref, continuum_ref, end_index, energy, abundances):
     """
     Iterate through an array of shape (abundance, energy_ref) and compute the flux between the bins defined by energy
     and weight the flux depending on the abundance of each element
@@ -119,7 +119,7 @@ def interp_flux_elements(energy_ref, continuum_ref, end_index, energy, abundance
 
     def scanned_func(_, unpack):
         energy_ref, continuum_ref, end_idx = unpack
-        element_flux = interp_flux(energy, energy_ref, continuum_ref, end_idx, integrate=integrate)
+        element_flux = interp_flux(energy, energy_ref, continuum_ref, end_idx)
 
         return _, element_flux
 
@@ -144,41 +144,6 @@ def get_lines_contribution_broadening(
     return fori_loop(0, end_index, body_func, jnp.zeros_like(energy[:-1]))
 
 
-'''
-@jax.jit
-def get_lines_contribution_broadening_derivative(
-    line_energy, line_element, line_emissivity, end_index, energy, abundances, total_broadening
-):
-    """
-    Return the jacobian over energy, abundance and broadening
-    """
-
-    def jac_func(e, b, le):
-        jac_e, jac_b = jax.jacfwd(lambda e, b, le : gaussian.cdf(e[1:], le, b) - gaussian.cdf(e[:-1], le, b), argnums=(0, 1))(e, b, le)
-        jac_a = gaussian.cdf(e[1:], le, b) - gaussian.cdf(e[:-1], le, b)
-        return jac_e, jac_a, jac_b
-
-    def body_func(i, jac):
-        # Notice the -1 in line element to match the 0-based indexing
-
-        l_energy, l_emissivity, l_element = line_energy[i], line_emissivity[i], line_element[i] - 1
-        broadening = l_energy * total_broadening[l_element]
-        jac_e, jac_a, jac_b = jac_func(energy, broadening, l_energy)
-
-        jac_e = jac_e * l_emissivity * abundances[l_element]
-        jac_a = jnp.zeros((30, 30)).at[l_element, l_element].add(jac_a * l_emissivity)
-        jac_b = jac_b * l_emissivity * abundances[l_element]
-
-        return tree_map(lambda x, y: x + y, jac, (jac_e, jac_a, jac_b))
-
-    jac_energy = jnp.zeros((energy.shape[0] - 1, energy.shape[0]))
-    jac_abundances = jnp.zeros((30, 30))
-    jac_broadening = jnp.zeros((total_broadening.shape[0], total_broadening.shape[0]))
-    return fori_loop(0, end_index, body_func, (jac_energy, jac_abundances, jac_broadening))
-'''
-
-
-# @jax.custom_jvp
 @jax.jit
 def continuum_func(energy, kT, abundances):
     idx, kT_low, kT_high = get_temperature(kT)
@@ -188,144 +153,23 @@ def continuum_func(energy, kT, abundances):
     return lerp(kT, kT_low, kT_high, continuum_low, continuum_high)
 
 
-"""
-@jax.jit
-@continuum_func.defjvp
-def continuum_jvp(primals, tangents):
-    energy, kT, abundances = primals
-    energy_dot, kT_dot, abundances_dot = tangents
-
-    idx, kT_low, kT_high = get_temperature(kT)
-    continuum_low_pars = get_continuum(idx)
-    continuum_high_pars = get_continuum(idx + 1)
-
-    # Energy derivative
-    dcontinuum_low_denerg = interp_flux_elements(*continuum_low_pars, energy, abundances, integrate=False)
-    dcontinuum_high_denerg = interp_flux_elements(*continuum_high_pars, energy, abundances, integrate=False)
-    energy_derivative = lerp(kT, kT_low, kT_high, dcontinuum_low_denerg, dcontinuum_high_denerg) * jnp.diff(energy_dot)
-
-    # Temperature derivative
-    continuum_low = interp_flux_elements(*continuum_low_pars, energy, abundances)
-    continuum_high = interp_flux_elements(*continuum_high_pars, energy, abundances)
-    kT_derivative = (continuum_high - continuum_low) / (kT_high - kT_low) * kT_dot
-
-    # Abundances derivative
-    dcontinuum_low_dabund = interp_flux_elements(*continuum_low_pars, energy, abundances_dot)
-    dcontinuum_high_dabund = interp_flux_elements(*continuum_high_pars, energy, abundances_dot)
-    abundances_derivative = lerp(kT, kT_low, kT_high, dcontinuum_low_dabund, dcontinuum_high_dabund)
-
-    primals_out = continuum_func(*primals)
-
-    return primals_out, energy_derivative + kT_derivative + abundances_derivative
-"""
-
-
-# @jax.custom_jvp
 @jax.jit
 def pseudo_func(energy, kT, abundances):
     idx, kT_low, kT_high = get_temperature(kT)
-    continuum_low = interp_flux_elements(*get_continuum(idx), energy, abundances)
-    continuum_high = interp_flux_elements(*get_continuum(idx + 1), energy, abundances)
+    continuum_low = interp_flux_elements(*get_pseudo(idx), energy, abundances)
+    continuum_high = interp_flux_elements(*get_pseudo(idx + 1), energy, abundances)
 
     return lerp(kT, kT_low, kT_high, continuum_low, continuum_high)
-
-
-"""
-@jax.jit
-@pseudo_func.defjvp
-def pseudo_jvp(primals, tangents):
-    energy, kT, abundances = primals
-    energy_dot, kT_dot, abundances_dot = tangents
-
-    idx, kT_low, kT_high = get_temperature(kT)
-    continuum_low_pars = get_pseudo(idx)
-    continuum_high_pars = get_pseudo(idx + 1)
-
-    # Energy derivative
-    dcontinuum_low_denerg = interp_flux_elements(*continuum_low_pars, energy, abundances, integrate=False)
-    dcontinuum_high_denerg = interp_flux_elements(*continuum_high_pars, energy, abundances, integrate=False)
-    energy_derivative = lerp(kT, kT_low, kT_high, dcontinuum_low_denerg, dcontinuum_high_denerg) * jnp.diff(energy_dot)
-
-    # Temperature derivative
-    continuum_low = interp_flux_elements(*continuum_low_pars, energy, abundances)
-    continuum_high = interp_flux_elements(*continuum_high_pars, energy, abundances)
-    kT_derivative = (continuum_high - continuum_low) / (kT_high - kT_low) * kT_dot
-
-    # Abundances derivative
-    dcontinuum_low_dabund = interp_flux_elements(*continuum_low_pars, energy, abundances_dot)
-    dcontinuum_high_dabund = interp_flux_elements(*continuum_high_pars, energy, abundances_dot)
-    abundances_derivative = lerp(kT, kT_low, kT_high, dcontinuum_low_dabund, dcontinuum_high_dabund)
-
-    primals_out = pseudo_func(*primals)
-
-    return primals_out, energy_derivative + kT_derivative + abundances_derivative
-"""
 
 
 # @jax.custom_jvp
 @jax.jit
 def lines_func(energy, kT, abundances, broadening):
     idx, kT_low, kT_high = get_temperature(kT)
-    lines_low_par = get_lines(idx)
-    lines_high_par = get_lines(idx + 1)
-
-    line_low = get_lines_contribution_broadening(*lines_low_par, energy, abundances, broadening)
-    line_high = get_lines_contribution_broadening(*lines_high_par, energy, abundances, broadening)
-    """
-    # Energy derivative
-    dcontinuum_low_denerg = interp_flux_elements(*continuum_low_pars, energy, abundances, integrate=False)
-    dcontinuum_high_denerg = interp_flux_elements(*continuum_high_pars, energy, abundances, integrate=False)
-    energy_derivative = lerp(kT, kT_low, kT_high, dcontinuum_low_denerg, dcontinuum_high_denerg) * jnp.diff(energy_dot)
-
-    # Temperature derivative
-    continuum_low = interp_flux_elements(*continuum_low_pars, energy, abundances)
-    continuum_high = interp_flux_elements(*continuum_high_pars, energy, abundances)
-    kT_derivative = (continuum_high - continuum_low) / (kT_high - kT_low) * kT_dot
-
-    # Abundances derivative
-    dcontinuum_low_dabund = interp_flux_elements(*continuum_low_pars, energy, abundances_dot)
-    dcontinuum_high_dabund = interp_flux_elements(*continuum_high_pars, energy, abundances_dot)
-    abundances_derivative = lerp(kT, kT_low, kT_high, dcontinuum_low_dabund, dcontinuum_high_dabund)
-    """
+    line_low = get_lines_contribution_broadening(*get_lines(idx), energy, abundances, broadening)
+    line_high = get_lines_contribution_broadening(*get_lines(idx + 1), energy, abundances, broadening)
 
     return lerp(kT, kT_low, kT_high, line_low, line_high)
-
-
-'''
-@jax.jit
-@lines_func.defjvp
-def lines_jvp(primals, tangents):
-    energy, kT, abundances, broadening = primals
-    energy_dot, kT_dot, abundances_dot, broadening_dot = tangents
-
-    idx, kT_low, kT_high = get_temperature(kT)
-    lines_low_par = get_lines(idx)
-    lines_high_par = get_lines(idx + 1)
-    line_low = get_lines_contribution_broadening(*lines_low_par, energy, abundances, broadening)
-    line_high = get_lines_contribution_broadening(*lines_high_par, energy, abundances, broadening)
-
-    primals_out = lerp(kT, kT_low, kT_high, line_low, line_high)
-
-    """
-    low_jac_energy, low_jac_abund, low_jac_broadening = jax.jacfwd(lambda e, a, b: get_lines_contribution_broadening(*lines_low_par, e, a, b), argnums=(0, 1, 2))(energy, abundances, broadening)
-    high_jac_energy, high_jac_abund, high_jac_broadening = jax.jacfwd(lambda e, a, b: get_lines_contribution_broadening(*lines_high_par, e, a, b),  argnums=(0, 1, 2))(energy, abundances, broadening)
-
-    jac_interp = lerp(kT, kT_low, kT_high,
-                      low_jac_energy@energy_dot + low_jac_abund@abundances_dot + low_jac_broadening@broadening_dot,
-                      high_jac_energy@energy_dot + high_jac_abund@abundances_dot + high_jac_broadening@broadening_dot, )
-    """
-
-    low_jac_energy, low_jac_broadening = get_lines_contribution_broadening_derivative(*lines_low_par, energy, jnp.asarray(abundances_dot), broadening)
-    high_jac_energy, high_jac_broadening = get_lines_contribution_broadening_derivative(*lines_low_par, energy,
-                                                                                      jnp.asarray(abundances_dot),
-                                                                                      broadening)
-
-    jac_interp = lerp(kT, kT_low, kT_high,
-                      low_jac_energy @ energy_dot + low_jac_broadening @ broadening_dot,
-                      high_jac_energy @ energy_dot + high_jac_broadening @ broadening_dot)
-
-    return primals_out, jac_interp
-'''
 
 
 class APEC(AdditiveComponent):
