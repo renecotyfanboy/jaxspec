@@ -18,17 +18,14 @@ repos:
         exclude: \.(fits|pha|arf|rmf)$  # Exclude .fits, .pha, .arf, .rmf files
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.3.7
-    hooks:
-      - id: ruff-format
-        exclude: \.(fits|pha|arf|rmf)$  # Exclude .fits, .pha, .arf, .rmf files
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff version.
-    rev: v0.3.7
+    rev: v0.4.6
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+        args: ["--fix", "--output-format=full"]
         exclude: ^docs/|\.(fits|pha|arf|rmf)$  # Exclude docs and .fits, .pha, .arf, .rmf files
+      - id: ruff-format
+        exclude: \.(fits|pha|arf|rmf)$  # Exclude .fits, .pha, .arf, .rmf files
+
 #  - repo: local
 #    hooks:
 #      - id: tests
