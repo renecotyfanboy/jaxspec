@@ -8,8 +8,8 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.12"
-jax = "^0.4.28"
-jaxlib = "^0.4.28"
+jax = "^0.4.29"
+jaxlib = "^0.4.29"
 numpy = "^1.26.1"
 pandas = "^2.2.0"
 astropy = "^6.0.0"
@@ -30,6 +30,7 @@ sparse = "^0.15.1"
 scipy = "<1.13"
 mendeleev = "^0.15.0"
 pyzmq = "<26"
+optimistix = "^0.0.7"
 
 
 [tool.poetry.group.docs.dependencies]
