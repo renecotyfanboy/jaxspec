@@ -1,5 +1,3 @@
-import warnings
-
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Literal
@@ -22,6 +20,7 @@ from numpyro.infer import MCMC, NUTS, Predictive
 from numpyro.infer.initialization import init_to_value
 from numpyro.infer.reparam import TransformReparam
 from numpyro.infer.util import constrain_fn
+from scipy.stats import Covariance, multivariate_normal
 
 from .analysis.results import FitResult
 from .data import ObsConfiguration
@@ -422,21 +421,13 @@ class MinimizationFitter(ModelFitter):
         value_flat, unflatten_fun = ravel_pytree(params)
 
         with catchtime("Compute error"):
-            covariance = jnp.linalg.inv(
-                jax.hessian(lambda p: jnp.sum(ravel_pytree(nll(unflatten_fun(p), None))[0] ** 2))(
-                    value_flat
-                )
-            )
+            precision = jax.hessian(
+                lambda p: jnp.sum(ravel_pytree(nll(unflatten_fun(p), None))[0] ** 2)
+            )(value_flat)
 
-            if jnp.isnan(covariance).any():
-                warnings.warn(
-                    "The covariance matrix is not invertible. Setting it to the identity matrix."
-                )
-                covariance = jnp.eye(len(value_flat))
+            cov = Covariance.from_precision(precision)
 
-            samples_flat = jax.random.multivariate_normal(
-                keys[1], value_flat, covariance, shape=(num_samples,)
-            )
+            samples_flat = multivariate_normal.rvs(mean=value_flat, cov=cov, size=num_samples)
 
         samples = jax.vmap(unflatten_fun)(samples_flat)
         posterior_samples = constrain_fn(bayesian_model, tuple(), dict(observed=True), samples)
