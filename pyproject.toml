@@ -94,6 +94,9 @@ ignore = [
   "D417",
 ]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.ruff.lint.isort]
 lines-between-types = 1
 

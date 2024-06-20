@@ -65,12 +65,24 @@ class ObsConfiguration(xr.Dataset):
     def from_pha_file(
         cls,
         pha_path,
-        rmf_path=None,
-        arf_path=None,
-        bkg_path=None,
+        rmf_path: str | None = None,
+        arf_path: str | None = None,
+        bkg_path: str | None = None,
         low_energy: float = 1e-20,
         high_energy: float = 1e20,
     ):
+        r"""
+        Build the observation configuration from a PHA file.
+
+        Parameters:
+            pha_path: The path to the PHA file.
+            rmf_path: The path to the RMF file.
+            arf_path: The path to the ARF file.
+            bkg_path: The path to the background file.
+            low_energy: The lower bound of the energy range to consider.
+            high_energy: The upper bound of the energy range to consider.
+        """
+
         from .util import data_path_finder
 
         arf_path_default, rmf_path_default, bkg_path_default = data_path_finder(pha_path)
@@ -94,6 +106,16 @@ class ObsConfiguration(xr.Dataset):
         low_energy: float = 1e-20,
         high_energy: float = 1e20,
     ):
+        r"""
+        Build the observation configuration from an [`Instrument`][jaxspec.data.Instrument] and an [`Observation`][jaxspec.data.Observation] object.
+
+        Parameters:
+            instrument: The instrument object.
+            observation: The observation object.
+            low_energy: The lower bound of the energy range to consider.
+            high_energy: The upper bound of the energy range to consider.
+
+        """
         # First we unpack all the xarray data to classical np array for efficiency
         # We also exclude the bins that are flagged with bad quality on the instrument
         quality_filter = observation.quality.data == 0
