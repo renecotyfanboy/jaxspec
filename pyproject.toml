@@ -31,6 +31,7 @@ optimistix = "^0.0.7"
 scipy = "<1.14"
 mendeleev = ">=0.15,<0.17"
 pyzmq = "<27"
+jaxns = "^2.5.1"
 
 
 [tool.poetry.group.docs.dependencies]
