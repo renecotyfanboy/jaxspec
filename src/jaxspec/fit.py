@@ -15,6 +15,7 @@ from jax.flatten_util import ravel_pytree
 from jax.random import PRNGKey
 from jax.tree_util import tree_map
 from jax.typing import ArrayLike
+from numpyro.contrib.nested_sampling import NestedSampler
 from numpyro.distributions import Distribution, Poisson, TransformedDistribution
 from numpyro.infer import MCMC, NUTS, Predictive
 from numpyro.infer.initialization import init_to_value
@@ -201,7 +202,7 @@ class ModelFitter(ABC):
         ----------
             prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
 
-        Returns
+        Returns:
         -------
             A model function that can be used with numpyro.
         """
@@ -260,7 +261,7 @@ class BayesianFitter(ModelFitter):
         self,
         prior_distributions: PriorDictType,
         rng_key: int = 0,
-        num_chains: int = 4,
+        num_chains: int = len(jax.devices()),
         num_warmup: int = 1000,
         num_samples: int = 1000,
         max_tree_depth: int = 10,
@@ -284,7 +285,7 @@ class BayesianFitter(ModelFitter):
             dense_mass: whether to use a dense mass for the NUTS sampler.
             mcmc_kwargs: additional arguments to pass to the MCMC sampler. See [`MCMC`][numpyro.infer.mcmc.MCMC] for more details.
 
-        Returns
+        Returns:
         -------
             A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
         """
@@ -347,6 +348,7 @@ class MinimizationFitter(ModelFitter):
         num_samples: int = 1_000,
         solver: Literal["bfgs", "levenberg_marquardt"] = "bfgs",
         init_params=None,
+        refine_first_guess=True,
     ) -> FitResult:
         """
         Fit the model to the data using L-BFGS algorithm.
@@ -358,7 +360,7 @@ class MinimizationFitter(ModelFitter):
             num_iter_max: the maximum number of iteration in the minimization algorithm.
             num_samples: the number of sample to draw from the best-fit covariance.
 
-        Returns
+        Returns:
         -------
             A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
         """
@@ -400,12 +402,23 @@ class MinimizationFitter(ModelFitter):
             # We solve a least square problem, this function ensure that the total residual is indeed the nll
             return jax.tree.map(lambda x: jnp.sqrt(-x), log_likelihood)
 
+        """
+        if refine_first_guess:
+            with catchtime("Refine_first"):
+                solution = optx.least_squares(
+                    nll,
+                    optx.BestSoFarMinimiser(optx.OptaxMinimiser(optax.adam(1e-4), 1e-6, 1e-6)),
+                    init_params,
+                    max_steps=1000,
+                    throw=False
+                )
+            init_params = solution.value
+        """
+
         if solver == "bfgs":
             solver = optx.BestSoFarMinimiser(optx.BFGS(1e-6, 1e-6))
-
         elif solver == "levenberg_marquardt":
             solver = optx.BestSoFarLeastSquares(optx.LevenbergMarquardt(1e-6, 1e-6))
-
         else:
             raise NotImplementedError(f"{solver} is not implemented")
 
@@ -430,7 +443,9 @@ class MinimizationFitter(ModelFitter):
             samples_flat = multivariate_normal.rvs(mean=value_flat, cov=cov, size=num_samples)
 
         samples = jax.vmap(unflatten_fun)(samples_flat)
-        posterior_samples = constrain_fn(bayesian_model, tuple(), dict(observed=True), samples)
+        posterior_samples = jax.jit(
+            jax.vmap(lambda p: constrain_fn(bayesian_model, tuple(), dict(observed=True), p))
+        )(samples)
 
         with catchtime("Posterior"):
             posterior_predictive = Predictive(bayesian_model, posterior_samples)(
@@ -440,6 +455,9 @@ class MinimizationFitter(ModelFitter):
             log_likelihood = numpyro.infer.log_likelihood(bayesian_model, posterior_samples)
 
         def sanitize_chain(chain):
+            """
+            reshape the samples so that it is arviz compliant with an extra starting dimension
+            """
             return tree_map(lambda x: x[None, ...], chain)
 
         # We export the observed values to the inference_data
@@ -462,6 +480,107 @@ class MinimizationFitter(ModelFitter):
                 log_likelihood=sanitize_chain(log_likelihood),
                 observed_data=observations,
             )
+
+        inference_data = filter_inference_data(
+            inference_data, self._observation_container, self.background_model
+        )
+
+        return FitResult(
+            self.model,
+            self._observation_container,
+            inference_data,
+            self.model.params,
+            background_model=self.background_model,
+        )
+
+
+class NestedSamplingFitter(ModelFitter):
+    r"""
+    A class to fit a model to a given set of observation using the Nested Sampling algorithm. This class uses the
+    [`DefaultNestedSampler`][jaxns.DefaultNestedSampler] from [`jaxns`](https://jaxns.readthedocs.io/en/latest/) which
+    implements the [Phantom-Powered Nested Sampling](https://arxiv.org/abs/2312.11330) algorithm.
+    Add Citation to jaxns
+    """
+
+    def fit(
+        self,
+        prior_distributions: PriorDictType,
+        rng_key: int = 0,
+        num_parallel_workers: int = len(jax.devices()),
+        num_samples: int = 1000,
+        plot_diagnostics=False,
+        verbose=True,
+    ) -> FitResult:
+        """
+        Fit the model to the data using the Phantom-Powered nested sampling algorithm.
+
+        Parameters:
+            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
+            rng_key: the random key used to initialize the sampler.
+            num_samples: the number of samples to draw.
+
+        Returns:
+            A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
+        """
+
+        bayesian_model = self.transformed_numpyro_model(prior_distributions)
+        keys = random.split(random.PRNGKey(rng_key), 4)
+
+        ns = NestedSampler(
+            bayesian_model,
+            constructor_kwargs=dict(
+                num_parallel_workers=num_parallel_workers,
+                verbose=verbose,
+                difficult_model=True,
+                # max_samples=1e6,
+                # num_live_points=10_000,
+                # init_efficiency_threshold=0.5,
+                parameter_estimation=True,
+            ),
+            termination_kwargs=dict(dlogZ=1e-2),
+        )
+
+        ns.run(keys[0])
+
+        self.ns = ns
+
+        if plot_diagnostics:
+            ns.diagnostics()
+
+        posterior_samples = ns.get_samples(keys[1], num_samples=num_samples * num_parallel_workers)
+        log_likelihood = numpyro.infer.log_likelihood(bayesian_model, posterior_samples)
+        posterior_predictive = Predictive(bayesian_model, posterior_samples)(
+            keys[2], observed=False
+        )
+
+        prior = Predictive(bayesian_model, num_samples=num_samples * num_parallel_workers)(
+            keys[3], observed=False
+        )
+
+        seeded_model = numpyro.handlers.substitute(
+            numpyro.handlers.seed(bayesian_model, jax.random.PRNGKey(0)),
+            substitute_fn=numpyro.infer.init_to_sample,
+        )
+        trace = numpyro.handlers.trace(seeded_model).get_trace()
+        observations = {
+            name: site["value"]
+            for name, site in trace.items()
+            if site["type"] == "sample" and site["is_observed"]
+        }
+
+        def sanitize_chain(chain):
+            """
+            reshape the samples so that it is arviz compliant with an extra starting dimension
+            """
+            return tree_map(lambda x: x[None, ...], chain)
+
+        inference_data = az.from_dict(
+            sanitize_chain(posterior_samples),
+            prior=sanitize_chain(prior),
+            posterior_predictive=sanitize_chain(posterior_predictive),
+            log_likelihood=sanitize_chain(log_likelihood),
+            observed_data=observations,
+        )
 
         inference_data = filter_inference_data(
             inference_data, self._observation_container, self.background_model
