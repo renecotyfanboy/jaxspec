@@ -89,6 +89,7 @@ plugins:
             - https://python.arviz.org/en/stable/objects.inv
             - https://jax.readthedocs.io/en/latest/objects.inv
             - https://docs.xarray.dev/en/stable/objects.inv
+            - https://jaxns.readthedocs.io/en/latest/objects.inv
           options:
             members_order: alphabetical
             docstring_section_style: spacy

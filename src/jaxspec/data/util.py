@@ -1,18 +1,21 @@
 import importlib.resources
-import numpyro
+
+from collections.abc import Mapping
+from pathlib import Path
+from typing import TypeVar
+
+import haiku as hk
 import jax
 import numpy as np
-import haiku as hk
-from pathlib import Path
-from numpy.typing import ArrayLike
-from collections.abc import Mapping
-from typing import TypeVar, Tuple
-from astropy.io import fits
+import numpyro
 
-from . import Observation, Instrument, ObsConfiguration
-from ..model.abc import SpectralModel
-from ..fit import CountForwardModel
+from astropy.io import fits
+from numpy.typing import ArrayLike
 from numpyro import handlers
+
+from ..fit import CountForwardModel
+from ..model.abc import SpectralModel
+from . import Instrument, ObsConfiguration, Observation
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -80,7 +83,7 @@ def load_example_foldings():
             example_instruments["PN"],
             example_observations["PN"],
             low_energy=0.3,
-            high_energy=7.5,
+            high_energy=8.0,
         ),
         "MOS1": ObsConfiguration.from_instrument(
             example_instruments["MOS1"],
@@ -107,12 +110,13 @@ def fakeit(
     sparsify_matrix: bool = False,
 ) -> ArrayLike | list[ArrayLike]:
     """
-    This function is a convenience function that allows to simulate spectra from a given model and a set of parameters.
+    Convenience function to simulate a spectrum from a given model and a set of parameters.
     It requires an instrumental setup, and unlike in
     [XSPEC's fakeit](https://heasarc.gsfc.nasa.gov/xanadu/xspec/manual/node72.html), the error on the counts is given
     exclusively by Poisson statistics.
 
-    Parameters:
+    Parameters
+    ----------
         instrument: The instrumental setup.
         model: The model to use.
         parameters: The parameters of the model.
@@ -125,7 +129,9 @@ def fakeit(
 
     for i, instrument in enumerate(instruments):
         transformed_model = hk.without_apply_rng(
-            hk.transform(lambda par: CountForwardModel(model, instrument, sparse=sparsify_matrix)(par))
+            hk.transform(
+                lambda par: CountForwardModel(model, instrument, sparse=sparsify_matrix)(par)
+            )
         )
 
         def obs_model(p):
@@ -167,12 +173,12 @@ def fakeit_for_multiple_parameters(
     sparsify_matrix: bool = False,
 ):
     """
-    This function is a convenience function that allows to simulate spectra multiple spectra from a given model and a
-    set of parameters.
+    Convenience function to simulate multiple spectra from a given model and a set of parameters.
 
     TODO : avoid redundancy, better doc and type hints
 
-    Parameters:
+    Parameters
+    ----------
         instrument: The instrumental setup.
         model: The model to use.
         parameters: The parameters of the model.
@@ -209,13 +215,16 @@ def fakeit_for_multiple_parameters(
     return fakeits[0] if len(fakeits) == 1 else fakeits
 
 
-def data_path_finder(pha_path: str) -> Tuple[str | None, str | None, str | None]:
+def data_path_finder(pha_path: str) -> tuple[str | None, str | None, str | None]:
     """
-    This function tries its best to find the ARF, RMF and BKG files associated with a given PHA file.
-    Parameters:
+    Function which tries its best to find the ARF, RMF and BKG files associated with a given PHA file.
+
+    Parameters
+    ----------
         pha_path: The PHA file path.
 
-    Returns:
+    Returns
+    -------
         arf_path: The ARF file path.
         rmf_path: The RMF file path.
         bkg_path: The BKG file path.

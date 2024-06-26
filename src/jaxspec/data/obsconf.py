@@ -1,7 +1,8 @@
 import numpy as np
-import xarray as xr
-import sparse
 import scipy
+import sparse
+import xarray as xr
+
 from .instrument import Instrument
 from .observation import Observation
 
@@ -62,8 +63,26 @@ class ObsConfiguration(xr.Dataset):
 
     @classmethod
     def from_pha_file(
-        cls, pha_path, rmf_path=None, arf_path=None, bkg_path=None, low_energy: float = 1e-20, high_energy: float = 1e20
+        cls,
+        pha_path,
+        rmf_path: str | None = None,
+        arf_path: str | None = None,
+        bkg_path: str | None = None,
+        low_energy: float = 1e-20,
+        high_energy: float = 1e20,
     ):
+        r"""
+        Build the observation configuration from a PHA file.
+
+        Parameters:
+            pha_path: The path to the PHA file.
+            rmf_path: The path to the RMF file.
+            arf_path: The path to the ARF file.
+            bkg_path: The path to the background file.
+            low_energy: The lower bound of the energy range to consider.
+            high_energy: The upper bound of the energy range to consider.
+        """
+
         from .util import data_path_finder
 
         arf_path_default, rmf_path_default, bkg_path_default = data_path_finder(pha_path)
@@ -75,16 +94,34 @@ class ObsConfiguration(xr.Dataset):
         instrument = Instrument.from_ogip_file(rmf_path, arf_path=arf_path)
         observation = Observation.from_pha_file(pha_path, bkg_path=bkg_path)
 
-        return cls.from_instrument(instrument, observation, low_energy=low_energy, high_energy=high_energy)
+        return cls.from_instrument(
+            instrument, observation, low_energy=low_energy, high_energy=high_energy
+        )
 
     @classmethod
     def from_instrument(
-        cls, instrument: Instrument, observation: Observation, low_energy: float = 1e-20, high_energy: float = 1e20
+        cls,
+        instrument: Instrument,
+        observation: Observation,
+        low_energy: float = 1e-20,
+        high_energy: float = 1e20,
     ):
+        r"""
+        Build the observation configuration from an [`Instrument`][jaxspec.data.Instrument] and an [`Observation`][jaxspec.data.Observation] object.
+
+        Parameters:
+            instrument: The instrument object.
+            observation: The observation object.
+            low_energy: The lower bound of the energy range to consider.
+            high_energy: The upper bound of the energy range to consider.
+
+        """
         # First we unpack all the xarray data to classical np array for efficiency
         # We also exclude the bins that are flagged with bad quality on the instrument
         quality_filter = observation.quality.data == 0
-        grouping = scipy.sparse.csr_array(observation.grouping.data.to_scipy_sparse()) * quality_filter
+        grouping = (
+            scipy.sparse.csr_array(observation.grouping.data.to_scipy_sparse()) * quality_filter
+        )
         e_min_channel = instrument.coords["e_min_channel"].data
         e_max_channel = instrument.coords["e_max_channel"].data
         e_min_unfolded = instrument.coords["e_min_unfolded"].data
@@ -134,7 +171,10 @@ class ObsConfiguration(xr.Dataset):
             "area": (
                 ["unfolded_channel"],
                 area,
-                {"description": "Effective area with the same restrictions as the transfer matrix.", "units": "cm^2"},
+                {
+                    "description": "Effective area with the same restrictions as the transfer matrix.",
+                    "units": "cm^2",
+                },
             ),
             "exposure": ([], exposure, {"description": "Total exposure", "unit": "s"}),
             "folded_counts": (
@@ -148,7 +188,9 @@ class ObsConfiguration(xr.Dataset):
             "folded_backratio": (
                 ["folded_channel"],
                 folded_backratio,
-                {"description": "Background scaling after grouping, with the same restrictions as the transfer matrix."},
+                {
+                    "description": "Background scaling after grouping, with the same restrictions as the transfer matrix."
+                },
             ),
             "folded_background": (
                 ["folded_channel"],
@@ -186,3 +228,6 @@ class ObsConfiguration(xr.Dataset):
             },
             attrs=observation.attrs | instrument.attrs,
         )
+
+    def plot_counts(self, **kwargs):
+        return self.folded_counts.plot.step(x="e_min_folded", where="post", **kwargs)

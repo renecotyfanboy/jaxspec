@@ -1,13 +1,22 @@
 import chex
-import pytest
-import numpyro
-from jax import config
-from jaxspec.fit import BayesianFitter, MinimizationFitter
 
 chex.set_n_cpu_devices(n=4)
+
+import numpyro  # noqa:E402
+import pytest  # noqa:E402
+
+from jax import config  # noqa:E402
+from jaxspec.fit import BayesianFitter, MinimizationFitter  # noqa:E402
+
 config.update("jax_enable_x64", True)
 numpyro.set_platform("cpu")
 numpyro.set_host_device_count(4)
+
+good_init_params = {
+    "blackbodyrad_1": {"kT": 0.7504268020515429, "norm": 0.19813098808509122},
+    "powerlaw_1": {"alpha": 2.0688055546595323, "norm": 0.00026474320883338153},
+    "tbabs_1": {"N_H": 0.10091221590755987},
+}
 
 
 @pytest.fixture(scope="session")
@@ -33,9 +42,10 @@ def instruments():
 
 @pytest.fixture(scope="session")
 def obs_model_prior(obsconfs):
-    from jaxspec.model.additive import Powerlaw, Blackbodyrad
-    from jaxspec.model.multiplicative import Tbabs
     import numpyro.distributions as dist
+
+    from jaxspec.model.additive import Blackbodyrad, Powerlaw
+    from jaxspec.model.multiplicative import Tbabs
 
     model = Tbabs() * (Powerlaw() + Blackbodyrad())
     prior = {
@@ -65,18 +75,32 @@ def get_joint_mcmc_result(obs_model_prior):
 def get_individual_fit_results(obs_model_prior):
     obsconfs, model, prior = obs_model_prior
 
-    return [MinimizationFitter(model, obsconf).fit(prior, num_samples=20_000) for obsconf in obsconfs]
+    return [
+        MinimizationFitter(model, obsconf).fit(
+            prior, num_samples=20_000, init_params=good_init_params
+        )
+        for obsconf in obsconfs
+    ]
 
 
 @pytest.fixture(scope="session")
 def get_joint_fit_result(obs_model_prior):
     obsconfs, model, prior = obs_model_prior
 
-    return [MinimizationFitter(model, obsconfs).fit(prior, num_samples=20_000)]
+    return [
+        MinimizationFitter(model, obsconfs).fit(
+            prior, num_samples=20_000, init_params=good_init_params
+        )
+    ]
 
 
 @pytest.fixture(scope="session")
-def get_result_list(get_individual_mcmc_results, get_joint_mcmc_result, get_individual_fit_results, get_joint_fit_result):
+def get_result_list(
+    get_individual_mcmc_results,
+    get_joint_mcmc_result,
+    get_individual_fit_results,
+    get_joint_fit_result,
+):
     result_list = []
     result_list += get_individual_mcmc_results
     result_list += get_joint_mcmc_result
