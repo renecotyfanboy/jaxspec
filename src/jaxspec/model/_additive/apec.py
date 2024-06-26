@@ -1,16 +1,21 @@
-import jax.numpy as jnp
-import jax
-import haiku as hk
-import astropy.units as u
-from jax import lax
-from jax.lax import scan, fori_loop
-from jax.scipy.stats import norm as gaussian
+import warnings
+
 from typing import Literal
-from ...util.abundance import abundance_table, element_data
-from haiku.initializers import Constant as HaikuConstant
+
+import astropy.units as u
+import haiku as hk
+import jax
+import jax.numpy as jnp
+
 from astropy.constants import c, m_p
+from haiku.initializers import Constant as HaikuConstant
+from jax import lax
+from jax.lax import fori_loop, scan
+from jax.scipy.stats import norm as gaussian
+
+from ...util.abundance import abundance_table, element_data
 from ..abc import AdditiveComponent
-from .apec_loaders import get_temperature, get_continuum, get_pseudo, get_lines
+from .apec_loaders import get_continuum, get_lines, get_pseudo, get_temperature
 
 
 @jax.jit
@@ -51,7 +56,9 @@ def interp_and_integrate(energy_low, energy_high, energy_ref, continuum_ref, end
         # Within
 
         current_energy_is_between = (energy_low <= current_energy) * (current_energy < energy_high)
-        previous_energy_is_between = (energy_low <= previous_energy) * (previous_energy < energy_high)
+        previous_energy_is_between = (energy_low <= previous_energy) * (
+            previous_energy < energy_high
+        )
         energies_within_bins = (previous_energy <= energy_low) * (energy_high < current_energy)
 
         case = (
@@ -68,7 +75,9 @@ def interp_and_integrate(energy_low, energy_high, energy_ref, continuum_ref, end
                 lambda pe, pc, ce, cc, el, er: (cc + lerp(el, pe, ce, pc, cc)) * (ce - el) / 2,  # 2
                 lambda pe, pc, ce, cc, el, er: (pc + lerp(er, pe, ce, pc, cc)) * (er - pe) / 2,  # 3
                 lambda pe, pc, ce, cc, el, er: (pc + cc) * (ce - pe) / 2,  # 4
-                lambda pe, pc, ce, cc, el, er: (lerp(el, pe, ce, pc, cc) + lerp(er, pe, ce, pc, cc)) * (er - el) / 2,
+                lambda pe, pc, ce, cc, el, er: (lerp(el, pe, ce, pc, cc) + lerp(er, pe, ce, pc, cc))
+                * (er - el)
+                / 2,
                 # 5
             ],
             previous_energy,
@@ -90,7 +99,9 @@ def interp_and_integrate(energy_low, energy_high, energy_ref, continuum_ref, end
 def interp(e_low, e_high, energy_ref, continuum_ref, end_index):
     energy_ref = jnp.where(jnp.arange(energy_ref.shape[0]) < end_index, energy_ref, jnp.nan)
 
-    return (jnp.interp(e_high, energy_ref, continuum_ref) - jnp.interp(e_low, energy_ref, continuum_ref)) / (e_high - e_low)
+    return (
+        jnp.interp(e_high, energy_ref, continuum_ref) - jnp.interp(e_low, energy_ref, continuum_ref)
+    ) / (e_high - e_low)
 
 
 @jax.jit
@@ -136,7 +147,9 @@ def get_lines_contribution_broadening(
         # Notice the -1 in line element to match the 0-based indexing
         l_energy, l_emissivity, l_element = line_energy[i], line_emissivity[i], line_element[i] - 1
         broadening = l_energy * total_broadening[l_element]
-        l_flux = gaussian.cdf(energy[1:], l_energy, broadening) - gaussian.cdf(energy[:-1], l_energy, broadening)
+        l_flux = gaussian.cdf(energy[1:], l_energy, broadening) - gaussian.cdf(
+            energy[:-1], l_energy, broadening
+        )
         l_flux = l_flux * l_emissivity * abundances[l_element]
 
         return flux + l_flux
@@ -167,7 +180,9 @@ def pseudo_func(energy, kT, abundances):
 def lines_func(energy, kT, abundances, broadening):
     idx, kT_low, kT_high = get_temperature(kT)
     line_low = get_lines_contribution_broadening(*get_lines(idx), energy, abundances, broadening)
-    line_high = get_lines_contribution_broadening(*get_lines(idx + 1), energy, abundances, broadening)
+    line_high = get_lines_contribution_broadening(
+        *get_lines(idx + 1), energy, abundances, broadening
+    )
 
     return lerp(kT, kT_low, kT_high, line_low, line_high)
 
@@ -188,11 +203,15 @@ class APEC(AdditiveComponent):
         thermal_broadening: bool = True,
         turbulent_broadening: bool = True,
         variant: Literal["none", "v", "vv"] = "none",
-        abundance_table: Literal["angr", "aspl", "feld", "aneb", "grsa", "wilm", "lodd", "lgpp", "lgps"] = "angr",
+        abundance_table: Literal[
+            "angr", "aspl", "feld", "aneb", "grsa", "wilm", "lodd", "lgpp", "lgps"
+        ] = "angr",
         trace_abundance: float = 1.0,
         **kwargs,
     ):
-        super(APEC, self).__init__(**kwargs)
+        super().__init__(**kwargs)
+
+        warnings.warn("Be aware that this APEC implementation is not meant to be used yet")
 
         self.atomic_weights = jnp.asarray(element_data["atomic_weight"].to_numpy())
 
@@ -237,14 +256,18 @@ class APEC(AdditiveComponent):
         """
         if self.turbulent_broadening:
             # This return value must be multiplied by the energy of the line to get actual broadening
-            return hk.get_parameter("Velocity", [], init=HaikuConstant(100.0)) / c.to(u.km / u.s).value
+            return (
+                hk.get_parameter("Velocity", [], init=HaikuConstant(100.0)) / c.to(u.km / u.s).value
+            )
         else:
             return 0.0
 
     def get_parameters(self):
         none_elements = ["C", "N", "O", "Ne", "Mg", "Al", "Si", "S", "Ar", "Ca", "Fe", "Ni"]
         v_elements = ["He", "C", "N", "O", "Ne", "Mg", "Al", "Si", "S", "Ar", "Ca", "Fe", "Ni"]
-        trace_elements = jnp.asarray([3, 4, 5, 9, 11, 15, 17, 19, 21, 22, 23, 24, 25, 27, 29, 30], dtype=int) - 1
+        trace_elements = (
+            jnp.asarray([3, 4, 5, 9, 11, 15, 17, 19, 21, 22, 23, 24, 25, 27, 29, 30], dtype=int) - 1
+        )
 
         # Set abundances of trace element (will be overwritten in the vv case)
         abund = jnp.ones((30,)).at[trace_elements].multiply(self.trace_abundance)
@@ -266,7 +289,9 @@ class APEC(AdditiveComponent):
                     abund = abund.at[i].set(Z)
 
         if abund != "angr":
-            abund = abund * jnp.asarray(abundance_table[self.abundance_table] / abundance_table["angr"])
+            abund = abund * jnp.asarray(
+                abundance_table[self.abundance_table] / abundance_table["angr"]
+            )
 
         # Set the temperature, redshift, normalisation
         kT = hk.get_parameter("kT", [], init=HaikuConstant(6.5))
@@ -284,6 +309,8 @@ class APEC(AdditiveComponent):
 
         continuum = continuum_func(energy, kT, abundances) if self.continuum_to_compute else 0.0
         pseudo_continuum = pseudo_func(energy, kT, abundances) if self.pseudo_to_compute else 0.0
-        lines = lines_func(energy, kT, abundances, total_broadening) if self.lines_to_compute else 0.0
+        lines = (
+            lines_func(energy, kT, abundances, total_broadening) if self.lines_to_compute else 0.0
+        )
 
         return (continuum + pseudo_continuum + lines) * norm * 1e14 / (1 + z), (e_low + e_high) / 2

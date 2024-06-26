@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-
+import astropy.constants
+import astropy.units as u
 import haiku as hk
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-import astropy.units as u
-import astropy.constants
+
 from haiku.initializers import Constant as HaikuConstant
+
 from ..util.integrate import integrate_interval
+from ._additive.apec import APEC  # noqa: F401
 from .abc import AdditiveComponent
-# from ._additive.apec import APEC  # noqa: F401
 
 
 class Powerlaw(AdditiveComponent):
@@ -283,16 +284,16 @@ class Diskpbb(AdditiveComponent):
     where $$p$$ is a free parameter. The standard disk model, diskbb, is recovered if $$p=0.75$$.
     If radial advection is important then $$p<0.75$$.
 
-    $$\mathcal{M}\left( E \right) = \frac{2\pi(\cos i)r^{2}_{\text{in}}}{pd^2} \int_{T_{\text{in}}}^{T_{\text{out}}}
-    \left( \frac{T}{T_{\text{in}}} \right)^{-2/p-1} \text{bbody}(E,T) \frac{dT}{T_{\text{in}}}$$
+    $$\\mathcal{M}\\left( E \right) = \frac{2\\pi(\\cos i)r^{2}_{\text{in}}}{pd^2} \\int_{T_{\text{in}}}^{T_{\text{out}}}
+    \\left( \frac{T}{T_{\text{in}}} \right)^{-2/p-1} \text{bbody}(E,T) \frac{dT}{T_{\text{in}}}$$
 
     ??? abstract "Parameters"
-        * $\text{norm}$ : $\cos i(r_{\text{in}}/d)^{2}$,
-        where $r_{\text{in}}$ is "an apparent" inner disk radius $\left[\text{km}\right]$,
+        * $\text{norm}$ : $\\cos i(r_{\text{in}}/d)^{2}$,
+        where $r_{\text{in}}$ is "an apparent" inner disk radius $\\left[\text{km}\right]$,
         $d$ the distance to the source in units of $10 \text{kpc}$,
         $i$ the angle of the disk ($i=0$ is face-on)
-        * $p$ : Exponent of the radial dependence of the disk temperature $\left[\text{dimensionless}\right]$
-        * $T_{\text{in}}$ : Temperature at inner disk radius $\left[ \mathrm{keV}\right]$
+        * $p$ : Exponent of the radial dependence of the disk temperature $\\left[\text{dimensionless}\right]$
+        * $T_{\text{in}}$ : Temperature at inner disk radius $\\left[ \\mathrm{keV}\right]$
     """
 
     def continuum(self, energy):
@@ -332,7 +333,13 @@ class Diskbb(AdditiveComponent):
             return e**2 * (kT / tin) ** (-2 / p - 1) / (jnp.exp(e / kT) - 1)
 
         integral = integrate_interval(integrand)
-        return norm * 2.78e-3 * (0.75 / p) / tin * jnp.vectorize(lambda e: integral(tout, tin, e, tin, p))(energy)
+        return (
+            norm
+            * 2.78e-3
+            * (0.75 / p)
+            / tin
+            * jnp.vectorize(lambda e: integral(tout, tin, e, tin, p))(energy)
+        )
 
 
 class Agauss(AdditiveComponent):
@@ -381,7 +388,11 @@ class Zagauss(AdditiveComponent):
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
         redshift = hk.get_parameter("redshift", [], init=HaikuConstant(0))
 
-        return norm * (1 + redshift) * jsp.stats.norm.pdf((hc / energy) / (1 + redshift), loc=line_wavelength, scale=sigma)
+        return (
+            norm
+            * (1 + redshift)
+            * jsp.stats.norm.pdf((hc / energy) / (1 + redshift), loc=line_wavelength, scale=sigma)
+        )
 
 
 class Zgauss(AdditiveComponent):
@@ -404,4 +415,6 @@ class Zgauss(AdditiveComponent):
         norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
         redshift = hk.get_parameter("redshift", [], init=HaikuConstant(0))
 
-        return (norm / (1 + redshift)) * jsp.stats.norm.pdf(energy * (1 + redshift), loc=line_energy, scale=sigma)
+        return (norm / (1 + redshift)) * jsp.stats.norm.pdf(
+            energy * (1 + redshift), loc=line_energy, scale=sigma
+        )
