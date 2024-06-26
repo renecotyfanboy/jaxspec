@@ -4,6 +4,7 @@ from typing import Any, Literal, TypeVar
 import arviz as az
 import astropy.units as u
 import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
@@ -87,33 +88,6 @@ def _plot_binned_samples_with_error(
     return [(mean, envelope)]
 
 
-def format_parameters(parameter_name):
-    computed_parameters = ["Photon flux", "Energy flux", "Luminosity"]
-
-    if parameter_name == "weight":
-        # ChainConsumer add a weight column to the samples
-        return parameter_name
-
-    for parameter in computed_parameters:
-        if parameter in parameter_name:
-            return parameter_name
-
-    # Find second occurrence of the character '_'
-    first_occurrence = parameter_name.find("_")
-    second_occurrence = parameter_name.find("_", first_occurrence + 1)
-    module = parameter_name[:second_occurrence]
-    parameter = parameter_name[second_occurrence + 1 :]
-
-    name, number = module.split("_")
-    module = rf"[{name.capitalize()} ({number})]"
-
-    if parameter == "norm":
-        return r"Norm " + module
-
-    else:
-        return rf"${parameter}$" + module
-
-
 class FitResult:
     """
     Container for the result of a fit using any ModelFitter class.
@@ -152,11 +126,31 @@ class FitResult:
 
         return all(az.rhat(self.inference_data) < 1.01)
 
+    @property
+    def _structured_samples(self):
+        """
+        Get samples from the parameter posterior distribution but keep their shape in terms of draw and chains.
+        """
+
+        var_names = [f"{m}_{n}" for m, n, _ in traverse(self._structure)]
+        posterior = az.extract(self.inference_data, var_names=var_names, combined=False)
+        samples_flat = {key: posterior[key].data for key in var_names}
+
+        samples_haiku = {}
+
+        for module, parameter, value in traverse(self._structure):
+            if samples_haiku.get(module, None) is None:
+                samples_haiku[module] = {}
+            samples_haiku[module][parameter] = samples_flat[f"{module}_{parameter}"]
+
+        return samples_haiku
+
     def photon_flux(
         self,
         e_min: float,
         e_max: float,
         unit: Unit = u.photon / u.cm**2 / u.s,
+        register: bool = False,
     ) -> ArrayLike:
         """
         Compute the unfolded photon flux in a given energy band. The flux is then added to
@@ -167,21 +161,29 @@ class FitResult:
             e_min: The lower bound of the energy band in observer frame.
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the photon flux.
+            register: Whether to register the flux with the other posterior parameters.
 
         !!! warning
             Computation of the folded flux is not implemented yet. Feel free to open an
             [issue](https://github.com/renecotyfanboy/jaxspec/issues) in the GitHub repository.
         """
 
+        samples = self._structured_samples
+        init_shape = jax.tree.leaves(samples)[0].shape
+
         flux = jax.vmap(
-            lambda p: self.model.photon_flux(p, np.asarray([e_min]), np.asarray([e_max]))
-        )(self.params)
+            lambda p: self.model.photon_flux(p, jnp.asarray([e_min]), jnp.asarray([e_max]))
+        )(jax.tree.map(lambda x: x.ravel(), samples))
 
+        flux = jax.tree.map(lambda x: x.reshape(init_shape), flux)
         conversion_factor = (u.photon / u.cm**2 / u.s).to(unit)
-
         value = flux * conversion_factor
-        # TODO : fix this since sample doesn't exist anymore
-        self.samples[rf"Photon flux ({e_min:.1f}-{e_max:.1f} keV)"] = value
+
+        if register:
+            self.inference_data.posterior[f"flux_{e_min:.1f}_{e_max:.1f}"] = (
+                ["chain", "draw"],
+                value,
+            )
 
         return value
 
@@ -190,6 +192,7 @@ class FitResult:
         e_min: float,
         e_max: float,
         unit: Unit = u.erg / u.cm**2 / u.s,
+        register: bool = False,
     ) -> ArrayLike:
         """
         Compute the unfolded energy flux in a given energy band. The flux is then added to
@@ -200,22 +203,30 @@ class FitResult:
             e_min: The lower bound of the energy band in observer frame.
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the energy flux.
+            register: Whether to register the flux with the other posterior parameters.
 
         !!! warning
             Computation of the folded flux is not implemented yet. Feel free to open an
             [issue](https://github.com/renecotyfanboy/jaxspec/issues) in the GitHub repository.
         """
 
+        samples = self._structured_samples
+        init_shape = jax.tree.leaves(samples)[0].shape
+
         flux = jax.vmap(
-            lambda p: self.model.energy_flux(p, np.asarray([e_min]), np.asarray([e_max]))
-        )(self.params)
+            lambda p: self.model.energy_flux(p, jnp.asarray([e_min]), jnp.asarray([e_max]))
+        )(jax.tree.map(lambda x: x.ravel(), samples))
+
+        flux = jax.tree.map(lambda x: x.reshape(init_shape), flux)
 
         conversion_factor = (u.keV / u.cm**2 / u.s).to(unit)
-
         value = flux * conversion_factor
 
-        # TODO : fix this since sample doesn't exist anymore
-        self.samples[rf"Energy flux ({e_min:.1f}-{e_max:.1f} keV)"] = value
+        if register:
+            self.inference_data.posterior[f"eflux_{e_min:.1f}_{e_max:.1f}"] = (
+                ["chain", "draw"],
+                value,
+            )
 
         return value
 
@@ -223,10 +234,11 @@ class FitResult:
         self,
         e_min: float,
         e_max: float,
-        redshift: float | ArrayLike = 0,
+        redshift: float | ArrayLike = 0.1,
         observer_frame: bool = True,
         cosmology: Cosmology = Planck18,
         unit: Unit = u.erg / u.s,
+        register: bool = False,
     ) -> ArrayLike:
         """
         Compute the luminosity of the source specifying its redshift. The luminosity is then added to
@@ -240,50 +252,66 @@ class FitResult:
             observer_frame: Whether the input bands are defined in observer frame or not.
             cosmology: Chosen cosmology.
             unit: The unit of the luminosity.
+            register: Whether to register the flux with the other posterior parameters.
         """
 
         if not observer_frame:
             raise NotImplementedError()
 
-        flux = self.energy_flux(e_min * (1 + redshift), e_max * (1 + redshift)) * (
-            u.erg / u.cm**2 / u.s
-        )
+        samples = self._structured_samples
+        init_shape = jax.tree.leaves(samples)[0].shape
 
+        flux = jax.vmap(
+            lambda p: self.model.energy_flux(
+                p, jnp.asarray([e_min]) * (1 + redshift), jnp.asarray([e_max])
+            )
+            * (1 + redshift)
+        )(jax.tree.map(lambda x: x.ravel(), samples))
+
+        flux = jax.tree.map(
+            lambda x: np.asarray(x.reshape(init_shape)) * (u.keV / u.cm**2 / u.s), flux
+        )
         value = (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(unit)
 
-        # TODO : fix this since sample doesn't exist anymore
-        self.samples[rf"Luminosity ({e_min:.1f}-{e_max:.1f} keV)"] = value
+        if register:
+            self.inference_data.posterior[f"luminosity_{e_min:.1f}_{e_max:.1f}"] = (
+                ["chain", "draw"],
+                value,
+            )
 
         return value
 
-    def to_chain(self, name: str, parameters: Literal["model", "bkg"] = "model") -> Chain:
+    def to_chain(self, name: str, parameters_type: Literal["model", "bkg"] = "model") -> Chain:
         """
-        Return a ChainConsumer Chain object from the posterior distribution of the parameters.
+        Return a ChainConsumer Chain object from the posterior distribution of the parameters_type.
 
         Parameters
         ----------
             name: The name of the chain.
-            parameters: The parameters to include in the chain.
+            parameters_type: The parameters_type to include in the chain.
         """
 
         obs_id = self.inference_data.copy()
 
-        if parameters == "model":
+        if parameters_type == "model":
             keys_to_drop = [
                 key
                 for key in obs_id.posterior.keys()
                 if (key.startswith("_") or key.startswith("bkg"))
             ]
-        elif parameters == "bkg":
+        elif parameters_type == "bkg":
             keys_to_drop = [key for key in obs_id.posterior.keys() if not key.startswith("bkg")]
         else:
-            raise ValueError(f"Unknown value for parameters: {parameters}")
+            raise ValueError(f"Unknown value for parameters_type: {parameters_type}")
 
         obs_id.posterior = obs_id.posterior.drop_vars(keys_to_drop)
         chain = Chain.from_arviz(obs_id, name)
+
+        """
         chain.samples.columns = [
             format_parameters(parameter) for parameter in chain.samples.columns
         ]
+        """
 
         return chain
 
@@ -402,7 +430,7 @@ class FitResult:
             x_unit: The units of the x-axis. It can be either a string (parsable by astropy.units) or an astropy unit. It must be homogeneous to either a length, a frequency or an energy.
             y_type: The type of the y-axis. It can be either "counts", "countrate", "photon_flux" or "photon_flux_density".
 
-        Returns
+        Returns:
         -------
             The matplotlib figure.
         """
@@ -634,16 +662,18 @@ class FitResult:
 
     def plot_corner(
         self,
-        config: PlotConfig = PlotConfig(usetex=False, summarise=False, label_font_size=6),
+        config: PlotConfig = PlotConfig(usetex=False, summarise=False, label_font_size=12),
         **kwargs: Any,
     ) -> plt.Figure:
         """
-        Plot the corner plot of the posterior distribution of the parameters. This method uses the ChainConsumer.
+        Plot the corner plot of the posterior distribution of the parameters_type. This method uses the ChainConsumer.
 
         Parameters
         ----------
             config: The configuration of the plot.
-            **kwargs: Additional arguments passed to ChainConsumer.plotter.plot.
+            parameters: The parameters to include in the plot using the following format: `blackbody_1_kT`.
+            **kwargs: Additional arguments passed to ChainConsumer.plotter.plot. Some useful parameters are :
+                - columns : list of parameters to plot.
         """
 
         consumer = ChainConsumer()
