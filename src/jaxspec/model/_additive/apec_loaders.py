@@ -1,17 +1,16 @@
 """This module contains the functions that load the APEC tables from the HDF5 file. They are implemented as JAX
 pure callback to enable reading data from the files without saturating the memory."""
 
+import h5netcdf
 import jax
 import jax.numpy as jnp
-import importlib.resources
-import h5netcdf
+
+from ...util.online_storage import table_manager
 
 
 @jax.jit
 def temperature_table_getter():
-    ref = importlib.resources.files("jaxspec") / "tables/apec.nc"
-
-    with h5netcdf.File(ref, "r") as f:
+    with h5netcdf.File(table_manager.fetch("apec.nc"), "r") as f:
         temperature = jnp.asarray(f["/temperature"])
 
     return temperature
@@ -27,9 +26,7 @@ def get_temperature(kT):
 
 @jax.jit
 def continuum_table_getter():
-    ref = importlib.resources.files("jaxspec") / "tables/apec.nc"
-
-    with h5netcdf.File(ref, "r") as f:
+    with h5netcdf.File(table_manager.fetch("apec.nc"), "r") as f:
         continuum_energy = jnp.asarray(f["/continuum_energy"])
         continuum_emissivity = jnp.asarray(f["/continuum_emissivity"])
         continuum_end_index = jnp.asarray(f["/continuum_end_index"])
@@ -39,9 +36,7 @@ def continuum_table_getter():
 
 @jax.jit
 def pseudo_table_getter():
-    ref = importlib.resources.files("jaxspec") / "tables/apec.nc"
-
-    with h5netcdf.File(ref, "r") as f:
+    with h5netcdf.File(table_manager.fetch("apec.nc"), "r") as f:
         pseudo_energy = jnp.asarray(f["/pseudo_energy"])
         pseudo_emissivity = jnp.asarray(f["/pseudo_emissivity"])
         pseudo_end_index = jnp.asarray(f["/pseudo_end_index"])
@@ -51,9 +46,7 @@ def pseudo_table_getter():
 
 @jax.jit
 def line_table_getter():
-    ref = importlib.resources.files("jaxspec") / "tables/apec.nc"
-
-    with h5netcdf.File(ref, "r") as f:
+    with h5netcdf.File(table_manager.fetch("apec.nc"), "r") as f:
         line_energy = jnp.asarray(f["/line_energy"])
         line_element = jnp.asarray(f["/line_element"])
         line_emissivity = jnp.asarray(f["/line_emissivity"])
