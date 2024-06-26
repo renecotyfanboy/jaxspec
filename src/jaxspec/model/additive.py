@@ -10,7 +10,8 @@ import jax.scipy as jsp
 from haiku.initializers import Constant as HaikuConstant
 
 from ..util.integrate import integrate_interval
-from ._additive.apec import APEC  # noqa: F401
+
+# from ._additive.apec import APEC
 from .abc import AdditiveComponent
 
 
