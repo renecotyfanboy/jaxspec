@@ -7,9 +7,9 @@ version: 2
 
 # Set the version of Python and other tools you might need
 build:
-  os: ubuntu-20.04
+  os: ubuntu-22.04
   tools:
-    python: "3.10"
+    python: "3.11"
   # These packages are needed to build docs with image optimization
   jobs:
     post_create_environment:
@@ -24,8 +24,8 @@ build:
       - poetry install --with docs
       # Using insiders versions of mkdocs-material & mkdocstrings
       - pip uninstall mkdocs-material mkdocstrings mkdocstrings-python -y
-      - pip install git+https://${GH_TOKEN}@github.com/squidfunk/mkdocs-material-insiders.git
-      - pip install git+https://${GH_TOKEN}@github.com/pawamoy-insiders/mkdocstrings-python.git
+      - pip install git+https://$GH_TOKEN@github.com/squidfunk/mkdocs-material-insiders.git
+      - pip install git+https://$GH_TOKEN@github.com/pawamoy-insiders/mkdocstrings-python.git
       - pip install mkdocs-jupyter # This is bugged, I enforced it manually, let's see if it works
 
   apt_packages:

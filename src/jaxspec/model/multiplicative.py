@@ -5,9 +5,11 @@ from abc import ABC, abstractmethod
 import haiku as hk
 import jax.numpy as jnp
 import numpy as np
-import importlib.resources
-from haiku.initializers import Constant as HaikuConstant
+
 from astropy.table import Table
+from haiku.initializers import Constant as HaikuConstant
+
+from ..util.online_storage import table_manager
 from .abc import ModelComponent
 
 
@@ -15,8 +17,7 @@ class MultiplicativeComponent(ModelComponent, ABC):
     type = "multiplicative"
 
     @abstractmethod
-    def continuum(self, energy):
-        ...
+    def continuum(self, energy): ...
 
 
 class Expfac(MultiplicativeComponent):
@@ -62,11 +63,9 @@ class Tbabs(MultiplicativeComponent):
 
     """
 
-    ref = importlib.resources.files("jaxspec") / "tables/xsect_tbabs_wilm.fits"
-    with importlib.resources.as_file(ref) as path:
-        table = Table.read(path)
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float32)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float32)
+    table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
+    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
         nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))
@@ -85,11 +84,9 @@ class Phabs(MultiplicativeComponent):
 
     """
 
-    ref = importlib.resources.files("jaxspec") / "tables/xsect_phabs_aspl.fits"
-    with importlib.resources.as_file(ref) as path:
-        table = Table.read(path)
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float32)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float32)
+    table = Table.read(table_manager.fetch("xsect_phabs_aspl.fits"))
+    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
         nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))
@@ -108,11 +105,9 @@ class Wabs(MultiplicativeComponent):
 
     """
 
-    ref = importlib.resources.files("jaxspec") / "tables/xsect_wabs_angr.fits"
-    with importlib.resources.as_file(ref) as path:
-        table = Table.read(path)
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float32)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float32)
+    table = Table.read(table_manager.fetch("xsect_wabs_angr.fits"))
+    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
         nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))
@@ -145,7 +140,9 @@ class Gabs(MultiplicativeComponent):
         sigma = hk.get_parameter("sigma", [], init=HaikuConstant(1))
         center = hk.get_parameter("E_0", [], init=HaikuConstant(1))
 
-        return jnp.exp(-tau / (jnp.sqrt(2 * jnp.pi) * sigma) * jnp.exp(-0.5 * ((energy - center) / sigma) ** 2))
+        return jnp.exp(
+            -tau / (jnp.sqrt(2 * jnp.pi) * sigma) * jnp.exp(-0.5 * ((energy - center) / sigma) ** 2)
+        )
 
 
 class Highecut(MultiplicativeComponent):
@@ -210,11 +207,9 @@ class Tbpcf(MultiplicativeComponent):
 
     """
 
-    ref = importlib.resources.files("jaxspec") / "tables/xsect_tbabs_wilm.fits"
-    with importlib.resources.as_file(ref) as path:
-        table = Table.read(path)
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float32)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float32)
+    table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
+    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
         nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))

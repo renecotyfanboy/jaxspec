@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+
 from jaxspec.analysis.compare import plot_corner_comparison
 
 
@@ -14,7 +15,7 @@ def test_plot_ppc_units(request, get_result_list):
         for x_unit in ["angstrom", "keV", "Hz", "nm"]:
             result.plot_ppc(percentile=(5, 95), x_unit=x_unit)
             plt.suptitle(f"{request.node.name} {name}")
-            plt.show()
+            plt.close()
 
 
 def test_plot_ppc_dtypes(request, get_result_list):
@@ -22,7 +23,7 @@ def test_plot_ppc_dtypes(request, get_result_list):
         for y_type in ["counts", "countrate", "photon_flux", "photon_flux_density"]:
             result.plot_ppc(percentile=(5, 95), y_type=y_type)
             plt.suptitle(f"{request.node.name} {name}")
-            plt.show()
+            plt.close()
 
 
 def test_plot_corner(request, get_result_list):

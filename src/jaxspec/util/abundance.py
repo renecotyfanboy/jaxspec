@@ -1,9 +1,11 @@
-import importlib.resources
 import pandas as pd
-from mendeleev.fetch import fetch_table
-from astropy.io import ascii
 
-abundance_table: pd.DataFrame = ascii.read(importlib.resources.files("jaxspec") / "tables/abundances.dat").to_pandas()
+from astropy.io import ascii
+from mendeleev.fetch import fetch_table
+
+from .online_storage import table_manager
+
+abundance_table: pd.DataFrame = ascii.read(table_manager.fetch("abundances.dat")).to_pandas()
 element_data: pd.DataFrame = fetch_table("elements")[0:30][
     ["symbol", "atomic_number", "atomic_radius", "atomic_volume", "atomic_weight"]
 ].rename(columns={"symbol": "Element"})
