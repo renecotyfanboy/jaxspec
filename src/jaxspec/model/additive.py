@@ -3,13 +3,17 @@ from __future__ import annotations
 import astropy.constants
 import astropy.units as u
 import haiku as hk
+import interpax
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
+import numpy as np
 
+from astropy.table import Table
 from haiku.initializers import Constant as HaikuConstant
 
 from ..util.integrate import integrate_interval
+from ..util.online_storage import table_manager
 
 # from ._additive.apec import APEC
 from .abc import AdditiveComponent
@@ -418,4 +422,118 @@ class Zgauss(AdditiveComponent):
 
         return (norm / (1 + redshift)) * jsp.stats.norm.pdf(
             energy * (1 + redshift), loc=line_energy, scale=sigma
+        )
+
+
+class NSatmos(AdditiveComponent):
+    r"""
+    A neutron star atmosphere model based on the `NSATMOS` model from `XSPEC`. See [this page](https://heasarc.gsfc.nasa.gov/docs/xanadu/xspec/manual/node205.html)
+
+    ??? abstract "Parameters"
+        * $T_{eff}$ : Effective temperature at the surface in K (No redshift applied)
+        * $M_{ns}$ : Mass of the NS in solar masses
+        * $R_∞$ : Radius at infinity (modulated by gravitational effects) in km
+        * $D$ : Distance to the neutron star in kpc
+        * norm : fraction of the neutron star surface emitting
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        entry_table = Table.read(table_manager.fetch("nsatmosdata.fits"), 1)
+
+        # Extract the table values. All this code could be summarize in two lines if we reformat the nsatmosdata.fits table
+        self.tab_temperature = np.asarray(entry_table["TEMP"][0], dtype=float)  # Logarithmic value
+        self.tab_gravity = np.asarray(entry_table["GRAVITY"][0], dtype=float)  # Logarithmic value
+        self.tab_mucrit = np.asarray(entry_table["MUCRIT"][0], dtype=float)
+        self.tab_energy = np.asarray(entry_table["ENERGY"][0], dtype=float)
+        self.tab_flux_flat = Table.read(table_manager.fetch("nsatmosdata.fits"), 2)["FLUX"]
+
+        tab_flux = np.empty(
+            (
+                self.tab_temperature.size,
+                self.tab_gravity.size,
+                self.tab_mucrit.size,
+                self.tab_energy.size,
+            )
+        )
+
+        for i in range(len(self.tab_temperature)):
+            for j in range(len(self.tab_gravity)):
+                for k in range(len(self.tab_mucrit)):
+                    tab_flux[i, j, k] = np.array(
+                        self.tab_flux_flat[
+                            i * len(self.tab_gravity) * len(self.tab_mucrit)
+                            + j * len(self.tab_mucrit)
+                            + k
+                        ]
+                    )
+
+        self.tab_flux = np.asarray(tab_flux, dtype=float)
+
+    def interp_flux_func(self, temperature_log, gravity_log, mu):
+        # Interpolate the tables to get the flux on the tabulated energy grid
+
+        return interpax.interp3d(
+            10.0**temperature_log,
+            10.0**gravity_log,
+            mu,
+            10.0**self.tab_temperature,
+            10.0**self.tab_gravity,
+            self.tab_mucrit,
+            self.tab_flux,
+            method="linear",
+        )
+
+    def continuum(self, energy):
+        temp_log = hk.get_parameter(
+            "Tinf", [], float, init=HaikuConstant(6.0)
+        )  # log10 of temperature in Kelvin
+        mass = hk.get_parameter("M", [], float, init=HaikuConstant(1.4))
+        radius = hk.get_parameter("Rns", [], float, init=HaikuConstant(10.0))
+        distance = hk.get_parameter("dns", [], float, init=HaikuConstant(10.0))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1.0))
+
+        # Derive parameters usable to retrive value in the flux table
+        Rcgs = 1e5 * radius  # Radius in cgs
+        r_schwarzschild = 2.95e5 * mass  # Schwarzschild radius in cgs
+        r_normalized = Rcgs / r_schwarzschild  # Ratio of the radius to the Schwarzschild radius
+        r_over_Dsql = 2 * jnp.log10(
+            Rcgs / (3.09e21 * distance)
+        )  # Log( (R/D)**2 ), 3.09e21 constant transforms radius in cgs to kpc
+        zred1 = 1 / jnp.sqrt(1 - (1 / r_normalized))  # Gravitational redshift
+        gravity = (6.67e-8 * 1.99e33 * mass / Rcgs**2) * zred1  # Gravity field g in cgs
+        gravity_log = jnp.log10(
+            gravity
+        )  # Log gravity because this is the format given in the table
+
+        # Not sure about mu yet, but it is linked to causality
+        cmu = jnp.where(
+            r_normalized < 1.5, jnp.sqrt(1.0 - 6.75 / r_normalized**2 + 6.75 / r_normalized**3), 0.0
+        )
+
+        # Interpolate the flux table to get the flux at the surface
+
+        flux = jax.jit(self.interp_flux_func)(temp_log, gravity_log, cmu)
+
+        # Rescale the photon energies and fluxes back to the correct local temperature
+        Tfactor = 10.0 ** (temp_log - 6.0)
+        fluxshift = 3.0 * (temp_log - 6.0)
+        E = self.tab_energy * Tfactor
+        flux += fluxshift
+
+        # Rescale applying redshift
+        fluxshift = -jnp.log10(zred1)
+        E = E / zred1
+        flux += fluxshift
+
+        # Convert to counts/keV (which corresponds to dividing by1.602e-9*EkeV)
+        # Multiply by the area of the star, and calculate the count rate at the observer
+        flux += r_over_Dsql
+        counts = 10.0 ** (flux - jnp.log10(1.602e-9) - jnp.log10(E))
+
+        return (
+            jnp.exp(
+                interpax.interp1d(jnp.log(energy), jnp.log(E), jnp.log(counts), method="linear")
+            )
+            * norm
         )
