@@ -429,6 +429,9 @@ class NSatmos(AdditiveComponent):
     r"""
     A neutron star atmosphere model based on the `NSATMOS` model from `XSPEC`. See [this page](https://heasarc.gsfc.nasa.gov/docs/xanadu/xspec/manual/node205.html)
 
+    !!! warning
+        The boundary case of $R_{\text{NS}} < 1.125 R_{\text{S}}$ is handled with a null flux instead of a constant value as in `XSPEC`.
+
     ??? abstract "Parameters"
         * $T_{eff}$ : Effective temperature at the surface in K (No redshift applied)
         * $M_{ns}$ : Mass of the NS in solar masses
@@ -488,6 +491,11 @@ class NSatmos(AdditiveComponent):
         temp_log = hk.get_parameter(
             "Tinf", [], float, init=HaikuConstant(6.0)
         )  # log10 of temperature in Kelvin
+
+        #         'Tinf': temp_log, # 5 to 6.5
+        #         'M': mass, # 0.5 to 3
+        #         'Rns': radius, # 5 to 30
+
         mass = hk.get_parameter("M", [], float, init=HaikuConstant(1.4))
         radius = hk.get_parameter("Rns", [], float, init=HaikuConstant(10.0))
         distance = hk.get_parameter("dns", [], float, init=HaikuConstant(10.0))
@@ -531,9 +539,8 @@ class NSatmos(AdditiveComponent):
         flux += r_over_Dsql
         counts = 10.0 ** (flux - jnp.log10(1.602e-9) - jnp.log10(E))
 
-        return (
-            jnp.exp(
-                interpax.interp1d(jnp.log(energy), jnp.log(E), jnp.log(counts), method="linear")
-            )
-            * norm
+        true_flux = norm * jnp.exp(
+            interpax.interp1d(jnp.log(energy), jnp.log(E), jnp.log(counts), method="linear")
         )
+
+        return jax.lax.select(r_normalized < 1.125, jnp.zeros_like(true_flux), true_flux)
