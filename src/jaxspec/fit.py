@@ -39,17 +39,16 @@ def build_prior(prior: PriorDictType, expand_shape: tuple = (), prefix=""):
     parameters = dict(hk.data_structures.to_haiku_dict(prior))
 
     for i, (m, n, sample) in enumerate(hk.data_structures.traverse(prior)):
-        match sample:
-            case Distribution():
-                parameters[m][n] = jnp.ones(expand_shape) * numpyro.sample(
-                    f"{prefix}{m}_{n}", sample
-                )
-            case ArrayLike():
-                parameters[m][n] = jnp.ones(expand_shape) * sample
-            case _:
-                raise ValueError(
-                    f"Invalid prior type {type(sample)} for parameter {prefix}{m}_{n} : {sample}"
-                )
+        if isinstance(sample, Distribution):
+            parameters[m][n] = jnp.ones(expand_shape) * numpyro.sample(f"{prefix}{m}_{n}", sample)
+
+        elif isinstance(sample, ArrayLike):
+            parameters[m][n] = jnp.ones(expand_shape) * sample
+
+        else:
+            raise ValueError(
+                f"Invalid prior type {type(sample)} for parameter {prefix}{m}_{n} : {sample}"
+            )
 
     return parameters
 

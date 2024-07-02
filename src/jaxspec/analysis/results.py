@@ -103,7 +103,6 @@ class FitResult:
         background_model: BackgroundModel = None,
     ):
         self.model = model
-        self._structure = structure
         self.inference_data = inference_data
         self.obsconfs = (
             {"Observation": obsconf} if isinstance(obsconf, ObsConfiguration) else obsconf
