@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "jaxspec"
-version = "0.0.7"
+version = "0.0.8dev"
 description = "jaxspec is a bayesian spectral fitting library for X-ray astronomy."
 authors = ["sdupourque <sdupourque@irap.omp.eu>"]
 license = "MIT"
@@ -8,9 +8,9 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.12"
-jax = "^0.4.29"
-jaxlib = "^0.4.29"
-numpy = "^1.26.1"
+jax = "^0.4.30"
+jaxlib = "^0.4.30"
+numpy = "<2.0.0"
 pandas = "^2.2.0"
 astropy = "^6.0.0"
 numpyro = "^0.15.0"

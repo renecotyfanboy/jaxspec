@@ -32,8 +32,8 @@ class Powerlaw(AdditiveComponent):
     """
 
     def continuum(self, energy):
-        alpha = hk.get_parameter("alpha", [], init=HaikuConstant(1.3))
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1e-4))
+        alpha = hk.get_parameter("alpha", [], float, init=HaikuConstant(1.3))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1e-4))
 
         return norm * energy ** (-alpha)
 
@@ -49,12 +49,12 @@ class AdditiveConstant(AdditiveComponent):
     """
 
     def continuum(self, energy):
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
 
         return norm * jnp.ones_like(energy)
 
     def primitive(self, energy):
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
 
         return norm * energy
 
@@ -72,9 +72,9 @@ class Lorentz(AdditiveComponent):
     """
 
     def continuum(self, energy):
-        line_energy = hk.get_parameter("E_l", [], init=HaikuConstant(1))
-        sigma = hk.get_parameter("sigma", [], init=HaikuConstant(1))
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        line_energy = hk.get_parameter("E_l", [], float, init=HaikuConstant(1))
+        sigma = hk.get_parameter("sigma", [], float, init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
 
         return norm * sigma / (2 * jnp.pi) / ((energy - line_energy) ** 2 + (sigma / 2) ** 2)
 
@@ -97,9 +97,9 @@ class Logparabola(AdditiveComponent):
 
     # TODO : conform with xspec definition
     def continuum(self, energy):
-        a = hk.get_parameter("a", [], init=HaikuConstant(11 / 3))
-        b = hk.get_parameter("b", [], init=HaikuConstant(0.2))
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        a = hk.get_parameter("a", [], float, init=HaikuConstant(11 / 3))
+        b = hk.get_parameter("b", [], float, init=HaikuConstant(0.2))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
 
         return norm * energy ** (-(a + b * jnp.log(energy)))
 
@@ -117,8 +117,8 @@ class Blackbody(AdditiveComponent):
     """
 
     def continuum(self, energy):
-        kT = hk.get_parameter("kT", [], init=HaikuConstant(11 / 3))
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        kT = hk.get_parameter("kT", [], float, init=HaikuConstant(11 / 3))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
 
         return norm * 8.0525 * energy**2 / ((kT**4) * (jnp.exp(energy / kT) - 1))
 
@@ -136,8 +136,8 @@ class Blackbodyrad(AdditiveComponent):
     """
 
     def continuum(self, energy):
-        kT = hk.get_parameter("kT", [], init=HaikuConstant(11 / 3))
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        kT = hk.get_parameter("kT", [], float, init=HaikuConstant(11 / 3))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
 
         return norm * 1.0344e-3 * energy**2 / (jnp.exp(energy / kT) - 1)
 
@@ -156,9 +156,9 @@ class Gauss(AdditiveComponent):
     """
 
     def continuum(self, energy) -> (jax.Array, jax.Array):
-        line_energy = hk.get_parameter("E_l", [], init=HaikuConstant(1))
-        sigma = hk.get_parameter("sigma", [], init=HaikuConstant(1))
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        line_energy = hk.get_parameter("E_l", [], float, init=HaikuConstant(1))
+        sigma = hk.get_parameter("sigma", [], float, init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
 
         return norm * jsp.stats.norm.pdf(energy, loc=line_energy, scale=sigma)
 
@@ -204,9 +204,9 @@ class APEC(AdditiveComponent):
         )
 
     def mono_fine_structure(self, e_low, e_high) -> (jax.Array, jax.Array):
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
-        kT = hk.get_parameter("kT", [], init=HaikuConstant(1))
-        Z = hk.get_parameter("Z", [], init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
+        kT = hk.get_parameter("kT", [], float, init=HaikuConstant(1))
+        Z = hk.get_parameter("Z", [], float, init=HaikuConstant(1))
 
         idx = jnp.searchsorted(self.kT_ref, kT, side="left") - 1
 
@@ -235,9 +235,9 @@ class APEC(AdditiveComponent):
 
     @partial(jnp.vectorize, excluded=(0,))
     def continuum(self, energy):
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
-        kT = hk.get_parameter("kT", [], init=HaikuConstant(1))
-        Z = hk.get_parameter("Z", [], init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
+        kT = hk.get_parameter("kT", [], float, init=HaikuConstant(1))
+        Z = hk.get_parameter("Z", [], float, init=HaikuConstant(1))
 
         idx = jnp.searchsorted(self.kT_ref, kT, side="left") - 1  # index of left value
 
@@ -275,9 +275,9 @@ class Cutoffpl(AdditiveComponent):
     """
 
     def continuum(self, energy):
-        alpha = hk.get_parameter("alpha", [], init=HaikuConstant(1.3))
-        beta = hk.get_parameter("beta", [], init=HaikuConstant(15))
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1e-4))
+        alpha = hk.get_parameter("alpha", [], float, init=HaikuConstant(1.3))
+        beta = hk.get_parameter("beta", [], float, init=HaikuConstant(15))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1e-4))
 
         return norm * energy ** (-alpha) * jnp.exp(-energy / beta)
 
@@ -302,9 +302,9 @@ class Diskpbb(AdditiveComponent):
     """
 
     def continuum(self, energy):
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
-        p = hk.get_parameter("p", [], init=HaikuConstant(0.75))
-        tin = hk.get_parameter("Tin", [], init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
+        p = hk.get_parameter("p", [], float, init=HaikuConstant(0.75))
+        tin = hk.get_parameter("Tin", [], float, init=HaikuConstant(1))
 
         # Tout is set to 0 as it is evaluated at R=infinity
         def integrand(kT, energy):
@@ -330,8 +330,8 @@ class Diskbb(AdditiveComponent):
     def continuum(self, energy):
         p = 0.75
         tout = 0.0
-        tin = hk.get_parameter("Tin", [], init=HaikuConstant(1))
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        tin = hk.get_parameter("Tin", [], float, init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
 
         # Tout is set to 0 as it is evaluated at R=infinity
         def integrand(kT, e, tin, p):
@@ -364,9 +364,9 @@ class Agauss(AdditiveComponent):
 
     def continuum(self, energy) -> (jax.Array, jax.Array):
         hc = (astropy.constants.h * astropy.constants.c).to(u.angstrom * u.keV).value
-        line_wavelength = hk.get_parameter("Lambda_l", [], init=HaikuConstant(hc))
-        sigma = hk.get_parameter("sigma", [], init=HaikuConstant(0.001))
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
+        line_wavelength = hk.get_parameter("Lambda_l", [], float, init=HaikuConstant(hc))
+        sigma = hk.get_parameter("sigma", [], float, init=HaikuConstant(0.001))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
 
         return norm * jsp.stats.norm.pdf(hc / energy, loc=line_wavelength, scale=sigma)
 
@@ -388,10 +388,10 @@ class Zagauss(AdditiveComponent):
 
     def continuum(self, energy) -> (jax.Array, jax.Array):
         hc = (astropy.constants.h * astropy.constants.c).to(u.angstrom * u.keV).value
-        line_wavelength = hk.get_parameter("Lambda_l", [], init=HaikuConstant(hc))
-        sigma = hk.get_parameter("sigma", [], init=HaikuConstant(0.001))
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
-        redshift = hk.get_parameter("redshift", [], init=HaikuConstant(0))
+        line_wavelength = hk.get_parameter("Lambda_l", [], float, init=HaikuConstant(hc))
+        sigma = hk.get_parameter("sigma", [], float, init=HaikuConstant(0.001))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
+        redshift = hk.get_parameter("redshift", [], float, init=HaikuConstant(0))
 
         return (
             norm
@@ -415,10 +415,10 @@ class Zgauss(AdditiveComponent):
     """
 
     def continuum(self, energy) -> (jax.Array, jax.Array):
-        line_energy = hk.get_parameter("E_l", [], init=HaikuConstant(1))
-        sigma = hk.get_parameter("sigma", [], init=HaikuConstant(1))
-        norm = hk.get_parameter("norm", [], init=HaikuConstant(1))
-        redshift = hk.get_parameter("redshift", [], init=HaikuConstant(0))
+        line_energy = hk.get_parameter("E_l", [], float, init=HaikuConstant(1))
+        sigma = hk.get_parameter("sigma", [], float, init=HaikuConstant(1))
+        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
+        redshift = hk.get_parameter("redshift", [], float, init=HaikuConstant(0))
 
         return (norm / (1 + redshift)) * jsp.stats.norm.pdf(
             energy * (1 + redshift), loc=line_energy, scale=sigma

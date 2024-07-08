@@ -505,9 +505,10 @@ class NestedSamplingFitter(ModelFitter):
         self,
         prior_distributions: PriorDictType,
         rng_key: int = 0,
-        num_parallel_workers: int = len(jax.devices()),
+        num_parallel_workers: int = 1,
         num_samples: int = 1000,
         plot_diagnostics=False,
+        termination_kwargs: dict | None = None,
         verbose=True,
     ) -> FitResult:
         """
@@ -531,12 +532,11 @@ class NestedSamplingFitter(ModelFitter):
                 num_parallel_workers=num_parallel_workers,
                 verbose=verbose,
                 difficult_model=True,
-                # max_samples=1e6,
-                # num_live_points=10_000,
-                # init_efficiency_threshold=0.5,
+                max_samples=1e6,
                 parameter_estimation=True,
+                num_live_points=400,
             ),
-            termination_kwargs=dict(dlogZ=1e-2),
+            termination_kwargs=termination_kwargs if termination_kwargs else dict(),
         )
 
         ns.run(keys[0])
