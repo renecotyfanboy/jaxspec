@@ -217,3 +217,22 @@ class Tbpcf(MultiplicativeComponent):
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
 
         return f * jnp.exp(-nh * sigma) + (1 - f)
+
+class FDcut(MultiplicativeComponent):
+    r"""
+    A Fermi-Dirac cutoff model.
+
+    $$
+        \mathcal{M}(E) = \left( 1 + \exp \left( \frac{E - E_c}{E_f} \right) \right)^{-1}
+    $$
+
+    ??? abstract "Parameters"
+        * $E_c$ : Cutoff energy $\left[\text{keV}\right]$
+        * $E_f$ : Folding energy $\left[\text{keV}\right]$
+    """
+
+    def continuum(self, energy):
+        cutoff = hk.get_parameter("E_c", [], init=HaikuConstant(1))
+        folding = hk.get_parameter("E_f", [], init=HaikuConstant(1))
+
+        return (1 + jnp.exp((energy - cutoff)/folding)) ** -1
