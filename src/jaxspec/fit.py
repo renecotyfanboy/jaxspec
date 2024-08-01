@@ -19,6 +19,7 @@ from numpyro.contrib.nested_sampling import NestedSampler
 from numpyro.distributions import Distribution, Poisson, TransformedDistribution
 from numpyro.infer import MCMC, NUTS, Predictive
 from numpyro.infer.initialization import init_to_value
+from numpyro.infer.inspect import get_model_relations
 from numpyro.infer.reparam import TransformReparam
 from numpyro.infer.util import constrain_fn
 from scipy.stats import Covariance, multivariate_normal
@@ -27,7 +28,7 @@ from .analysis.results import FitResult
 from .data import ObsConfiguration
 from .model.abc import SpectralModel
 from .model.background import BackgroundModel
-from .util import catchtime, sample_prior
+from .util import catchtime
 from .util.typing import PriorDictModel, PriorDictType
 
 
@@ -89,7 +90,7 @@ def build_numpyro_model_for_single_obs(
         with numpyro.plate("obs_plate_" + name, len(obs.folded_counts)):
             numpyro.sample(
                 "obs_" + name,
-                Poisson(countrate + bkg_countrate * obs.folded_backratio.data),
+                Poisson(countrate + bkg_countrate / obs.folded_backratio.data),
                 obs=obs.folded_counts.data if observed else None,
             )
 
@@ -147,14 +148,15 @@ class CountForwardModel(hk.Module):
         return jnp.clip(expected_counts, a_min=1e-6)
 
 
-class ModelFitter(ABC):
+class BayesianModel:
     """
-    Abstract class to fit a model to a given set of observation.
+    Class to fit a model to a given set of observation.
     """
 
     def __init__(
         self,
         model: SpectralModel,
+        prior_distributions: PriorDictType | Callable,
         observations: ObsConfiguration | list[ObsConfiguration] | dict[str, ObsConfiguration],
         background_model: BackgroundModel = None,
         sparsify_matrix: bool = False,
@@ -162,9 +164,10 @@ class ModelFitter(ABC):
         """
         Initialize the fitter.
 
-        Parameters
-        ----------
+        Parameters:
             model: the spectral model to fit.
+            prior_distributions: a nested dictionary containing the prior distributions for the model parameters, or a
+                callable function that returns parameter samples.
             observations: the observations to fit the model to.
             background_model: the background model to fit.
             sparsify_matrix: whether to sparsify the transfer matrix.
@@ -175,8 +178,20 @@ class ModelFitter(ABC):
         self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
         self.sparse = sparsify_matrix
 
+        if not callable(prior_distributions):
+            # Validate the entry with pydantic
+            prior = PriorDictModel(nested_dict=prior_distributions).nested_dict
+
+            def prior_distributions_func():
+                return build_prior(prior, expand_shape=(len(self.observation_container),))
+
+        else:
+            prior_distributions_func = prior_distributions
+
+        self.prior_distributions_func = prior_distributions_func
+
     @property
-    def _observation_container(self) -> dict[str, ObsConfiguration]:
+    def observation_container(self) -> dict[str, ObsConfiguration]:
         """
         The observations used in the fit as a dictionary of observations.
         """
@@ -193,36 +208,21 @@ class ModelFitter(ABC):
         else:
             raise ValueError(f"Invalid type for observations : {type(self._observations)}")
 
-    def numpyro_model(self, prior_distributions: PriorDictType | Callable) -> Callable:
+    @property
+    def numpyro_model(self) -> Callable:
         """
         Build the numpyro model using the observed data, the prior distributions and the spectral model.
-
-        Parameters
-        ----------
-            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
 
         Returns:
         -------
             A model function that can be used with numpyro.
         """
 
-        if not callable(prior_distributions):
-            # Validate the entry with pydantic
-            prior_distributions = PriorDictModel(nested_dict=prior_distributions).nested_dict
-
-            def prior_distributions_func():
-                return build_prior(
-                    prior_distributions, expand_shape=(len(self._observation_container),)
-                )
-
-        else:
-            prior_distributions_func = prior_distributions
-
         def model(observed=True):
-            prior_params = prior_distributions_func()
+            prior_params = self.prior_distributions_func()
 
             # Iterate over all the observations in our container and build a single numpyro model for each observation
-            for i, (key, observation) in enumerate(self._observation_container.items()):
+            for i, (key, observation) in enumerate(self.observation_container.items()):
                 # We expect that prior_params contains an array of parameters for each observation
                 # They can be identical or different for each observation
                 params = tree_map(lambda x: x[i], prior_params)
@@ -235,22 +235,29 @@ class ModelFitter(ABC):
 
         return model
 
-    def transformed_numpyro_model(self, prior_distributions: PriorDictType) -> Callable:
+    @property
+    def transformed_numpyro_model(self) -> Callable:
         transform_dict = {}
 
-        for m, n, val in hk.data_structures.traverse(prior_distributions):
-            if isinstance(val, TransformedDistribution):
-                transform_dict[f"{m}_{n}"] = TransformReparam()
+        relations = get_model_relations(self.numpyro_model)
+        distributions = {
+            parameter: getattr(numpyro.distributions, value, None)
+            for parameter, value in relations["sample_dist"].items()
+        }
 
-        return numpyro.handlers.reparam(
-            self.numpyro_model(prior_distributions), config=transform_dict
-        )
+        for parameter, distribution in distributions.items():
+            if isinstance(distribution, TransformedDistribution):
+                transform_dict[parameter] = TransformReparam()
 
+        return numpyro.handlers.reparam(self.numpyro_model, config=transform_dict)
+
+
+class BayesianModelFitter(BayesianModel, ABC):
     @abstractmethod
-    def fit(self, prior_distributions: PriorDictType, **kwargs) -> FitResult: ...
+    def fit(self, **kwargs) -> FitResult: ...
 
 
-class BayesianFitter(ModelFitter):
+class NUTSFitter(BayesianModelFitter):
     """
     A class to fit a model to a given set of observation using a Bayesian approach. This class uses the NUTS sampler
     from numpyro to perform the inference on the model parameters.
@@ -258,7 +265,6 @@ class BayesianFitter(ModelFitter):
 
     def fit(
         self,
-        prior_distributions: PriorDictType,
         rng_key: int = 0,
         num_chains: int = len(jax.devices()),
         num_warmup: int = 1000,
@@ -272,9 +278,7 @@ class BayesianFitter(ModelFitter):
         """
         Fit the model to the data using NUTS sampler from numpyro.
 
-        Parameters
-        ----------
-            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
+        Parameters:
             rng_key: the random key used to initialize the sampler.
             num_chains: the number of chains to run.
             num_warmup: the number of warmup steps.
@@ -285,11 +289,10 @@ class BayesianFitter(ModelFitter):
             mcmc_kwargs: additional arguments to pass to the MCMC sampler. See [`MCMC`][numpyro.infer.mcmc.MCMC] for more details.
 
         Returns:
-        -------
             A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
         """
 
-        bayesian_model = self.transformed_numpyro_model(prior_distributions)
+        bayesian_model = self.transformed_numpyro_model
         # bayesian_model = self.numpyro_model(prior_distributions)
 
         chain_kwargs = {
@@ -310,28 +313,30 @@ class BayesianFitter(ModelFitter):
         keys = random.split(random.PRNGKey(rng_key), 3)
 
         mcmc.run(keys[0])
+
         posterior_predictive = Predictive(bayesian_model, mcmc.get_samples())(
             keys[1], observed=False
         )
+
         prior = Predictive(bayesian_model, num_samples=num_samples)(keys[2], observed=False)
+
         inference_data = az.from_numpyro(
             mcmc, prior=prior, posterior_predictive=posterior_predictive
         )
 
         inference_data = filter_inference_data(
-            inference_data, self._observation_container, self.background_model
+            inference_data, self.observation_container, self.background_model
         )
 
         return FitResult(
-            self.model,
-            self._observation_container,
+            self,
             inference_data,
             self.model.params,
             background_model=self.background_model,
         )
 
 
-class MinimizationFitter(ModelFitter):
+class MinimizationFitter(BayesianModelFitter):
     """
     A class to fit a model to a given set of observation using a minimization algorithm. This class uses the L-BFGS
     algorithm from jaxopt to perform the minimization on the model parameters. The uncertainties are computed using the
@@ -341,7 +346,6 @@ class MinimizationFitter(ModelFitter):
 
     def fit(
         self,
-        prior_distributions: PriorDictType,
         rng_key: int = 0,
         num_iter_max: int = 100_000,
         num_samples: int = 1_000,
@@ -352,27 +356,24 @@ class MinimizationFitter(ModelFitter):
         """
         Fit the model to the data using L-BFGS algorithm.
 
-        Parameters
-        ----------
-            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
+        Parameters:
             rng_key: the random key used to initialize the sampler.
             num_iter_max: the maximum number of iteration in the minimization algorithm.
             num_samples: the number of sample to draw from the best-fit covariance.
 
         Returns:
-        -------
             A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
         """
 
-        bayesian_model = self.numpyro_model(prior_distributions)
+        bayesian_model = self.numpyro_model
         keys = jax.random.split(PRNGKey(rng_key), 4)
 
         if init_params is not None:
             # We initialize the parameters by randomly sampling from the prior
             local_keys = jax.random.split(keys[0], 2)
-            starting_value = sample_prior(
-                prior_distributions, key=local_keys[0], flat_parameters=True
-            )
+
+            with numpyro.handlers.seed(rng_seed=local_keys[0]):
+                starting_value = self.prior_distributions_func()
 
             # We update the starting value with the provided init_params
             for m, n, val in hk.data_structures.traverse(init_params):
@@ -481,19 +482,18 @@ class MinimizationFitter(ModelFitter):
             )
 
         inference_data = filter_inference_data(
-            inference_data, self._observation_container, self.background_model
+            inference_data, self.observation_container, self.background_model
         )
 
         return FitResult(
-            self.model,
-            self._observation_container,
+            self,
             inference_data,
             self.model.params,
             background_model=self.background_model,
         )
 
 
-class NestedSamplingFitter(ModelFitter):
+class NestedSamplingFitter(BayesianModelFitter):
     r"""
     A class to fit a model to a given set of observation using the Nested Sampling algorithm. This class uses the
     [`DefaultNestedSampler`][jaxns.DefaultNestedSampler] from [`jaxns`](https://jaxns.readthedocs.io/en/latest/) which
@@ -503,18 +503,16 @@ class NestedSamplingFitter(ModelFitter):
 
     def fit(
         self,
-        prior_distributions: PriorDictType,
         rng_key: int = 0,
-        num_parallel_workers: int = len(jax.devices()),
         num_samples: int = 1000,
         plot_diagnostics=False,
+        termination_kwargs: dict | None = None,
         verbose=True,
     ) -> FitResult:
         """
         Fit the model to the data using the Phantom-Powered nested sampling algorithm.
 
         Parameters:
-            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
             rng_key: the random key used to initialize the sampler.
             num_samples: the number of samples to draw.
 
@@ -522,39 +520,34 @@ class NestedSamplingFitter(ModelFitter):
             A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
         """
 
-        bayesian_model = self.transformed_numpyro_model(prior_distributions)
+        bayesian_model = self.transformed_numpyro_model
         keys = random.split(random.PRNGKey(rng_key), 4)
 
         ns = NestedSampler(
             bayesian_model,
             constructor_kwargs=dict(
-                num_parallel_workers=num_parallel_workers,
+                num_parallel_workers=1,
                 verbose=verbose,
                 difficult_model=True,
-                # max_samples=1e6,
-                # num_live_points=10_000,
-                # init_efficiency_threshold=0.5,
+                max_samples=1e6,
                 parameter_estimation=True,
+                num_live_points=1_000,
             ),
-            termination_kwargs=dict(dlogZ=1e-2),
+            termination_kwargs=termination_kwargs if termination_kwargs else dict(),
         )
 
         ns.run(keys[0])
 
-        self.ns = ns
-
         if plot_diagnostics:
             ns.diagnostics()
 
-        posterior_samples = ns.get_samples(keys[1], num_samples=num_samples * num_parallel_workers)
+        posterior_samples = ns.get_samples(keys[1], num_samples=num_samples)
         log_likelihood = numpyro.infer.log_likelihood(bayesian_model, posterior_samples)
         posterior_predictive = Predictive(bayesian_model, posterior_samples)(
             keys[2], observed=False
         )
 
-        prior = Predictive(bayesian_model, num_samples=num_samples * num_parallel_workers)(
-            keys[3], observed=False
-        )
+        prior = Predictive(bayesian_model, num_samples=num_samples)(keys[3], observed=False)
 
         seeded_model = numpyro.handlers.substitute(
             numpyro.handlers.seed(bayesian_model, jax.random.PRNGKey(0)),
@@ -582,12 +575,11 @@ class NestedSamplingFitter(ModelFitter):
         )
 
         inference_data = filter_inference_data(
-            inference_data, self._observation_container, self.background_model
+            inference_data, self.observation_container, self.background_model
         )
 
         return FitResult(
-            self.model,
-            self._observation_container,
+            self,
             inference_data,
             self.model.params,
             background_model=self.background_model,

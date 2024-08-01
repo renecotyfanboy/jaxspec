@@ -1,9 +1,11 @@
-import pytest
-import jax
-from jaxspec.data.util import fakeit_for_multiple_parameters
 import os
 import sys
+
 import chex
+import jax
+import pytest
+
+from jaxspec.data.util import fakeit_for_multiple_parameters
 
 chex.set_n_cpu_devices(n=4)
 
@@ -22,8 +24,14 @@ def parameters():
 
     parameters = {
         "tbabs_1": {"N_H": rng.uniform(0.1, 0.4, size=num_params)},
-        "powerlaw_1": {"alpha": rng.uniform(1, 3, size=num_params), "norm": rng.exponential(10 ** (-0.5), size=num_params)},
-        "blackbodyrad_1": {"kT": rng.uniform(0.1, 3.0, size=num_params), "norm": rng.exponential(10 ** (-3), size=num_params)},
+        "powerlaw_1": {
+            "alpha": rng.uniform(1, 3, size=num_params),
+            "norm": rng.exponential(10 ** (-0.5), size=num_params),
+        },
+        "blackbodyrad_1": {
+            "kT": rng.uniform(0.1, 3.0, size=num_params),
+            "norm": rng.exponential(10 ** (-3), size=num_params),
+        },
     }
 
     return parameters
@@ -31,22 +39,10 @@ def parameters():
 
 @pytest.fixture
 def model():
-    from jaxspec.model.additive import Powerlaw, Blackbodyrad
+    from jaxspec.model.additive import Blackbodyrad, Powerlaw
     from jaxspec.model.multiplicative import Tbabs
 
     return Tbabs() * (Powerlaw() + Blackbodyrad())
-
-
-@pytest.fixture
-def observations():
-    from jaxspec.data.util import load_example_foldings
-
-    return list(load_example_foldings().values())
-
-
-@pytest.fixture
-def observation(observations):
-    return observations[0]
 
 
 @pytest.fixture
@@ -59,25 +55,28 @@ def sharded_parameters(parameters):
     return jax.device_put(parameters, sharding)
 
 
-def test_fakeits_apply_stat(observation, model, parameters):
-    spectra = fakeit_for_multiple_parameters(observation, model, parameters, apply_stat=False)
+def test_fakeits_apply_stat(obsconfs, model, parameters):
+    obsconf = obsconfs[0]
+    spectra = fakeit_for_multiple_parameters(obsconf, model, parameters, apply_stat=False)
     chex.assert_type(spectra, float)
 
-    spectra = fakeit_for_multiple_parameters(observation, model, parameters, apply_stat=True)
+    spectra = fakeit_for_multiple_parameters(obsconf, model, parameters, apply_stat=True)
     chex.assert_type(spectra, int)
 
 
-def test_fakeits_parallel(observation, model, sharded_parameters):
-    spectra = fakeit_for_multiple_parameters(observation, model, sharded_parameters, apply_stat=False)
+def test_fakeits_parallel(obsconfs, model, sharded_parameters):
+    obsconf = obsconfs[0]
+    spectra = fakeit_for_multiple_parameters(obsconf, model, sharded_parameters, apply_stat=False)
     chex.assert_type(spectra, float)
 
-    spectra = fakeit_for_multiple_parameters(observation, model, sharded_parameters, apply_stat=True)
+    spectra = fakeit_for_multiple_parameters(obsconf, model, sharded_parameters, apply_stat=True)
     chex.assert_type(spectra, int)
 
 
-def test_fakeits_multiple_observation(observations, model, parameters):
-    spectra = fakeit_for_multiple_parameters(observations, model, parameters, apply_stat=False)
+def test_fakeits_multiple_observation(obsconfs, model, parameters):
+    obsconf = obsconfs[0]
+    spectra = fakeit_for_multiple_parameters(obsconf, model, parameters, apply_stat=False)
     chex.assert_type(spectra, float)
 
-    spectra = fakeit_for_multiple_parameters(observations, model, parameters, apply_stat=True)
+    spectra = fakeit_for_multiple_parameters(obsconf, model, parameters, apply_stat=True)
     chex.assert_type(spectra, int)

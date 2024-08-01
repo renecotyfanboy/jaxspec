@@ -37,9 +37,9 @@ class Expfac(MultiplicativeComponent):
     """
 
     def continuum(self, energy):
-        amplitude = hk.get_parameter("A", [], init=HaikuConstant(1))
-        factor = hk.get_parameter("f", [], init=HaikuConstant(1))
-        pivot = hk.get_parameter("E_c", [], init=HaikuConstant(1))
+        amplitude = hk.get_parameter("A", [], float, init=HaikuConstant(1))
+        factor = hk.get_parameter("f", [], float, init=HaikuConstant(1))
+        pivot = hk.get_parameter("E_c", [], float, init=HaikuConstant(1))
 
         return jnp.where(energy >= pivot, 1.0 + amplitude * jnp.exp(-factor * energy), 1.0)
 
@@ -63,12 +63,14 @@ class Tbabs(MultiplicativeComponent):
 
     """
 
-    table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
+        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
-        nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))
+        nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
 
         return jnp.exp(-nh * sigma)
@@ -84,12 +86,14 @@ class Phabs(MultiplicativeComponent):
 
     """
 
-    table = Table.read(table_manager.fetch("xsect_phabs_aspl.fits"))
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        table = Table.read(table_manager.fetch("xsect_phabs_aspl.fits"))
+        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
-        nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))
+        nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=jnp.inf, right=0.0)
 
         return jnp.exp(-nh * sigma)
@@ -105,12 +109,14 @@ class Wabs(MultiplicativeComponent):
 
     """
 
-    table = Table.read(table_manager.fetch("xsect_wabs_angr.fits"))
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        table = Table.read(table_manager.fetch("xsect_wabs_angr.fits"))
+        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
-        nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))
+        nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
 
         return jnp.exp(-nh * sigma)
@@ -136,9 +142,9 @@ class Gabs(MultiplicativeComponent):
     """
 
     def continuum(self, energy):
-        tau = hk.get_parameter("tau", [], init=HaikuConstant(1))
-        sigma = hk.get_parameter("sigma", [], init=HaikuConstant(1))
-        center = hk.get_parameter("E_0", [], init=HaikuConstant(1))
+        tau = hk.get_parameter("tau", [], float, init=HaikuConstant(1))
+        sigma = hk.get_parameter("sigma", [], float, init=HaikuConstant(1))
+        center = hk.get_parameter("E_0", [], float, init=HaikuConstant(1))
 
         return jnp.exp(
             -tau / (jnp.sqrt(2 * jnp.pi) * sigma) * jnp.exp(-0.5 * ((energy - center) / sigma) ** 2)
@@ -160,8 +166,8 @@ class Highecut(MultiplicativeComponent):
     """
 
     def continuum(self, energy):
-        cutoff = hk.get_parameter("E_c", [], init=HaikuConstant(1))
-        folding = hk.get_parameter("E_f", [], init=HaikuConstant(1))
+        cutoff = hk.get_parameter("E_c", [], float, init=HaikuConstant(1))
+        folding = hk.get_parameter("E_f", [], float, init=HaikuConstant(1))
 
         return jnp.where(energy <= cutoff, 1.0, jnp.exp((cutoff - energy) / folding))
 
@@ -182,9 +188,9 @@ class Zedge(MultiplicativeComponent):
     """
 
     def continuum(self, energy):
-        E_c = hk.get_parameter("E_c", [], init=HaikuConstant(1))
-        D = hk.get_parameter("D", [], init=HaikuConstant(1))
-        z = hk.get_parameter("z", [], init=HaikuConstant(0))
+        E_c = hk.get_parameter("E_c", [], float, init=HaikuConstant(1))
+        D = hk.get_parameter("D", [], float, init=HaikuConstant(1))
+        z = hk.get_parameter("z", [], float, init=HaikuConstant(0))
 
         return jnp.where(energy <= E_c, 1.0, jnp.exp(-D * (energy * (1 + z) / E_c) ** 3))
 
@@ -207,13 +213,15 @@ class Tbpcf(MultiplicativeComponent):
 
     """
 
-    table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
+        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
-        nh = hk.get_parameter("N_H", [], init=HaikuConstant(1))
-        f = hk.get_parameter("f", [], init=HaikuConstant(0.2))
+        nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
+        f = hk.get_parameter("f", [], float, init=HaikuConstant(0.2))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
 
         return f * jnp.exp(-nh * sigma) + (1 - f)

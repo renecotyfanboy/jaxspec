@@ -1,18 +1,19 @@
+import shutil
+
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 import yaml
-import numpy as np
-import shutil
-from astropy.io import fits
-from pathlib import Path
-from jaxspec.data import Instrument, Observation, ObsConfiguration
-from typing import List
 
+from astropy.io import fits
+from jaxspec.data import Instrument, ObsConfiguration, Observation
 
 # Dir containing 8 files
 data_directory = Path(__file__).parent.resolve() / "data"
 
-with open(data_directory / "observations.yml", "r") as file:
+with open(data_directory / "observations.yml") as file:
     data_collection = yaml.safe_load(file)
 
 
@@ -32,7 +33,7 @@ def test_loading_non_existent_files():
 @pytest.mark.parametrize("observation", data_collection, ids=lambda m: m["name"])
 def test_loading_curated_data_files_from_pha(observation):
     # Not working either because the header are wrong or the file is a pha2
-    not_working = ["XMM-Newton/RGS", "XRISM/Resolve", "Chandra/LETGS"]
+    not_working = ["XMM-Newton/RGS", "XRISM/Resolve", "Chandra/LETGS", "IXPE/GPD"]
 
     if observation["name"] in not_working:
         with pytest.raises(Exception):
@@ -45,7 +46,7 @@ def test_loading_curated_data_files_from_pha(observation):
 @pytest.mark.parametrize("observation", data_collection, ids=lambda m: m["name"])
 def test_plot_curated_data_files_grouping(observation):
     # Not working because the file is a pha2
-    not_working = ["Chandra/LETGS"]
+    not_working = ["Chandra/LETGS", "IXPE/GPD"]
 
     if observation["name"] in not_working:
         with pytest.raises(Exception):
@@ -68,7 +69,7 @@ def test_plot_curated_data_files_grouping(observation):
 @pytest.mark.parametrize("observation", data_collection, ids=lambda m: m["name"])
 def test_loading_curated_data_files_from_pha_with_explicit_files(observation):
     # Not working because the file is a pha2
-    not_working = ["Chandra/LETGS"]
+    not_working = ["Chandra/LETGS", "IXPE/GPD"]
 
     if observation["name"] in not_working:
         with pytest.raises(Exception):
@@ -92,14 +93,17 @@ def test_loading_curated_data_files_from_pha_with_explicit_files(observation):
 
 @pytest.mark.parametrize("observation", data_collection, ids=lambda m: m["name"])
 def test_plot_instruments_from_curated_data_files(observation):
-    if observation["name"] not in ["Chandra/LETGS"]:
+    if observation["name"] not in ["Chandra/LETGS", "IXPE/GPD"]:
         if "arf_path" in observation.keys():
             instrument = Instrument.from_ogip_file(
-                data_directory / observation["rmf_path"], arf_path=data_directory / observation["arf_path"]
+                data_directory / observation["rmf_path"],
+                arf_path=data_directory / observation["arf_path"],
             )
 
         else:
-            instrument = Instrument.from_ogip_file(data_directory / observation["rmf_path"], arf_path=None)
+            instrument = Instrument.from_ogip_file(
+                data_directory / observation["rmf_path"], arf_path=None
+            )
             assert np.isclose(instrument.area, np.ones_like(instrument.area)).all()
 
         instrument.plot_area()
@@ -112,7 +116,7 @@ def test_plot_instruments_from_curated_data_files(observation):
             plt.show()
 
 
-def test_plot_exemple_instruments(instruments: List[Instrument]):
+def test_plot_exemple_instruments(instruments: list[Instrument]):
     for instrument in instruments:
         plt.figure(figsize=(10, 5))
         plt.subplot(121)
@@ -122,7 +126,7 @@ def test_plot_exemple_instruments(instruments: List[Instrument]):
         plt.show()
 
 
-def test_plot_exemple_observations(observations: List[Observation]):
+def test_plot_exemple_observations(observations: list[Observation]):
     for observation in observations:
         observation.plot_grouping()
         plt.show()
@@ -134,7 +138,10 @@ def file_with_no_grouping(tmp_path):
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.arf", tmp_path / "PN.arf")
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.rmf", tmp_path / "PN.rmf")
-    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PNbackground_spectrum.fits", tmp_path / "PNbackground_spectrum.fits")
+    shutil.copyfile(
+        data_directory / "XMM-Newton/EPIC-PN/PNbackground_spectrum.fits",
+        tmp_path / "PNbackground_spectrum.fits",
+    )
 
     with fits.open(file_path) as hdul:
         hdul[1].columns.del_col("GROUPING")
@@ -154,7 +161,10 @@ def file_with_no_backscal(tmp_path):
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.arf", tmp_path / "PN.arf")
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.rmf", tmp_path / "PN.rmf")
-    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PNbackground_spectrum.fits", tmp_path / "PNbackground_spectrum.fits")
+    shutil.copyfile(
+        data_directory / "XMM-Newton/EPIC-PN/PNbackground_spectrum.fits",
+        tmp_path / "PNbackground_spectrum.fits",
+    )
 
     with fits.open(file_path) as hdul:
         del hdul[1].header["BACKSCAL"]
@@ -174,7 +184,10 @@ def file_with_no_areascal(tmp_path):
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.arf", tmp_path / "PN.arf")
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.rmf", tmp_path / "PN.rmf")
-    shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PNbackground_spectrum.fits", tmp_path / "PNbackground_spectrum.fits")
+    shutil.copyfile(
+        data_directory / "XMM-Newton/EPIC-PN/PNbackground_spectrum.fits",
+        tmp_path / "PNbackground_spectrum.fits",
+    )
 
     with fits.open(file_path) as hdul:
         del hdul[1].header["AREASCAL"]

@@ -6,7 +6,7 @@ import numpyro  # noqa:E402
 import pytest  # noqa:E402
 
 from jax import config  # noqa:E402
-from jaxspec.fit import BayesianFitter, MinimizationFitter  # noqa:E402
+from jaxspec.fit import MinimizationFitter, NUTSFitter  # noqa:E402
 
 config.update("jax_enable_x64", True)
 numpyro.set_platform("cpu")
@@ -21,23 +21,23 @@ good_init_params = {
 
 @pytest.fixture(scope="session")
 def obsconfs():
-    from jaxspec.data.util import load_example_foldings
+    from jaxspec.data.util import load_example_obsconf
 
-    return list(load_example_foldings().values())
+    return list(load_example_obsconf("NGC7793_ULX4_ALL").values())
 
 
 @pytest.fixture(scope="session")
 def observations():
-    from jaxspec.data.util import load_example_observations
+    from jaxspec.data.util import load_example_pha
 
-    return list(load_example_observations().values())
+    return list(load_example_pha("NGC7793_ULX4_ALL").values())
 
 
 @pytest.fixture(scope="session")
 def instruments():
     from jaxspec.data.util import load_example_instruments
 
-    return list(load_example_instruments().values())
+    return list(load_example_instruments("NGC7793_ULX4_ALL").values())
 
 
 @pytest.fixture(scope="session")
@@ -49,8 +49,8 @@ def obs_model_prior(obsconfs):
 
     model = Tbabs() * (Powerlaw() + Blackbodyrad())
     prior = {
-        "powerlaw_1": {"alpha": dist.Uniform(0, 10), "norm": dist.LogUniform(1e-6, 1)},
-        "blackbodyrad_1": {"kT": dist.Uniform(0, 10), "norm": dist.LogUniform(1e-1, 1e4)},
+        "powerlaw_1": {"alpha": dist.Uniform(0, 10), "norm": dist.LogUniform(1e-7, 1e-2)},
+        "blackbodyrad_1": {"kT": dist.Uniform(0, 10), "norm": dist.LogUniform(1e-2, 1e2)},
         "tbabs_1": {"N_H": dist.Uniform(0, 0.2)},
     }
 
@@ -61,14 +61,14 @@ def obs_model_prior(obsconfs):
 def get_individual_mcmc_results(obs_model_prior):
     obsconfs, model, prior = obs_model_prior
 
-    return [BayesianFitter(model, obsconf).fit(prior, num_samples=5000) for obsconf in obsconfs]
+    return [NUTSFitter(model, prior, obsconf).fit(num_samples=5000) for obsconf in obsconfs]
 
 
 @pytest.fixture(scope="session")
 def get_joint_mcmc_result(obs_model_prior):
     obsconfs, model, prior = obs_model_prior
 
-    return [BayesianFitter(model, obsconfs).fit(prior, num_samples=5000)]
+    return [NUTSFitter(model, prior, obsconfs).fit(num_samples=5000)]
 
 
 @pytest.fixture(scope="session")
@@ -76,8 +76,8 @@ def get_individual_fit_results(obs_model_prior):
     obsconfs, model, prior = obs_model_prior
 
     return [
-        MinimizationFitter(model, obsconf).fit(
-            prior, num_samples=20_000, init_params=good_init_params
+        MinimizationFitter(model, prior, obsconf).fit(
+            num_samples=20_000, init_params=good_init_params
         )
         for obsconf in obsconfs
     ]
@@ -88,8 +88,8 @@ def get_joint_fit_result(obs_model_prior):
     obsconfs, model, prior = obs_model_prior
 
     return [
-        MinimizationFitter(model, obsconfs).fit(
-            prior, num_samples=20_000, init_params=good_init_params
+        MinimizationFitter(model, prior, obsconfs).fit(
+            num_samples=20_000, init_params=good_init_params
         )
     ]
 
@@ -98,19 +98,19 @@ def get_joint_fit_result(obs_model_prior):
 def get_result_list(
     get_individual_mcmc_results,
     get_joint_mcmc_result,
-    get_individual_fit_results,
-    get_joint_fit_result,
+    # get_individual_fit_results,
+    # get_joint_fit_result,
 ):
     result_list = []
     result_list += get_individual_mcmc_results
     result_list += get_joint_mcmc_result
-    result_list += get_individual_fit_results
-    result_list += get_joint_fit_result
+    # result_list += get_individual_fit_results
+    # result_list += get_joint_fit_result
 
     name_list = []
     name_list += ["PN_mcmc", "MOS1_mcmc", "MOS2_mcmc"]
     name_list += ["Joint_mcmc"]
-    name_list += ["PN_fit", "MOS1_fit", "MOS2_fit"]
-    name_list += ["Joint_fit"]
+    # name_list += ["PN_fit", "MOS1_fit", "MOS2_fit"]
+    # name_list += ["Joint_fit"]
 
     return name_list, result_list

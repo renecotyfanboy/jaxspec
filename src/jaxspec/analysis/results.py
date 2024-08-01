@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from collections.abc import Mapping
-from typing import Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import arviz as az
 import astropy.units as u
@@ -14,13 +16,14 @@ from astropy.units import Unit
 from chainconsumer import Chain, ChainConsumer, PlotConfig
 from haiku.data_structures import traverse
 from jax.typing import ArrayLike
+from numpyro.handlers import seed
 from scipy.integrate import trapezoid
 from scipy.special import gammaln
 from scipy.stats import nbinom
 
-from ..data import ObsConfiguration
-from ..model.abc import SpectralModel
-from ..model.background import BackgroundModel
+if TYPE_CHECKING:
+    from ..fit import BayesianModel
+    from ..model.background import BackgroundModel
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -96,17 +99,15 @@ class FitResult:
     # TODO : Add type hints
     def __init__(
         self,
-        model: SpectralModel,
-        obsconf: ObsConfiguration | dict[str, ObsConfiguration],
+        bayesian_fitter: BayesianModel,
         inference_data: az.InferenceData,
         structure: Mapping[K, V],
         background_model: BackgroundModel = None,
     ):
-        self.model = model
+        self.model = bayesian_fitter.model
+        self.bayesian_fitter = bayesian_fitter
         self.inference_data = inference_data
-        self.obsconfs = (
-            {"Observation": obsconf} if isinstance(obsconf, ObsConfiguration) else obsconf
-        )
+        self.obsconfs = bayesian_fitter.observation_container
         self.background_model = background_model
         self._structure = structure
 
@@ -114,7 +115,7 @@ class FitResult:
         for group in self.inference_data.groups():
             group_name = group.split("/")[-1]
             metadata = getattr(self.inference_data, group_name).attrs
-            metadata["model"] = str(model)
+            metadata["model"] = str(self.model)
             # TODO : Store metadata about observations used in the fitting process
 
     @property
@@ -131,9 +132,7 @@ class FitResult:
         Get samples from the parameter posterior distribution but keep their shape in terms of draw and chains.
         """
 
-        var_names = [f"{m}_{n}" for m, n, _ in traverse(self._structure)]
-        posterior = az.extract(self.inference_data, var_names=var_names, combined=False)
-        samples_flat = {key: posterior[key].data for key in var_names}
+        samples_flat = self._structured_samples_flat
 
         samples_haiku = {}
 
@@ -143,6 +142,60 @@ class FitResult:
             samples_haiku[module][parameter] = samples_flat[f"{module}_{parameter}"]
 
         return samples_haiku
+
+    @property
+    def _structured_samples_flat(self):
+        """
+        Get samples from the parameter posterior distribution but keep their shape in terms of draw and chains.
+        """
+
+        var_names = [f"{m}_{n}" for m, n, _ in traverse(self._structure)]
+        posterior = az.extract(self.inference_data, var_names=var_names, combined=False)
+        samples_flat = {key: posterior[key].data for key in var_names}
+
+        return samples_flat
+
+    @property
+    def input_parameters(self) -> HaikuDict[ArrayLike]:
+        """
+        The input parameters of the model.
+        """
+
+        posterior = az.extract(self.inference_data, combined=False)
+
+        samples_shape = (len(posterior.coords["chain"]), len(posterior.coords["draw"]))
+
+        total_shape = tuple(posterior.sizes[d] for d in posterior.coords)
+
+        posterior = {key: posterior[key].data for key in posterior.data_vars}
+
+        with seed(rng_seed=0):
+            input_parameters = self.bayesian_fitter.prior_distributions_func()
+
+        for module, parameter, value in traverse(input_parameters):
+            if f"{module}_{parameter}" in posterior.keys():
+                # We add as extra dimension as there might be different values per observation
+                if posterior[f"{module}_{parameter}"].shape == samples_shape:
+                    to_set = posterior[f"{module}_{parameter}"][..., None]
+                else:
+                    to_set = posterior[f"{module}_{parameter}"]
+
+                input_parameters[module][parameter] = to_set
+
+            else:
+                # The parameter is fixed in this case, so we just broadcast is over chain and draws
+                input_parameters[module][parameter] = value[None, None, ...]
+
+            if len(total_shape) < len(input_parameters[module][parameter].shape):
+                # If there are only chains and draws, we reduce
+                input_parameters[module][parameter] = input_parameters[module][parameter][..., 0]
+
+            else:
+                input_parameters[module][parameter] = jnp.broadcast_to(
+                    input_parameters[module][parameter], total_shape
+                )
+
+        return input_parameters
 
     def photon_flux(
         self,
@@ -155,8 +208,7 @@ class FitResult:
         Compute the unfolded photon flux in a given energy band. The flux is then added to
         the result parameters so covariance can be plotted.
 
-        Parameters
-        ----------
+        Parameters:
             e_min: The lower bound of the energy band in observer frame.
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the photon flux.
@@ -167,20 +219,22 @@ class FitResult:
             [issue](https://github.com/renecotyfanboy/jaxspec/issues) in the GitHub repository.
         """
 
-        samples = self._structured_samples
-        init_shape = jax.tree.leaves(samples)[0].shape
+        @jax.jit
+        @jnp.vectorize
+        def vectorized_flux(*pars):
+            parameters_pytree = jax.tree.unflatten(pytree_def, pars)
+            return self.model.photon_flux(
+                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=100
+            )[0]
 
-        flux = jax.vmap(
-            lambda p: self.model.photon_flux(p, jnp.asarray([e_min]), jnp.asarray([e_max]))
-        )(jax.tree.map(lambda x: x.ravel(), samples))
-
-        flux = jax.tree.map(lambda x: x.reshape(init_shape), flux)
+        flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
+        flux = vectorized_flux(*flat_tree)
         conversion_factor = (u.photon / u.cm**2 / u.s).to(unit)
         value = flux * conversion_factor
 
         if register:
-            self.inference_data.posterior[f"flux_{e_min:.1f}_{e_max:.1f}"] = (
-                ["chain", "draw"],
+            self.inference_data.posterior[f"photon_flux_{e_min:.1f}_{e_max:.1f}"] = (
+                list(self.inference_data.posterior.coords),
                 value,
             )
 
@@ -197,8 +251,7 @@ class FitResult:
         Compute the unfolded energy flux in a given energy band. The flux is then added to
         the result parameters so covariance can be plotted.
 
-        Parameters
-        ----------
+        Parameters:
             e_min: The lower bound of the energy band in observer frame.
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the energy flux.
@@ -209,21 +262,22 @@ class FitResult:
             [issue](https://github.com/renecotyfanboy/jaxspec/issues) in the GitHub repository.
         """
 
-        samples = self._structured_samples
-        init_shape = jax.tree.leaves(samples)[0].shape
+        @jax.jit
+        @jnp.vectorize
+        def vectorized_flux(*pars):
+            parameters_pytree = jax.tree.unflatten(pytree_def, pars)
+            return self.model.energy_flux(
+                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=100
+            )[0]
 
-        flux = jax.vmap(
-            lambda p: self.model.energy_flux(p, jnp.asarray([e_min]), jnp.asarray([e_max]))
-        )(jax.tree.map(lambda x: x.ravel(), samples))
-
-        flux = jax.tree.map(lambda x: x.reshape(init_shape), flux)
-
+        flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
+        flux = vectorized_flux(*flat_tree)
         conversion_factor = (u.keV / u.cm**2 / u.s).to(unit)
         value = flux * conversion_factor
 
         if register:
-            self.inference_data.posterior[f"eflux_{e_min:.1f}_{e_max:.1f}"] = (
-                ["chain", "draw"],
+            self.inference_data.posterior[f"energy_flux_{e_min:.1f}_{e_max:.1f}"] = (
+                list(self.inference_data.posterior.coords),
                 value,
             )
 
@@ -243,8 +297,7 @@ class FitResult:
         Compute the luminosity of the source specifying its redshift. The luminosity is then added to
         the result parameters so covariance can be plotted.
 
-        Parameters
-        ----------
+        Parameters:
             e_min: The lower bound of the energy band.
             e_max: The upper bound of the energy band.
             redshift: The redshift of the source. It can be a distribution of redshifts.
@@ -257,24 +310,24 @@ class FitResult:
         if not observer_frame:
             raise NotImplementedError()
 
-        samples = self._structured_samples
-        init_shape = jax.tree.leaves(samples)[0].shape
+        @jax.jit
+        @jnp.vectorize
+        def vectorized_flux(*pars):
+            parameters_pytree = jax.tree.unflatten(pytree_def, pars)
+            return self.model.energy_flux(
+                parameters_pytree,
+                jnp.asarray([e_min]) * (1 + redshift),
+                jnp.asarray([e_max]) * (1 + redshift),
+                n_points=100,
+            )[0]
 
-        flux = jax.vmap(
-            lambda p: self.model.energy_flux(
-                p, jnp.asarray([e_min]) * (1 + redshift), jnp.asarray([e_max])
-            )
-            * (1 + redshift)
-        )(jax.tree.map(lambda x: x.ravel(), samples))
-
-        flux = jax.tree.map(
-            lambda x: np.asarray(x.reshape(init_shape)) * (u.keV / u.cm**2 / u.s), flux
-        )
+        flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
+        flux = vectorized_flux(*flat_tree) * (u.keV / u.cm**2 / u.s)
         value = (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(unit)
 
         if register:
             self.inference_data.posterior[f"luminosity_{e_min:.1f}_{e_max:.1f}"] = (
-                ["chain", "draw"],
+                list(self.inference_data.posterior.coords),
                 value,
             )
 
@@ -284,8 +337,7 @@ class FitResult:
         """
         Return a ChainConsumer Chain object from the posterior distribution of the parameters_type.
 
-        Parameters
-        ----------
+        Parameters:
             name: The name of the chain.
             parameters_type: The parameters_type to include in the chain.
         """
@@ -423,14 +475,12 @@ class FitResult:
         $$ \text{Residual} = \frac{\text{Observed counts} - \text{Posterior counts}}
         {(\text{Posterior counts})_{84\%}-(\text{Posterior counts})_{16\%}} $$
 
-        Parameters
-        ----------
+        Parameters:
             percentile: The percentile of the posterior predictive distribution to plot.
             x_unit: The units of the x-axis. It can be either a string (parsable by astropy.units) or an astropy unit. It must be homogeneous to either a length, a frequency or an energy.
             y_type: The type of the y-axis. It can be either "counts", "countrate", "photon_flux" or "photon_flux_density".
 
         Returns:
-        -------
             The matplotlib figure.
         """
 
@@ -667,10 +717,8 @@ class FitResult:
         """
         Plot the corner plot of the posterior distribution of the parameters_type. This method uses the ChainConsumer.
 
-        Parameters
-        ----------
+        Parameters:
             config: The configuration of the plot.
-            parameters: The parameters to include in the plot using the following format: `blackbody_1_kT`.
             **kwargs: Additional arguments passed to ChainConsumer.plotter.plot. Some useful parameters are :
                 - columns : list of parameters to plot.
         """
