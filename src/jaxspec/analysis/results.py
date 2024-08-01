@@ -203,8 +203,7 @@ class FitResult:
         Compute the unfolded photon flux in a given energy band. The flux is then added to
         the result parameters so covariance can be plotted.
 
-        Parameters
-        ----------
+        Parameters:
             e_min: The lower bound of the energy band in observer frame.
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the photon flux.
@@ -247,8 +246,7 @@ class FitResult:
         Compute the unfolded energy flux in a given energy band. The flux is then added to
         the result parameters so covariance can be plotted.
 
-        Parameters
-        ----------
+        Parameters:
             e_min: The lower bound of the energy band in observer frame.
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the energy flux.
@@ -294,8 +292,7 @@ class FitResult:
         Compute the luminosity of the source specifying its redshift. The luminosity is then added to
         the result parameters so covariance can be plotted.
 
-        Parameters
-        ----------
+        Parameters:
             e_min: The lower bound of the energy band.
             e_max: The upper bound of the energy band.
             redshift: The redshift of the source. It can be a distribution of redshifts.
@@ -335,8 +332,7 @@ class FitResult:
         """
         Return a ChainConsumer Chain object from the posterior distribution of the parameters_type.
 
-        Parameters
-        ----------
+        Parameters:
             name: The name of the chain.
             parameters_type: The parameters_type to include in the chain.
         """
@@ -474,14 +470,12 @@ class FitResult:
         $$ \text{Residual} = \frac{\text{Observed counts} - \text{Posterior counts}}
         {(\text{Posterior counts})_{84\%}-(\text{Posterior counts})_{16\%}} $$
 
-        Parameters
-        ----------
+        Parameters:
             percentile: The percentile of the posterior predictive distribution to plot.
             x_unit: The units of the x-axis. It can be either a string (parsable by astropy.units) or an astropy unit. It must be homogeneous to either a length, a frequency or an energy.
             y_type: The type of the y-axis. It can be either "counts", "countrate", "photon_flux" or "photon_flux_density".
 
         Returns:
-        -------
             The matplotlib figure.
         """
 
@@ -718,10 +712,8 @@ class FitResult:
         """
         Plot the corner plot of the posterior distribution of the parameters_type. This method uses the ChainConsumer.
 
-        Parameters
-        ----------
+        Parameters:
             config: The configuration of the plot.
-            parameters: The parameters to include in the plot using the following format: `blackbody_1_kT`.
             **kwargs: Additional arguments passed to ChainConsumer.plotter.plot. Some useful parameters are :
                 - columns : list of parameters to plot.
         """

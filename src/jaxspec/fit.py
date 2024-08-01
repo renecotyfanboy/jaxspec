@@ -90,7 +90,7 @@ def build_numpyro_model_for_single_obs(
         with numpyro.plate("obs_plate_" + name, len(obs.folded_counts)):
             numpyro.sample(
                 "obs_" + name,
-                Poisson(countrate + bkg_countrate * obs.folded_backratio.data),
+                Poisson(countrate + bkg_countrate / obs.folded_backratio.data),
                 obs=obs.folded_counts.data if observed else None,
             )
 
@@ -164,8 +164,7 @@ class BayesianModel:
         """
         Initialize the fitter.
 
-        Parameters
-        ----------
+        Parameters:
             model: the spectral model to fit.
             prior_distributions: a nested dictionary containing the prior distributions for the model parameters, or a
                 callable function that returns parameter samples.
@@ -279,8 +278,7 @@ class NUTSFitter(BayesianModelFitter):
         """
         Fit the model to the data using NUTS sampler from numpyro.
 
-        Parameters
-        ----------
+        Parameters:
             rng_key: the random key used to initialize the sampler.
             num_chains: the number of chains to run.
             num_warmup: the number of warmup steps.
@@ -291,7 +289,6 @@ class NUTSFitter(BayesianModelFitter):
             mcmc_kwargs: additional arguments to pass to the MCMC sampler. See [`MCMC`][numpyro.infer.mcmc.MCMC] for more details.
 
         Returns:
-        -------
             A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
         """
 
@@ -359,15 +356,12 @@ class MinimizationFitter(BayesianModelFitter):
         """
         Fit the model to the data using L-BFGS algorithm.
 
-        Parameters
-        ----------
-            prior_distributions: a nested dictionary containing the prior distributions for the model parameters.
+        Parameters:
             rng_key: the random key used to initialize the sampler.
             num_iter_max: the maximum number of iteration in the minimization algorithm.
             num_samples: the number of sample to draw from the best-fit covariance.
 
         Returns:
-        -------
             A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
         """
 
@@ -510,7 +504,6 @@ class NestedSamplingFitter(BayesianModelFitter):
     def fit(
         self,
         rng_key: int = 0,
-        num_parallel_workers: int = 1,
         num_samples: int = 1000,
         plot_diagnostics=False,
         termination_kwargs: dict | None = None,
@@ -533,32 +526,28 @@ class NestedSamplingFitter(BayesianModelFitter):
         ns = NestedSampler(
             bayesian_model,
             constructor_kwargs=dict(
-                num_parallel_workers=num_parallel_workers,
+                num_parallel_workers=1,
                 verbose=verbose,
                 difficult_model=True,
                 max_samples=1e6,
                 parameter_estimation=True,
-                num_live_points=400,
+                num_live_points=1_000,
             ),
             termination_kwargs=termination_kwargs if termination_kwargs else dict(),
         )
 
         ns.run(keys[0])
 
-        self.ns = ns
-
         if plot_diagnostics:
             ns.diagnostics()
 
-        posterior_samples = ns.get_samples(keys[1], num_samples=num_samples * num_parallel_workers)
+        posterior_samples = ns.get_samples(keys[1], num_samples=num_samples)
         log_likelihood = numpyro.infer.log_likelihood(bayesian_model, posterior_samples)
         posterior_predictive = Predictive(bayesian_model, posterior_samples)(
             keys[2], observed=False
         )
 
-        prior = Predictive(bayesian_model, num_samples=num_samples * num_parallel_workers)(
-            keys[3], observed=False
-        )
+        prior = Predictive(bayesian_model, num_samples=num_samples)(keys[3], observed=False)
 
         seeded_model = numpyro.handlers.substitute(
             numpyro.handlers.seed(bayesian_model, jax.random.PRNGKey(0)),

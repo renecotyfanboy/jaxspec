@@ -2,11 +2,11 @@ site_name: jaxspec
 
 nav:
   - Home: index.md
-  - Theory:
-    - theory/index.md
-    - Bayesian inference: theory/bayesian_inference.md
-    - Instruments modelling: theory/instrument.md
-    - Background modelling: theory/background.md
+  #- Theory:
+  #  - theory/index.md
+  #  - Bayesian inference: theory/bayesian_inference.md
+  #  - Instruments modelling: theory/instrument.md
+  #  - Background modelling: theory/background.md
   - Examples:
     - examples/index.md
     - Spectral fitting speedrun: examples/fitting_example.md
@@ -69,6 +69,7 @@ theme:
 plugins:
   - search
   - autorefs
+  - typeset
   - mkdocs-jupyter:
       include_source: True
       ignore_h1_titles: True
@@ -92,7 +93,7 @@ plugins:
             - https://jaxns.readthedocs.io/en/latest/objects.inv
           options:
             members_order: alphabetical
-            docstring_section_style: spacy
+            docstring_section_style: table
             docstring_style: google
             show_symbol_type_heading: true
             show_symbol_type_toc: true

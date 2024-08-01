@@ -21,7 +21,7 @@ K = TypeVar("K")
 V = TypeVar("V")
 
 
-def load_example_observations():
+def load_example_pha():
     """
     Load some example observations from the package data.
     """
@@ -76,7 +76,7 @@ def load_example_foldings():
     """
 
     example_instruments = load_example_instruments()
-    example_observations = load_example_observations()
+    example_observations = load_example_pha()
 
     example_foldings = {
         "PN": ObsConfiguration.from_instrument(
@@ -115,8 +115,7 @@ def fakeit(
     [XSPEC's fakeit](https://heasarc.gsfc.nasa.gov/xanadu/xspec/manual/node72.html), the error on the counts is given
     exclusively by Poisson statistics.
 
-    Parameters
-    ----------
+    Parameters:
         instrument: The instrumental setup.
         model: The model to use.
         parameters: The parameters of the model.
@@ -177,8 +176,7 @@ def fakeit_for_multiple_parameters(
 
     TODO : avoid redundancy, better doc and type hints
 
-    Parameters
-    ----------
+    Parameters:
         instrument: The instrumental setup.
         model: The model to use.
         parameters: The parameters of the model.
@@ -219,12 +217,10 @@ def data_path_finder(pha_path: str) -> tuple[str | None, str | None, str | None]
     """
     Function which tries its best to find the ARF, RMF and BKG files associated with a given PHA file.
 
-    Parameters
-    ----------
+    Parameters:
         pha_path: The PHA file path.
 
-    Returns
-    -------
+    Returns:
         arf_path: The ARF file path.
         rmf_path: The RMF file path.
         bkg_path: The BKG file path.

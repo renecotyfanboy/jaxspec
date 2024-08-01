@@ -2,6 +2,12 @@
 
 ## Why should I use `jaxspec` over `xspec` or associated ?
 
+We have taken great care to make `jaxspec` as easy to use as possible. It can be installed with `pip install jaxspec`
+and that's it. It is also easy to use and provides well documented use cases. The default methods are fast yet robust
+for inferring model parameters in most usecases. It is also easy to integrate with other software as it exposes the
+likelihood function, so if you want to use your own methods and just need a forward model with instrument folding, we
+provide a compilable and GPU friendly one that can also be used as your usual `numpy` function.
+
 ## Why is there no $\chi^2$ statistic ?
 
 When it comes to define the fitting statistic, the question of either using $\chi^2$ or C-stat arises
