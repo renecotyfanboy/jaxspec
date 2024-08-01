@@ -63,9 +63,11 @@ class Tbabs(MultiplicativeComponent):
 
     """
 
-    table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
+        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
         nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
@@ -84,9 +86,11 @@ class Phabs(MultiplicativeComponent):
 
     """
 
-    table = Table.read(table_manager.fetch("xsect_phabs_aspl.fits"))
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        table = Table.read(table_manager.fetch("xsect_phabs_aspl.fits"))
+        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
         nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
@@ -105,9 +109,11 @@ class Wabs(MultiplicativeComponent):
 
     """
 
-    table = Table.read(table_manager.fetch("xsect_wabs_angr.fits"))
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        table = Table.read(table_manager.fetch("xsect_wabs_angr.fits"))
+        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
         nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
@@ -207,9 +213,11 @@ class Tbpcf(MultiplicativeComponent):
 
     """
 
-    table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-    energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-    sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
+        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
+        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
 
     def continuum(self, energy):
         nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
