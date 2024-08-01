@@ -1,8 +1,6 @@
-import importlib.resources
-
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 import haiku as hk
 import jax
@@ -15,91 +13,118 @@ from numpyro import handlers
 
 from ..fit import CountForwardModel
 from ..model.abc import SpectralModel
+from ..util.online_storage import table_manager
 from . import Instrument, ObsConfiguration, Observation
 
 K = TypeVar("K")
 V = TypeVar("V")
 
 
-def load_example_pha():
+def load_example_pha(
+    source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"],
+) -> (Observation, list[Observation] | dict[str, Observation]):
     """
     Load some example observations from the package data.
+
+    Parameters:
+        source: The source to be loaded. Can be either "NGC7793_ULX4_PN" or "NGC7793_ULX4_ALL".
     """
 
-    example_observations = {
-        "PN": Observation.from_pha_file(
-            str(importlib.resources.files("jaxspec") / "data/example_data/PN_spectrum_grp20.fits"),
-            low_energy=0.3,
-            high_energy=7.5,
-        ),
-        "MOS1": Observation.from_pha_file(
-            str(importlib.resources.files("jaxspec") / "data/example_data/MOS1_spectrum_grp.fits"),
-            low_energy=0.3,
-            high_energy=7,
-        ),
-        "MOS2": Observation.from_pha_file(
-            str(importlib.resources.files("jaxspec") / "data/example_data/MOS2_spectrum_grp.fits"),
-            low_energy=0.3,
-            high_energy=7,
-        ),
-    }
+    if source == "NGC7793_ULX4_PN":
+        return Observation.from_pha_file(
+            table_manager.fetch("example_data/NGC7793_ULX4/PN_spectrum_grp20.fits"),
+            bkg_path=table_manager.fetch("example_data/NGC7793_ULX4/PNbackground_spectrum.fits"),
+        )
 
-    return example_observations
+    elif source == "NGC7793_ULX4_ALL":
+        return {
+            "PN": Observation.from_pha_file(
+                table_manager.fetch("example_data/NGC7793_ULX4/PN_spectrum_grp20.fits"),
+                bkg_path=table_manager.fetch(
+                    "example_data/NGC7793_ULX4/PNbackground_spectrum.fits"
+                ),
+            ),
+            "MOS1": Observation.from_pha_file(
+                table_manager.fetch("example_data/NGC7793_ULX4/MOS1_spectrum_grp.fits"),
+                bkg_path=table_manager.fetch(
+                    "example_data/NGC7793_ULX4/MOS1background_spectrum.fits"
+                ),
+            ),
+            "MOS2": Observation.from_pha_file(
+                table_manager.fetch("example_data/NGC7793_ULX4/MOS2_spectrum_grp.fits"),
+                bkg_path=table_manager.fetch(
+                    "example_data/NGC7793_ULX4/MOS2background_spectrum.fits"
+                ),
+            ),
+        }
 
-
-def load_example_instruments():
-    """
-    Load some example instruments from the package data.
-    """
-
-    example_instruments = {
-        "PN": Instrument.from_ogip_file(
-            str(importlib.resources.files("jaxspec") / "data/example_data/PN.rmf"),
-            str(importlib.resources.files("jaxspec") / "data/example_data/PN.arf"),
-        ),
-        "MOS1": Instrument.from_ogip_file(
-            str(importlib.resources.files("jaxspec") / "data/example_data/MOS1.rmf"),
-            str(importlib.resources.files("jaxspec") / "data/example_data/MOS1.arf"),
-        ),
-        "MOS2": Instrument.from_ogip_file(
-            str(importlib.resources.files("jaxspec") / "data/example_data/MOS2.rmf"),
-            str(importlib.resources.files("jaxspec") / "data/example_data/MOS2.arf"),
-        ),
-    }
-
-    return example_instruments
+    else:
+        raise ValueError(f"{source} not recognized.")
 
 
-def load_example_foldings():
+def load_example_instruments(source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"]):
     """
     Load some example instruments from the package data.
+
+    Parameters:
+        source: The source to be loaded. Can be either "NGC7793_ULX4_PN" or "NGC7793_ULX4_ALL".
+
+    """
+    if source == "NGC7793_ULX4_PN":
+        return Instrument.from_ogip_file(
+            table_manager.fetch("example_data/NGC7793_ULX4/PN.rmf"),
+            table_manager.fetch("example_data/NGC7793_ULX4/PN.arf"),
+        )
+
+    elif source == "NGC7793_ULX4_ALL":
+        return {
+            "PN": Instrument.from_ogip_file(
+                table_manager.fetch("example_data/NGC7793_ULX4/PN.rmf"),
+                table_manager.fetch("example_data/NGC7793_ULX4/PN.arf"),
+            ),
+            "MOS1": Instrument.from_ogip_file(
+                table_manager.fetch("example_data/NGC7793_ULX4/MOS1.rmf"),
+                table_manager.fetch("example_data/NGC7793_ULX4/MOS1.arf"),
+            ),
+            "MOS2": Instrument.from_ogip_file(
+                table_manager.fetch("example_data/NGC7793_ULX4/MOS2.rmf"),
+                table_manager.fetch("example_data/NGC7793_ULX4/MOS2.arf"),
+            ),
+        }
+
+    else:
+        raise ValueError(f"{source} not recognized.")
+
+
+def load_example_obsconf(source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"]):
+    """
+    Load some example ObsConfigurations.
+
+    Parameters:
+        source: The source to be loaded. Can be either "NGC7793_ULX4_PN" or "NGC7793_ULX4_ALL".
     """
 
-    example_instruments = load_example_instruments()
-    example_observations = load_example_pha()
+    if source in "NGC7793_ULX4_PN":
+        instrument = load_example_instruments(source)
+        observation = load_example_pha(source)
 
-    example_foldings = {
-        "PN": ObsConfiguration.from_instrument(
-            example_instruments["PN"],
-            example_observations["PN"],
-            low_energy=0.3,
-            high_energy=8.0,
-        ),
-        "MOS1": ObsConfiguration.from_instrument(
-            example_instruments["MOS1"],
-            example_observations["MOS1"],
-            low_energy=0.3,
-            high_energy=7,
-        ),
-        "MOS2": ObsConfiguration.from_instrument(
-            example_instruments["MOS2"],
-            example_observations["MOS2"],
-            low_energy=0.3,
-            high_energy=7,
-        ),
-    }
+        return ObsConfiguration.from_instrument(
+            instrument, observation, low_energy=0.5, high_energy=8.0
+        )
 
-    return example_foldings
+    elif source == "NGC7793_ULX4_ALL":
+        instruments_dict = load_example_instruments(source)
+        observations_dict = load_example_pha(source)
+
+        return {
+            key: ObsConfiguration.from_instrument(
+                instruments_dict[key], observations_dict[key], low_energy=0.5, high_energy=8.0
+            )
+            for key in instruments_dict.keys()
+        }
+
+    else:
+        raise ValueError(f"{source} not recognized.")
 
 
 def fakeit(

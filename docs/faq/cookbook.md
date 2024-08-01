@@ -14,20 +14,20 @@ numpyro.set_platform("cpu")
 import numpyro.distributions as dist
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
-from jaxspec.data.util import load_example_foldings
+from jaxspec.data.util import load_example_obsconf
 from jaxspec.fit import NUTSFitter
 from jaxspec.model.additive import Powerlaw, Blackbodyrad
 from jaxspec.model.multiplicative import Tbabs
 
-spectral_model = Tbabs()*(Powerlaw() + Blackbodyrad())
+spectral_model = Tbabs() * (Powerlaw() + Blackbodyrad())
 
 prior = {
     'powerlaw_1': {
-        'alpha': dist.Uniform(0.*jnp.ones((3,)), 5*jnp.ones((3,))),
+        'alpha': dist.Uniform(0. * jnp.ones((3,)), 5 * jnp.ones((3,))),
         'norm': dist.LogUniform(1e-6, 1e-3)
     },
     'blackbodyrad_1': {
-        'kT' : dist.Uniform(0.3, 3),
+        'kT': dist.Uniform(0.3, 3),
         'norm': dist.LogUniform(1e-2, 1e3)
     },
     'tbabs_1': {
@@ -35,7 +35,7 @@ prior = {
     }
 }
 
-ulx_observations = load_example_foldings()
+ulx_observations = load_example_obsconf()
 fitter = NUTSFitter(spectral_model, prior, ulx_observations)
 result = fitter.fit(num_samples=1_000)
 ```

@@ -21,23 +21,23 @@ good_init_params = {
 
 @pytest.fixture(scope="session")
 def obsconfs():
-    from jaxspec.data.util import load_example_foldings
+    from jaxspec.data.util import load_example_obsconf
 
-    return list(load_example_foldings().values())
+    return list(load_example_obsconf("NGC7793_ULX4_ALL").values())
 
 
 @pytest.fixture(scope="session")
 def observations():
     from jaxspec.data.util import load_example_pha
 
-    return list(load_example_pha().values())
+    return list(load_example_pha("NGC7793_ULX4_ALL").values())
 
 
 @pytest.fixture(scope="session")
 def instruments():
     from jaxspec.data.util import load_example_instruments
 
-    return list(load_example_instruments().values())
+    return list(load_example_instruments("NGC7793_ULX4_ALL").values())
 
 
 @pytest.fixture(scope="session")
@@ -49,8 +49,8 @@ def obs_model_prior(obsconfs):
 
     model = Tbabs() * (Powerlaw() + Blackbodyrad())
     prior = {
-        "powerlaw_1": {"alpha": dist.Uniform(0, 10), "norm": dist.LogUniform(1e-6, 1)},
-        "blackbodyrad_1": {"kT": dist.Uniform(0, 10), "norm": dist.LogUniform(1e-1, 1e4)},
+        "powerlaw_1": {"alpha": dist.Uniform(0, 10), "norm": dist.LogUniform(1e-7, 1e-2)},
+        "blackbodyrad_1": {"kT": dist.Uniform(0, 10), "norm": dist.LogUniform(1e-2, 1e2)},
         "tbabs_1": {"N_H": dist.Uniform(0, 0.2)},
     }
 

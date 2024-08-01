@@ -186,9 +186,14 @@ class FitResult:
                 # The parameter is fixed in this case, so we just broadcast is over chain and draws
                 input_parameters[module][parameter] = value[None, None, ...]
 
-            input_parameters[module][parameter] = jnp.broadcast_to(
-                input_parameters[module][parameter], total_shape
-            )
+            if len(total_shape) < len(input_parameters[module][parameter].shape):
+                # If there are only chains and draws, we reduce
+                input_parameters[module][parameter] = input_parameters[module][parameter][..., 0]
+
+            else:
+                input_parameters[module][parameter] = jnp.broadcast_to(
+                    input_parameters[module][parameter], total_shape
+                )
 
         return input_parameters
 
