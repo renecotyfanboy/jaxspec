@@ -64,4 +64,11 @@
 
     Add a custom model to `jaxspec`
 
+-   [__Interface with other frameworks__](external_samplers.ipynb)
+
+    ---
+
+    Use `jaxspec` likelihood in other packages
+
+
 </div>
