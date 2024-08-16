@@ -1,6 +1,9 @@
-import pytest
-import numpy as np
 import os
+
+import numpy as np
+import pytest
+
+from jaxspec.util.online_storage import table_manager
 
 xspec = pytest.importorskip("xspec")
 
@@ -9,12 +12,16 @@ xspec = pytest.importorskip("xspec")
 def load_jaxspec_data(request, monkeypatch):
     from jaxspec.data import ObsConfiguration, Observation
 
-    monkeypatch.chdir(os.path.join(os.path.dirname(request.fspath.dirname), "src/jaxspec/data/example_data"))
-
-    file_pha = "PN_spectrum_grp20.fits"
+    file_pha = table_manager.fetch("example_data/NGC7793_ULX4/PN_spectrum_grp20.fits")
+    pn_rmf_path = table_manager.fetch("example_data/NGC7793_ULX4/PN.rmf")
+    pn_arf_path = table_manager.fetch("example_data/NGC7793_ULX4/PN.arf")
+    dir_path = os.path.dirname(file_pha)
+    monkeypatch.chdir(os.path.join(os.path.dirname(request.fspath.dirname), dir_path))
 
     low_energy, high_energy = 0.5, 8.0
-    folding = ObsConfiguration.from_pha_file(file_pha, low_energy=low_energy, high_energy=high_energy)
+    folding = ObsConfiguration.from_pha_file(
+        file_pha, low_energy=low_energy, high_energy=high_energy
+    )
     observation = Observation.from_pha_file(file_pha)
 
     return folding, observation
@@ -23,8 +30,12 @@ def load_jaxspec_data(request, monkeypatch):
 @pytest.fixture
 def load_xspec_data(request, monkeypatch):
     low_energy, high_energy = 0.5, 8.0
-    monkeypatch.chdir(os.path.join(os.path.dirname(request.fspath.dirname), "src/jaxspec/data/example_data"))
-    file_pha = "PN_spectrum_grp20.fits"
+
+    file_pha = table_manager.fetch("example_data/NGC7793_ULX4/PN_spectrum_grp20.fits")
+    pn_rmf_path = table_manager.fetch("example_data/NGC7793_ULX4/PN.rmf")
+    pn_arf_path = table_manager.fetch("example_data/NGC7793_ULX4/PN.arf")
+    dir_path = os.path.dirname(file_pha)
+    monkeypatch.chdir(os.path.join(os.path.dirname(request.fspath.dirname), dir_path))
 
     xspec.AllData.clear()
     xspec.Plot.xAxis = "keV"
@@ -35,7 +46,7 @@ def load_xspec_data(request, monkeypatch):
 
 
 def test_obs_constitantcy(load_xspec_data, load_jaxspec_data):
-    file_pha = "PN_spectrum_grp20.fits"
+    file_pha = table_manager.fetch("example_data/NGC7793_ULX4/PN_spectrum_grp20.fits")
     xspec_observation = load_xspec_data
     folding, observation = load_jaxspec_data
 
@@ -48,12 +59,15 @@ def test_obs_constitantcy(load_xspec_data, load_jaxspec_data):
 
 
 def test_bins(load_xspec_data, load_jaxspec_data):
-    file_pha = "PN_spectrum_grp20.fits"
+    file_pha = table_manager.fetch("example_data/NGC7793_ULX4/PN_spectrum_grp20.fits")
     xspec_observation = load_xspec_data
     folding, observation = load_jaxspec_data
 
     xspec_in_energies = np.vstack(
-        [np.asarray(xspec_observation.response.energies)[0:-1], np.asarray(xspec_observation.response.energies)[1:]]
+        [
+            np.asarray(xspec_observation.response.energies)[0:-1],
+            np.asarray(xspec_observation.response.energies)[1:],
+        ]
     )
 
     xspec_out_energies = np.asarray(xspec_observation.energies).T

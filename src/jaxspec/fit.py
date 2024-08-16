@@ -24,7 +24,7 @@ from numpyro.infer import MCMC, NUTS, Predictive
 from numpyro.infer.initialization import init_to_value
 from numpyro.infer.inspect import get_model_relations
 from numpyro.infer.reparam import TransformReparam
-from numpyro.infer.util import constrain_fn
+from numpyro.infer.util import constrain_fn, log_density
 from scipy.stats import Covariance, multivariate_normal
 
 from .analysis.results import FitResult
@@ -287,6 +287,22 @@ class BayesianModel:
         return log_likelihood
 
     @cached_property
+    def log_posterior_prob(self) -> Callable:
+        """
+        Build the posterior probability. Takes a dictionary of parameters where the keys are the parameter names
+        that can be fetched with the [`parameter_names`][jaxspec.fit.BayesianModel.parameter_names].
+        """
+
+        @jax.jit
+        def log_posterior_prob(constrained_params):
+            log_posterior_prob, _ = log_density(
+                self.numpyro_model, (), dict(observed=True), constrained_params
+            )
+            return jnp.where(jnp.isnan(log_posterior_prob), -jnp.inf, log_posterior_prob)
+
+        return log_posterior_prob
+
+    @cached_property
     def parameter_names(self) -> list[str]:
         """
         A list of parameter names for the model.
@@ -296,30 +312,28 @@ class BayesianModel:
         observed_sites = relations["observed"]
         return [site for site in all_sites if site not in observed_sites]
 
-    @cached_property
-    def array_to_dict_params(self) -> dict:
-        """
-        A bidirectional dictionary giving the equivalence between the parameter name and its index in the array as
-        evaluated by the `log_likelihood_array` method.
-        """
-
-        equiv_dict = {}
-
-        for i, key in enumerate(self.parameter_names):
-            equiv_dict[i] = key
-
-        return equiv_dict
-
     def array_to_dict(self, theta):
         """
         Convert an array of parameters to a dictionary of parameters.
         """
         input_params = {}
 
-        for index, key in self.array_to_dict_params.items():
+        for index, key in enumerate(self.parameter_names):
             input_params[key] = theta[index]
 
         return input_params
+
+    def dict_to_array(self, dict_of_params):
+        """
+        Convert a dictionary of parameters to an array of parameters.
+        """
+
+        theta = jnp.zeros(len(self.parameter_names))
+
+        for index, key in enumerate(self.parameter_names):
+            theta = theta.at[index].set(dict_of_params[key])
+
+        return theta
 
     def get_initial_params(self, key: PRNGKey = PRNGKey(0), num_samples: int = 1):
         """
