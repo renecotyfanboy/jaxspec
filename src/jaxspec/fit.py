@@ -1,5 +1,8 @@
+import operator
+
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from functools import cached_property
 from typing import Literal
 
 import arviz as az
@@ -21,7 +24,7 @@ from numpyro.infer import MCMC, NUTS, Predictive
 from numpyro.infer.initialization import init_to_value
 from numpyro.infer.inspect import get_model_relations
 from numpyro.infer.reparam import TransformReparam
-from numpyro.infer.util import constrain_fn
+from numpyro.infer.util import constrain_fn, log_density
 from scipy.stats import Covariance, multivariate_normal
 
 from .analysis.results import FitResult
@@ -162,8 +165,6 @@ class BayesianModel:
         sparsify_matrix: bool = False,
     ):
         """
-        Initialize the fitter.
-
         Parameters:
             model: the spectral model to fit.
             prior_distributions: a nested dictionary containing the prior distributions for the model parameters, or a
@@ -189,8 +190,9 @@ class BayesianModel:
             prior_distributions_func = prior_distributions
 
         self.prior_distributions_func = prior_distributions_func
+        self.init_params = self.get_initial_params()
 
-    @property
+    @cached_property
     def observation_container(self) -> dict[str, ObsConfiguration]:
         """
         The observations used in the fit as a dictionary of observations.
@@ -208,13 +210,12 @@ class BayesianModel:
         else:
             raise ValueError(f"Invalid type for observations : {type(self._observations)}")
 
-    @property
+    @cached_property
     def numpyro_model(self) -> Callable:
         """
         Build the numpyro model using the observed data, the prior distributions and the spectral model.
 
         Returns:
-        -------
             A model function that can be used with numpyro.
         """
 
@@ -235,7 +236,7 @@ class BayesianModel:
 
         return model
 
-    @property
+    @cached_property
     def transformed_numpyro_model(self) -> Callable:
         transform_dict = {}
 
@@ -250,6 +251,102 @@ class BayesianModel:
                 transform_dict[parameter] = TransformReparam()
 
         return numpyro.handlers.reparam(self.numpyro_model, config=transform_dict)
+
+    @cached_property
+    def log_likelihood_per_obs(self) -> Callable:
+        """
+        Build the log likelihood function for each bins in each observation.
+
+        Returns:
+            Callable log-likelihood function.
+        """
+
+        @jax.jit
+        def log_likelihood_per_obs(constrained_params):
+            log_likelihood = numpyro.infer.util.log_likelihood(
+                model=self.numpyro_model, posterior_samples=constrained_params
+            )
+
+            return jax.tree.map(lambda x: jnp.where(jnp.isnan(x), -jnp.inf, x), log_likelihood)
+
+        return log_likelihood_per_obs
+
+    @cached_property
+    def log_likelihood(self) -> Callable:
+        """
+        Build the total log likelihood function. Takes a dictionary of parameters where the keys are the parameter names
+        that can be fetched with the [`parameter_names`][jaxspec.fit.BayesianModel.parameter_names].
+        """
+
+        @jax.jit
+        def log_likelihood(constrained_params):
+            log_likelihood = self.log_likelihood_per_obs(constrained_params)
+
+            return jax.tree.reduce(operator.add, jax.tree.map(jnp.sum, log_likelihood))
+
+        return log_likelihood
+
+    @cached_property
+    def log_posterior_prob(self) -> Callable:
+        """
+        Build the posterior probability. Takes a dictionary of parameters where the keys are the parameter names
+        that can be fetched with the [`parameter_names`][jaxspec.fit.BayesianModel.parameter_names].
+        """
+
+        @jax.jit
+        def log_posterior_prob(constrained_params):
+            log_posterior_prob, _ = log_density(
+                self.numpyro_model, (), dict(observed=True), constrained_params
+            )
+            return jnp.where(jnp.isnan(log_posterior_prob), -jnp.inf, log_posterior_prob)
+
+        return log_posterior_prob
+
+    @cached_property
+    def parameter_names(self) -> list[str]:
+        """
+        A list of parameter names for the model.
+        """
+        relations = get_model_relations(self.numpyro_model)
+        all_sites = relations["sample_sample"].keys()
+        observed_sites = relations["observed"]
+        return [site for site in all_sites if site not in observed_sites]
+
+    def array_to_dict(self, theta):
+        """
+        Convert an array of parameters to a dictionary of parameters.
+        """
+        input_params = {}
+
+        for index, key in enumerate(self.parameter_names):
+            input_params[key] = theta[index]
+
+        return input_params
+
+    def dict_to_array(self, dict_of_params):
+        """
+        Convert a dictionary of parameters to an array of parameters.
+        """
+
+        theta = jnp.zeros(len(self.parameter_names))
+
+        for index, key in enumerate(self.parameter_names):
+            theta = theta.at[index].set(dict_of_params[key])
+
+        return theta
+
+    def get_initial_params(self, key: PRNGKey = PRNGKey(0), num_samples: int = 1):
+        """
+        Get initial parameters for the model by sampling from the prior distribution
+
+        Parameters:
+            key: the random key used to initialize the sampler.
+            num_samples: the number of samples to draw from the prior.
+        """
+
+        return Predictive(
+            self.numpyro_model, return_sites=self.parameter_names, num_samples=num_samples
+        )(key, observed=False)
 
 
 class BayesianModelFitter(BayesianModel, ABC):

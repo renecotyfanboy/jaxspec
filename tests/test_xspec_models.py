@@ -1,16 +1,19 @@
-import pytest
+import os
+import re
+
+from dataclasses import dataclass
+
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-import re
-import os
-import jax.numpy as jnp
+import pytest
+
 from jax.tree_util import tree_map
-from jaxspec.model.abc import SpectralModel
 from jaxspec.data import ObsConfiguration
 from jaxspec.data.util import fakeit_for_multiple_parameters
-from dataclasses import dataclass
+from jaxspec.model.abc import SpectralModel
+from jaxspec.util.online_storage import table_manager
 from scipy.stats import anderson_ksamp
-from typing import Optional
 
 xspec = pytest.importorskip("xspec")
 
@@ -25,26 +28,40 @@ class AdditiveModelTestSetup:
     parameters_order: list[str]  # Parameter order in xspec
     required_tol: float = 1e-2  # Required tolerance between xspec and jaxspec
     weight: float = 1  # Weight of the XSPEC model when systematic biases are present (e.g. add an epsilon to the model)
-    energy_range: tuple[float, float, int] = (0.2, 20, 10000)  # Energy range to test, lower, upper, number of bins
-    model_string: Optional[list[tuple[str, str]]] = None  # Model string to use in XSPEC
+    energy_range: tuple[float, float, int] = (
+        0.2,
+        20,
+        10000,
+    )  # Energy range to test, lower, upper, number of bins
+    model_string: list[tuple[str, str]] | None = None  # Model string to use in XSPEC
 
 
 models_to_test = [
     AdditiveModelTestSetup(
-        name_xspec="powerlaw", name_jaxspec="Powerlaw()", parameters={"alpha": 1.5, "norm": 1}, parameters_order=["alpha", "norm"]
+        name_xspec="powerlaw",
+        name_jaxspec="Powerlaw()",
+        parameters={"alpha": 1.5, "norm": 1},
+        parameters_order=["alpha", "norm"],
     ),
     AdditiveModelTestSetup(
-        name_xspec="bbody", name_jaxspec="Blackbody()", parameters={"kT": 3, "norm": 1}, parameters_order=["kT", "norm"]
+        name_xspec="bbody",
+        name_jaxspec="Blackbody()",
+        parameters={"kT": 3, "norm": 1},
+        parameters_order=["kT", "norm"],
     ),
     AdditiveModelTestSetup(
-        name_xspec="bbodyrad", name_jaxspec="Blackbodyrad()", parameters={"kT": 3, "norm": 1}, parameters_order=["kT", "norm"]
+        name_xspec="bbodyrad",
+        name_jaxspec="Blackbodyrad()",
+        parameters={"kT": 3, "norm": 1},
+        parameters_order=["kT", "norm"],
     ),
     AdditiveModelTestSetup(
         name_xspec="lorentz",
         name_jaxspec="Lorentz()",
         parameters={"E_l": 3, "sigma": 1, "norm": 1},
         parameters_order=["E_l", "sigma", "norm"],
-        weight=1 / 1.02475,  # There is an epsilon in XSPEC to avoid division by zero which add a 2% bias
+        weight=1
+        / 1.02475,  # There is an epsilon in XSPEC to avoid division by zero which add a 2% bias
         required_tol=2e-1,  # The bias is too large to be corrected by the weight above, I shall find why
         energy_range=(4, 9, 10000),
     ),
@@ -70,14 +87,18 @@ def plot_comparison(e_bins, spec_xspec, spec_jaxspec):
     axs[0].plot(e_list, spec_xspec, label="xspec")
     axs[0].plot(e_list, spec_jaxspec, label="jaxspec")
     axs[0].loglog()
-    axs[1].hexbin(e_list, (spec_xspec - spec_jaxspec) / spec_xspec, gridsize=100, xscale="log", cmap="Blues")
+    axs[1].hexbin(
+        e_list, (spec_xspec - spec_jaxspec) / spec_xspec, gridsize=100, xscale="log", cmap="Blues"
+    )
     axs[0].legend()
     axs[1].set_xlabel("Energy (keV)")
     axs[1].set_ylabel("(xspec-jaxspec)/xspec")
     plt.show()
 
 
-@pytest.mark.parametrize("model", models_to_test, ids=lambda m: f"{m.name_xspec} & {m.name_jaxspec}")
+@pytest.mark.parametrize(
+    "model", models_to_test, ids=lambda m: f"{m.name_xspec} & {m.name_jaxspec}"
+)
 def test_models(model: AdditiveModelTestSetup):
     xspec.AllModels.clear()
     xspec.AllData.clear()
@@ -110,9 +131,16 @@ def test_models(model: AdditiveModelTestSetup):
 
 
 @pytest.mark.filterwarnings("ignore:p-value capped")
-@pytest.mark.parametrize("model", models_to_test, ids=lambda m: f"{m.name_xspec} & {m.name_jaxspec}")
-def test_fakeits(tmp_path, request, monkeypatch, model: AdditiveModelTestSetup, exposure=float(10_000)):
-    monkeypatch.chdir(os.path.join(os.path.dirname(request.fspath.dirname), "src/jaxspec/data/example_data"))
+@pytest.mark.parametrize(
+    "model", models_to_test, ids=lambda m: f"{m.name_xspec} & {m.name_jaxspec}"
+)
+def test_fakeits(
+    tmp_path, request, monkeypatch, model: AdditiveModelTestSetup, exposure=float(10_000)
+):
+    pn_rmf_path = table_manager.fetch("example_data/NGC7793_ULX4/PN.rmf")
+    pn_arf_path = table_manager.fetch("example_data/NGC7793_ULX4/PN.arf")
+    dir_path = os.path.dirname(pn_rmf_path)
+    monkeypatch.chdir(os.path.join(os.path.dirname(request.fspath.dirname), dir_path))
 
     # XSPEC's fakeit
     xspec.AllModels.clear()
@@ -124,7 +152,9 @@ def test_fakeits(tmp_path, request, monkeypatch, model: AdditiveModelTestSetup, 
     m_xspec = xspec.Model(model.name_xspec)
 
     fakeit_settings = n_spectra * [
-        xspec.FakeitSettings(response="PN.rmf", arf="PN.arf", exposure=exposure, fileName="fakeit.pha")
+        xspec.FakeitSettings(
+            response="PN.rmf", arf="PN.arf", exposure=exposure, fileName="fakeit.pha"
+        )
     ]
 
     xspec_pars = []
@@ -132,7 +162,9 @@ def test_fakeits(tmp_path, request, monkeypatch, model: AdditiveModelTestSetup, 
         xspec_pars.append(par)
 
     m_xspec.setPars(*[model.parameters[par] for par in model.parameters_order])
-    xspec.AllData.fakeit(nSpectra=n_spectra, settings=fakeit_settings, applyStats=True, filePrefix="")
+    xspec.AllData.fakeit(
+        nSpectra=n_spectra, settings=fakeit_settings, applyStats=True, filePrefix=""
+    )
     xspec.AllData.ignore(f"0.0-{model.energy_range[0]:.1f} {model.energy_range[1]:.1f}-**")
 
     xspec_spectra = np.empty((n_spectra, len(xspec.AllData(1).values)))
@@ -145,7 +177,9 @@ def test_fakeits(tmp_path, request, monkeypatch, model: AdditiveModelTestSetup, 
     p_jaxspec = {re.sub(r"\(.*\)", "", model.name_jaxspec.lower()) + r"_1": model.parameters}
     p_jaxspec = tree_map(lambda x: x * jnp.ones(n_spectra), p_jaxspec)
 
-    setup = ObsConfiguration.from_pha_file("fakeit.pha", low_energy=model.energy_range[0], high_energy=model.energy_range[1])
+    setup = ObsConfiguration.from_pha_file(
+        "fakeit.pha", low_energy=model.energy_range[0], high_energy=model.energy_range[1]
+    )
 
     jaxspec_spectra = fakeit_for_multiple_parameters(setup, m_jaxspec, p_jaxspec)
 

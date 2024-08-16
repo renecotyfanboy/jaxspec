@@ -12,8 +12,8 @@ approach is equivalent to subtract the background to the observed spectrum when 
 ``` python
 from jaxspec.model.background import SubtractedBackground
 
-forward = NUTSFitter(model, obs, background_model=SubtractedBackground())
-result = forward.fit(prior, num_chains=4, num_warmup=1000, num_samples=1000, mcmc_kwargs={"progress_bar": True})
+fitter = NUTSFitter(model, prior, obs, background_model=SubtractedBackground())
+result = fitter.fit(num_chains=4, num_warmup=1000, num_samples=1000, mcmc_kwargs={"progress_bar": True})
 
 result.plot_ppc()
 ```
@@ -28,8 +28,8 @@ it is to consider each background bin as a Poisson realisation of a counting pro
 ``` python
 from jaxspec.model.background import BackgroundWithError
 
-forward = NUTSFitter(model, obs, background_model=BackgroundWithError())
-result = forward.fit(prior, num_chains=4, num_warmup=1000, num_samples=1000, mcmc_kwargs={"progress_bar": True})
+fitter = NUTSFitter(model, prior, obs, background_model=BackgroundWithError())
+result = fitter.fit(num_chains=4, num_warmup=1000, num_samples=1000, mcmc_kwargs={"progress_bar": True})
 
 result.plot_ppc()
 ```
@@ -43,8 +43,8 @@ nodes will drive the flexibility of the Gaussian process, and it should always b
 ``` python
 from jaxspec.model.background import GaussianProcessBackground
 
-forward = NUTSFitter(model, obs, background_model=GaussianProcessBackground(e_min=0.3, e_max=8, n_nodes=20))
-result = forward.fit(prior, num_chains=4, num_warmup=1000, num_samples=1000, mcmc_kwargs={"progress_bar": True})
+forward = NUTSFitter(model, prior, obs, background_model=GaussianProcessBackground(e_min=0.3, e_max=8, n_nodes=20))
+result = forward.fit(num_chains=4, num_warmup=1000, num_samples=1000, mcmc_kwargs={"progress_bar": True})
 
 result.plot_ppc()
 ```

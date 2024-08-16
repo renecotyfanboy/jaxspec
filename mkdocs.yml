@@ -16,6 +16,7 @@ nav:
     - Add a background : examples/background.md
     - Work with arviz : examples/result_analysis.ipynb
     - Build a custom model : examples/build_custom_model.ipynb
+    - Interface with other frameworks : examples/external_samplers.ipynb
   #- Models:
   #    - models/index.md
   #    - APEC: models/apec.md

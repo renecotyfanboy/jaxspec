@@ -1,10 +1,13 @@
 [tool.poetry]
 name = "jaxspec"
-version = "0.0.8"
+version = "0.1.0"
 description = "jaxspec is a bayesian spectral fitting library for X-ray astronomy."
 authors = ["sdupourque <sdupourque@irap.omp.eu>"]
 license = "MIT"
 readme = "README.md"
+homepage = "https://github.com/renecotyfanboy/jaxspec"
+documentation = "https://jaxspec.readthedocs.io/en/latest/"
+
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.12"
@@ -13,12 +16,12 @@ jaxlib = "^0.4.30"
 numpy = "<2.0.0"
 pandas = "^2.2.0"
 astropy = "^6.0.0"
-numpyro = "^0.15.0"
+numpyro = "^0.15.2"
 dm-haiku = ">=0.0.11,<0.0.13"
 networkx = "^3.1"
 matplotlib = "^3.8.0"
 arviz = ">=0.17.1,<0.20.0"
-chainconsumer = "^1.0.0"
+chainconsumer = "^1.1.2"
 simpleeval = "^0.9.13"
 cmasher = "^1.6.3"
 gpjax = "^0.8.0"
@@ -34,6 +37,7 @@ pyzmq = "<27"
 jaxns = "^2.5.1"
 pooch = "^1.8.2"
 interpax = "^0.3.3"
+watermark = "^2.4.3"
 
 
 [tool.poetry.group.docs.dependencies]
@@ -112,3 +116,6 @@ lines-between-types = 1
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+jaxspec-debug-info = "jaxspec.scripts.debug:debug_info"

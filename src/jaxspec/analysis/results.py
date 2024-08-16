@@ -615,6 +615,17 @@ class FitResult:
                     y_observed_bkg = (
                         obsconf.folded_background.data * u.photon / (denominator * ratio)
                     ).to(y_units)
+                    y_observed_bkg_low = (
+                        nbinom.ppf(percentile[0] / 100, obsconf.folded_background.data, 0.5)
+                        * u.photon
+                        / (denominator * ratio)
+                    ).to(y_units)
+                    y_observed_bkg_high = (
+                        nbinom.ppf(percentile[1] / 100, obsconf.folded_background.data, 0.5)
+                        * u.photon
+                        / (denominator * ratio)
+                    ).to(y_units)
+
                     legend_plots += _plot_binned_samples_with_error(
                         ax[0],
                         xbins.value,
@@ -625,6 +636,23 @@ class FitResult:
                     )
 
                     legend_labels.append("Model (bkg)")
+
+                    true_bkg_plot = ax[0].errorbar(
+                        np.sqrt(xbins.value[0] * xbins.value[1]),
+                        y_observed_bkg.value,
+                        xerr=np.abs(xbins.value - np.sqrt(xbins.value[0] * xbins.value[1])),
+                        yerr=[
+                            y_observed_bkg.value - y_observed_bkg_low.value,
+                            y_observed_bkg_high.value - y_observed_bkg.value,
+                        ],
+                        color="black",
+                        linestyle="none",
+                        alpha=0.3,
+                        capsize=2,
+                    )
+
+                    legend_plots.append((true_bkg_plot,))
+                    legend_labels.append("Observed (bkg)")
 
                 residual_samples = (obsconf.folded_counts.data - count) / np.diff(
                     np.percentile(count, percentile, axis=0), axis=0
