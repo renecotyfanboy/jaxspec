@@ -1,4 +1,5 @@
 import operator
+import warnings
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -20,7 +21,7 @@ from jax.tree_util import tree_map
 from jax.typing import ArrayLike
 from numpyro.contrib.nested_sampling import NestedSampler
 from numpyro.distributions import Distribution, Poisson, TransformedDistribution
-from numpyro.infer import MCMC, NUTS, Predictive
+from numpyro.infer import AIES, ESS, MCMC, NUTS, Predictive
 from numpyro.infer.initialization import init_to_value
 from numpyro.infer.inspect import get_model_relations
 from numpyro.infer.reparam import TransformReparam
@@ -181,7 +182,7 @@ class BayesianModel:
 
         if not callable(prior_distributions):
             # Validate the entry with pydantic
-            prior = PriorDictModel(nested_dict=prior_distributions).nested_dict
+            prior = PriorDictModel.from_dict(prior_distributions).nested_dict
 
             def prior_distributions_func():
                 return build_prior(prior, expand_shape=(len(self.observation_container),))
@@ -293,6 +294,9 @@ class BayesianModel:
         that can be fetched with the [`parameter_names`][jaxspec.fit.BayesianModel.parameter_names].
         """
 
+        # This is required as numpyro.infer.util.log_densities does not check parameter validity by itself
+        numpyro.enable_validation()
+
         @jax.jit
         def log_posterior_prob(constrained_params):
             log_posterior_prob, _ = log_density(
@@ -350,6 +354,69 @@ class BayesianModel:
 
 
 class BayesianModelFitter(BayesianModel, ABC):
+    def build_inference_data(
+        self,
+        posterior_samples,
+        num_chains: int = 1,
+        num_predictive_samples: int = 1000,
+        key: PRNGKey = PRNGKey(0),
+        use_transformed_model: bool = False,
+    ) -> az.InferenceData:
+        """
+        Build an InferenceData object from the posterior samples.
+        """
+
+        numpyro_model = (
+            self.transformed_numpyro_model if use_transformed_model else self.numpyro_model
+        )
+
+        keys = random.split(key, 3)
+
+        posterior_predictive = Predictive(numpyro_model, posterior_samples)(keys[0], observed=False)
+
+        prior = Predictive(numpyro_model, num_samples=num_predictive_samples * num_chains)(
+            keys[1], observed=False
+        )
+
+        log_likelihood = numpyro.infer.log_likelihood(numpyro_model, posterior_samples)
+
+        seeded_model = numpyro.handlers.substitute(
+            numpyro.handlers.seed(numpyro_model, keys[3]),
+            substitute_fn=numpyro.infer.init_to_sample,
+        )
+
+        observations = {
+            name: site["value"]
+            for name, site in numpyro.handlers.trace(seeded_model).get_trace().items()
+            if site["type"] == "sample" and site["is_observed"]
+        }
+
+        def reshape_first_dimension(arr):
+            new_dim = arr.shape[0] // num_chains
+            new_shape = (num_chains, new_dim) + arr.shape[1:]
+            reshaped_array = arr.reshape(new_shape)
+
+            return reshaped_array
+
+        posterior_samples = {
+            key: reshape_first_dimension(value) for key, value in posterior_samples.items()
+        }
+        prior = {key: value[None, :] for key, value in prior.items()}
+        posterior_predictive = {
+            key: reshape_first_dimension(value) for key, value in posterior_predictive.items()
+        }
+        log_likelihood = {
+            key: reshape_first_dimension(value) for key, value in log_likelihood.items()
+        }
+
+        return az.from_dict(
+            posterior_samples,
+            prior=prior,
+            posterior_predictive=posterior_predictive,
+            log_likelihood=log_likelihood,
+            observed_data=observations,
+        )
+
     @abstractmethod
     def fit(self, **kwargs) -> FitResult: ...
 
@@ -411,18 +478,89 @@ class NUTSFitter(BayesianModelFitter):
 
         mcmc.run(keys[0])
 
-        posterior_predictive = Predictive(bayesian_model, mcmc.get_samples())(
-            keys[1], observed=False
-        )
-
-        prior = Predictive(bayesian_model, num_samples=num_samples)(keys[2], observed=False)
-
-        inference_data = az.from_numpyro(
-            mcmc, prior=prior, posterior_predictive=posterior_predictive
-        )
+        posterior = mcmc.get_samples()
 
         inference_data = filter_inference_data(
-            inference_data, self.observation_container, self.background_model
+            self.build_inference_data(posterior, num_chains=num_chains),
+            self.observation_container,
+            self.background_model,
+        )
+
+        return FitResult(
+            self,
+            inference_data,
+            self.model.params,
+            background_model=self.background_model,
+        )
+
+
+class MCMCFitter(BayesianModelFitter):
+    """
+    A class to fit a model to a given set of observation using a Bayesian approach. This class uses samplers
+    from numpyro to perform the inference on the model parameters.
+    """
+
+    kernel_dict = {
+        "nuts": NUTS,
+        "aies": AIES,
+        "ess": ESS,
+    }
+
+    def fit(
+        self,
+        rng_key: int = 0,
+        num_chains: int = len(jax.devices()),
+        num_warmup: int = 1000,
+        num_samples: int = 1000,
+        sampler: Literal["nuts", "aies", "ess"] = "nuts",
+        kernel_kwargs: dict = {},
+        mcmc_kwargs: dict = {},
+    ) -> FitResult:
+        """
+        Fit the model to the data using a MCMC sampler from numpyro.
+
+        Parameters:
+            rng_key: the random key used to initialize the sampler.
+            num_chains: the number of chains to run.
+            num_warmup: the number of warmup steps.
+            num_samples: the number of samples to draw.
+            max_tree_depth: the recursion depth of NUTS sampler.
+            target_accept_prob: the target acceptance probability for the NUTS sampler.
+            dense_mass: whether to use a dense mass for the NUTS sampler.
+            mcmc_kwargs: additional arguments to pass to the MCMC sampler. See [`MCMC`][numpyro.infer.mcmc.MCMC] for more details.
+
+        Returns:
+            A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
+        """
+
+        bayesian_model = self.transformed_numpyro_model
+        # bayesian_model = self.numpyro_model(prior_distributions)
+
+        chain_kwargs = {
+            "num_warmup": num_warmup,
+            "num_samples": num_samples,
+            "num_chains": num_chains,
+        }
+
+        kernel = self.kernel_dict[sampler](bayesian_model, **kernel_kwargs)
+
+        mcmc_kwargs = chain_kwargs | mcmc_kwargs
+
+        if sampler in ["aies", "ess"] and mcmc_kwargs.get("chain_method", None) != "vectorized":
+            mcmc_kwargs["chain_method"] = "vectorized"
+            warnings.warn("The chain_method is set to 'vectorized' for AIES and ESS samplers")
+
+        mcmc = MCMC(kernel, **mcmc_kwargs)
+        keys = random.split(random.PRNGKey(rng_key), 3)
+
+        mcmc.run(keys[0])
+
+        posterior = mcmc.get_samples()
+
+        inference_data = filter_inference_data(
+            self.build_inference_data(posterior, num_chains=num_chains),
+            self.observation_container,
+            self.background_model,
         )
 
         return FitResult(
