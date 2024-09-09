@@ -1,7 +1,7 @@
-# JAXspec fitting speedrun
+# `jaxspec` fitting speedrun
 
 In this example, the basic spectral fitting workflow is illustrated on a XMM-Newton observation of the
-pulsating ULX candidate from [Quintin & $al.$ (2021)](https://ui.adsabs.harvard.edu/abs/2021MNRAS.503.5485Q/abstract).
+pulsating candidate NGC 7793 ULX-4 from [Quintin & $al.$ (2021)](https://ui.adsabs.harvard.edu/abs/2021MNRAS.503.5485Q/abstract).
 
 ``` python
 import numpyro
@@ -13,27 +13,30 @@ numpyro.set_host_device_count(4)
 
 ## Define your model
 
-The first step consists in building your model using the various components available in JAXspec.
+The first step consists in building a model using various components available in `jaxspec`.
 
 ``` python
-from jaxspec.model.additive import Powerlaw, Blackbody
+from jaxspec.model.additive import Powerlaw, Blackbodyrad
 from jaxspec.model.multiplicative import Tbabs
 
-model = Tbabs() * (Blackbody() + Powerlaw())
+spectral_model = Tbabs()*(Powerlaw() + Blackbodyrad())
 ```
 
 Which will produce the following model:
 
 ```mermaid
 graph LR
-    7af5aff7-db1a-4c0e-ad58-f5d306d01ac8("Tbabs (1)")
-    daa4bc1a-03cd-4ac1-a706-d9fa85b36a34{x}
-    28467034-307f-4b72-b2dd-eb68a54438e1("Powerlaw (1)")
+    d2ec7634-2cde-4173-9be2-6a9d1cf9fa41("Tbabs (1)")
+    2dc512bd-fd4c-4e8d-ac5a-adfa5b90f3a6{"$$\times$$"}
+    2e1ceb31-75f1-4514-adb2-b07de972a22a("Powerlaw (1)")
+    1d55d73e-7e10-4180-b96f-e5c1327ef037{"$$+$$"}
+    d2c16179-e1f5-4dc9-8dee-6757f279b9e2("Blackbodyrad (1)")
     out("Output")
-    7af5aff7-db1a-4c0e-ad58-f5d306d01ac8 --> daa4bc1a-03cd-4ac1-a706-d9fa85b36a34
-    daa4bc1a-03cd-4ac1-a706-d9fa85b36a34 --> out
-    28467034-307f-4b72-b2dd-eb68a54438e1 --> daa4bc1a-03cd-4ac1-a706-d9fa85b36a34
-
+    d2ec7634-2cde-4173-9be2-6a9d1cf9fa41 --> 2dc512bd-fd4c-4e8d-ac5a-adfa5b90f3a6
+    2dc512bd-fd4c-4e8d-ac5a-adfa5b90f3a6 --> out
+    2e1ceb31-75f1-4514-adb2-b07de972a22a --> 1d55d73e-7e10-4180-b96f-e5c1327ef037
+    1d55d73e-7e10-4180-b96f-e5c1327ef037 --> 2dc512bd-fd4c-4e8d-ac5a-adfa5b90f3a6
+    d2c16179-e1f5-4dc9-8dee-6757f279b9e2 --> 1d55d73e-7e10-4180-b96f-e5c1327ef037
 ```
 
 ## Load your data
@@ -49,23 +52,20 @@ obs = ObsConfiguration.from_pha_file('obs_1.pha', low_energy=0.3, high_energy=12
 
 ``` python
 import numpyro.distributions as dist
-from jaxspec.fit import NUTSFitter
+from jaxspec.fit import MCMCFitter
+
+obsconf = load_example_obsconf("NGC7793_ULX4_PN")
 
 prior = {
-    "powerlaw_1": {
-        "alpha": dist.Uniform(0, 10),
-        "norm": dist.LogUniform(1e-5, 1e-2)
-    },
-    "blackbody_1": {
-        "kT": dist.Uniform(0, 10),
-        "norm": dist.LogUniform(1e-8, 1e-4)
-    },
-    "tbabs_1":
-        {"N_H": dist.Uniform(0, 1)}
+    "powerlaw_1_alpha": dist.Uniform(0, 5),
+    "powerlaw_1_norm": dist.LogUniform(1e-5, 1e-2),
+    "blackbodyrad_1_kT": dist.Uniform(0, 5),
+    "blackbodyrad_1_norm": dist.LogUniform(1e-2, 1e2),
+    "tbabs_1_N_H": dist.Uniform(0, 1)
 }
 
-forward = NUTSFitter(model, obs)
-result = forward.fit(prior, num_chains=4, num_warmup=5000, num_samples=5000)
+forward = MCMCFitter(model, obs)
+result = forward.fit(prior, num_chains=4, num_warmup=1000, num_samples=1000)
 ```
 
 ## Gather results

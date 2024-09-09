@@ -44,7 +44,7 @@ watermark = "^2.4.3"
 mkdocs = "^1.5.3"
 mkdocs-material = "^9.4.6"
 mkdocstrings = {extras = ["python"], version = ">=0.24,<0.26"}
-mkdocs-jupyter = "^0.24.6"
+mkdocs-jupyter = ">=0.24.6,<0.26.0"
 
 
 [tool.poetry.group.test.dependencies]
