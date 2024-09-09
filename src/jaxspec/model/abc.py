@@ -1,12 +1,15 @@
 from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from uuid import uuid4
+
 import haiku as hk
 import jax
 import jax.numpy as jnp
 import networkx as nx
+
 from haiku._src import base
-from uuid import uuid4
 from jax.scipy.integrate import trapezoid
-from abc import ABC
 from simpleeval import simple_eval
 
 
@@ -215,16 +218,18 @@ class SpectralModel:
                 continuum[node_id] = runtime_modules[node_id].continuum(energies)
 
             elif node and node["type"] == "operation":
-                component_1 = list(self.graph.in_edges(node_id))[0][0]
+                component_1 = list(self.graph.in_edges(node_id))[0][0]  # noqa: RUF015
                 component_2 = list(self.graph.in_edges(node_id))[1][0]
-                continuum[node_id] = node["function"](continuum[component_1], continuum[component_2])
+                continuum[node_id] = node["function"](
+                    continuum[component_1], continuum[component_2]
+                )
 
         if n_points == 2:
-            flux_1D = continuum[list(self.graph.in_edges("out"))[0][0]]
+            flux_1D = continuum[list(self.graph.in_edges("out"))[0][0]]  # noqa: RUF015
             flux = jnp.stack((flux_1D[:-1], flux_1D[1:]))
 
         else:
-            flux = continuum[list(self.graph.in_edges("out"))[0][0]]
+            flux = continuum[list(self.graph.in_edges("out"))[0][0]]  # noqa: RUF015
 
         if energy_flux:
             continuum_flux = trapezoid(
@@ -234,7 +239,9 @@ class SpectralModel:
             )
 
         else:
-            continuum_flux = trapezoid(flux * energies_to_integrate, x=jnp.log(energies_to_integrate), axis=0)
+            continuum_flux = trapezoid(
+                flux * energies_to_integrate, x=jnp.log(energies_to_integrate), axis=0
+            )
 
         # Iterate from the root nodes to the output node and
         # compute the fine structure contribution for each component
@@ -249,14 +256,18 @@ class SpectralModel:
             path = nx.shortest_path(self.graph, source=root_node_id, target="out")
             nodes_id_in_path = [node_id for node_id in path]
 
-            flux_from_component, mean_energy = runtime_modules[root_node_id].emission_lines(e_low, e_high)
+            flux_from_component, mean_energy = runtime_modules[root_node_id].emission_lines(
+                e_low, e_high
+            )
 
             multiplicative_nodes = []
 
             # Search all multiplicative components connected to this node
             # and apply them at mean energy
             for node_id in nodes_id_in_path[::-1]:
-                multiplicative_nodes.extend([node_id for node_id in self.find_multiplicative_components(node_id)])
+                multiplicative_nodes.extend(
+                    [node_id for node_id in self.find_multiplicative_components(node_id)]
+                )
 
             for mul_node in multiplicative_nodes:
                 flux_from_component *= runtime_modules[mul_node].continuum(mean_energy)
@@ -309,7 +320,10 @@ class SpectralModel:
         if component.type == "additive":
 
             def lam_func(e):
-                return component(**kwargs).continuum(e) + component(**kwargs).emission_lines(e, e + 1)[0]
+                return (
+                    component(**kwargs).continuum(e)
+                    + component(**kwargs).emission_lines(e, e + 1)[0]
+                )
 
         elif component.type == "multiplicative":
 
@@ -342,7 +356,9 @@ class SpectralModel:
 
         return cls(graph, labels)
 
-    def compose(self, other: SpectralModel, operation=None, function=None, name=None) -> SpectralModel:
+    def compose(
+        self, other: SpectralModel, operation=None, function=None, name=None
+    ) -> SpectralModel:
         """
         This function operate a composition between the operation graph of two models
         1) It fuses the two graphs using which joins at the 'out' nodes
@@ -524,3 +540,10 @@ class AdditiveComponent(ModelComponent, ABC):
 
         return jnp.trapz(self(x) * dx, x=t)
     '''
+
+
+class MultiplicativeComponent(ModelComponent, ABC):
+    type = "multiplicative"
+
+    @abstractmethod
+    def continuum(self, energy): ...
