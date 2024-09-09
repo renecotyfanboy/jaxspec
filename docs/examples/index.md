@@ -1,48 +1,45 @@
-!!! warning "Under construction"
-
 # Start with `jaxspec`
 
 <div class="grid cards" markdown>
 
--   [__:material-clock-fast:{ .lg .middle } JAXspec fitting speedrun__](fitting_example.md)
+-   [__:material-clock-fast:{ .lg .middle } `jaxspec` fitting speedrun__](fitting_example.md)
 
     ---
 
-    ![JAXspec fitting speedrun](statics/fitting.png){ align=left : style="height:100px;width:100px"}
+    ![`jaxspec` fitting speedrun](statics/fitting.png){ align=left : style="height:150px;width:150px"}
 
-    A quick overview of the general fitting workflow, including the data loading, model
-    definition, inference process and results.
+    A quick overview of the general fitting workflow.
 
 
--   [__Load your data in JAXspec__](load_data.ipynb)
+-   [__Load your data in `jaxspec`__](load_data.ipynb)
 
     ---
 
-    ![JAXspec rmf](statics/rmf.png){ align=left : style="height:100px;width:100px"}
+    ![`jaxspec` rmf](statics/rmf.png){ align=left : style="height:150px;width:150px"}
 
-    How to load your data in JAXspec, from a PHA file, or build an instrumental set-up with ARF and RMF files.
+    How to load your data in `jaxspec` using a PHA file.
 
 -   [__Model building made easy__](build_model.md)
 
     ---
 
-    ![JAXspec model](statics/model.png){ align=left : style="height:100px;width:100px"}
+    ![`jaxspec` model](statics/model.png){ align=left : style="height:150px;width:150px"}
 
-    Combine components to build a model in a very intuitive way, adding or multiplying components and model together.
+    Combine components to build a model.
 
 
 -   [__Generate mock data__](fakeits.md)
 
     ---
 
-    ![JAXspec fakeits](statics/fakeits.png){ align=left : style="height:100px;width:100px"}
+    ![JAXspec fakeits](statics/fakeits.png){ align=left : style="height:150px;width:150px"}
 
-    Use the `fakeit` function to generate mock data from a model and a set of parameters, on the CPU, GPU and TPU.
+    Use the `fakeit` function to generate mock data.
 
 
 </div>
 
-# Practical examples
+# Advanced examples
 
 <div class="grid cards" markdown>
 
@@ -52,13 +49,20 @@
 
     Add an observed background in your spectral model.
 
--   [__Work with arviz__](result_analysis.ipynb)
+-   [__Good practices for MCMC results__](result_analysis.ipynb)
 
     ---
 
     Use `arviz` to assess the quality of your fit
 
--   [__Build a custom model__](build_custom_model.ipynb)
+
+-   [__🚧 Use `bayeux` samplers__]()
+
+    ---
+
+    Add your sampler
+
+-   [__Build a custom model__](custom_model.md)
 
     ---
 

@@ -38,7 +38,7 @@ class Powerlaw(AdditiveComponent):
         return norm * energy ** (-alpha)
 
 
-class AdditiveConstant(AdditiveComponent):
+class Additiveconstant(AdditiveComponent):
     r"""
     A constant model
 

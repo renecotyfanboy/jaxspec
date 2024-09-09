@@ -44,7 +44,7 @@ watermark = "^2.4.3"
 mkdocs = "^1.5.3"
 mkdocs-material = "^9.4.6"
 mkdocstrings = {extras = ["python"], version = ">=0.24,<0.27"}
-mkdocs-jupyter = "^0.24.6"
+mkdocs-jupyter = ">=0.24.6,<0.26.0"
 
 
 [tool.poetry.group.test.dependencies]
@@ -59,7 +59,7 @@ testbook = "^0.4.2"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.5.0"
-ruff = ">=0.2.1,<0.6.0"
+ruff = ">=0.2.1,<0.7.0"
 jupyterlab = "^4.0.7"
 notebook = "^7.0.6"
 ipywidgets = "^8.1.1"

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-
 import haiku as hk
 import jax.numpy as jnp
 import numpy as np
@@ -10,14 +8,7 @@ from astropy.table import Table
 from haiku.initializers import Constant as HaikuConstant
 
 from ..util.online_storage import table_manager
-from .abc import ModelComponent
-
-
-class MultiplicativeComponent(ModelComponent, ABC):
-    type = "multiplicative"
-
-    @abstractmethod
-    def continuum(self, energy): ...
+from .abc import MultiplicativeComponent
 
 
 class Expfac(MultiplicativeComponent):
@@ -226,6 +217,7 @@ class Tbpcf(MultiplicativeComponent):
 
         return f * jnp.exp(-nh * sigma) + (1 - f)
 
+
 class FDcut(MultiplicativeComponent):
     r"""
     A Fermi-Dirac cutoff model.
@@ -243,4 +235,4 @@ class FDcut(MultiplicativeComponent):
         cutoff = hk.get_parameter("E_c", [], init=HaikuConstant(1))
         folding = hk.get_parameter("E_f", [], init=HaikuConstant(1))
 
-        return (1 + jnp.exp((energy - cutoff)/folding)) ** -1
+        return (1 + jnp.exp((energy - cutoff) / folding)) ** -1

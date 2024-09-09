@@ -1,21 +1,23 @@
 site_name: jaxspec
 
 nav:
-  - Home: index.md
+  - Home:
+    - Welcome : index.md
+    - Installation: frontpage/installation.md
   #- Theory:
   #  - theory/index.md
   #  - Bayesian inference: theory/bayesian_inference.md
   #  - Instruments modelling: theory/instrument.md
   #  - Background modelling: theory/background.md
   - Examples:
-    - examples/index.md
+    - Index: examples/index.md
     - Spectral fitting speedrun: examples/fitting_example.md
     - Load your own data: examples/load_data.ipynb
     - Model building made easy: examples/build_model.md
     - Generate mock data : examples/fakeits.md
     - Add a background : examples/background.md
-    - Work with arviz : examples/result_analysis.ipynb
-    - Build a custom model : examples/build_custom_model.ipynb
+    - Good practices for MCMC: examples/work_with_arviz.ipynb
+    - Build a custom model : examples/custom_model.md
     - Interface with other frameworks : examples/external_samplers.ipynb
   #- Models:
   #    - models/index.md
@@ -31,11 +33,11 @@ nav:
     - Abundance: references/abundance.md
     - Integration: references/integrate.md
   - FAQ:
-      - faq/index.md
+      - Index : faq/index.md
       - Cookbook: faq/cookbook.md
-  - Developer:
-    - developer/index.md
-    - XSPEC: developer/xspec.md
+  - Contribute:
+    - Index : contribute/index.md
+    - XSPEC: contribute/xspec.md
 
 
 theme:
@@ -46,7 +48,15 @@ theme:
 #    - content.code.select
 #    - navigation.instant
     - navigation.tabs
-    - navigation.indexes
+#    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
+    - navigation.top
+    - toc.integrate
+    - header.autohide
+    - navigation.expand
+
   favicon: logo/logo_small.svg
   logo: logo/logo_small.svg
   icon:
@@ -55,6 +65,9 @@ theme:
   palette:
     # Palette toggle for light mode
     - scheme: default
+      primary: blue
+      accent: blue
+
       #primary: cyan
       toggle:
         icon: material/weather-night
@@ -63,6 +76,9 @@ theme:
     # Palette toggle for dark mode
     - scheme: slate
       #primary: cyan
+      primary: blue
+      accent: blue
+
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -120,6 +136,7 @@ markdown_extensions:
   - md_in_html
   - toc:
       permalink: true
+      toc_depth: 3
   # Python Markdown Extensions
   - pymdownx.arithmatex:
       generic: true
