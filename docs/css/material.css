@@ -31,3 +31,14 @@
   border-width: 0;
   border-left-width: 4px;
 }
+
+/* Bigger logo */
+.md-header__button.md-logo {
+    margin: 0;
+    padding: 0;
+}
+
+.md-header__button.md-logo img, .md-header__button.md-logo svg {
+    height: 1.9rem;
+    width: 1.9rem;
+}
