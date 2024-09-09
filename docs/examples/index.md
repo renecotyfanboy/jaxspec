@@ -6,8 +6,6 @@
 
     ---
 
-    ![`jaxspec` fitting speedrun](statics/fitting.png){ align=left : style="height:150px;width:150px"}
-
     A quick overview of the general fitting workflow.
 
 
@@ -15,15 +13,11 @@
 
     ---
 
-    ![`jaxspec` rmf](statics/rmf.png){ align=left : style="height:150px;width:150px"}
-
     How to load your data in `jaxspec` using a PHA file.
 
 -   [__Model building made easy__](build_model.md)
 
     ---
-
-    ![`jaxspec` model](statics/model.png){ align=left : style="height:150px;width:150px"}
 
     Combine components to build a model.
 
@@ -31,8 +25,6 @@
 -   [__Generate mock data__](fakeits.md)
 
     ---
-
-    ![JAXspec fakeits](statics/fakeits.png){ align=left : style="height:150px;width:150px"}
 
     Use the `fakeit` function to generate mock data.
 
