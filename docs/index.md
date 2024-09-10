@@ -13,7 +13,7 @@ by combining components, and fit it to one or multiple observed spectra using Ba
 
 <div class="grid">
 
-  <a href="/frontpage/installation/" class="card" style="font-size: 1.2em;">🛠️ Installation</a>
+  <a href="frontpage/installation/" class="card" style="font-size: 1.2em;">🛠️ Installation</a>
   <a href="examples/fitting_example/" class="card" style="font-size: 1.2em;">🚀 Quickstart</a>
   <a href="examples/" class="card" style="font-size: 1.2em;">📚 Examples</a>
   <a href="contribute/" class="card" style="font-size: 1.2em;">🤝 Contribute</a>

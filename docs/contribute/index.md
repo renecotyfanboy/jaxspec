@@ -24,7 +24,7 @@ To install Poetry, run the following in the (jaxspec) environment:
 pip install poetry
 ```
 
-Then, to install JAXspec's dependencies, run the following command in the directory where you cloned the repository:
+Then, to install `jaxspec`'s dependencies, run the following command in the directory where you cloned the repository:
 
 ``` bash
 poetry install

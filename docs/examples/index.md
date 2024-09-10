@@ -41,7 +41,7 @@
 
     Add an observed background in your spectral model.
 
--   [__Good practices for MCMC results__](result_analysis.ipynb)
+-   [__Good practices for MCMC results__](work_with_arviz.ipynb)
 
     ---
 
