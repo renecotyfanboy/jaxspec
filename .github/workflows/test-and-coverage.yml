@@ -9,10 +9,12 @@ on:
     paths-ignore:
       - 'README.md'
       - '.github/workflows/test-and-coverage.yml'
+      - 'docs/**'
   pull_request:
     paths-ignore:
       - 'README.md'
       - '.github/workflows/test-and-coverage.yml'
+      - 'docs/**'
 
 
 permissions:

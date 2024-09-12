@@ -8,6 +8,12 @@ for inferring model parameters in most usecases. It is also easy to integrate wi
 likelihood function, so if you want to use your own methods and just need a forward model with instrument folding, we
 provide a compilable and GPU friendly one that can also be used as your usual `numpy` function.
 
+## How can I compare `jaxspec` and `xspec` fitting results ?
+
+If you want to check that `jaxspec` gives correct values compared to `xspec`, you need to make sure that the results of
+both solutions are comparable. To do this, make sure you do a blind fit with `xspec` and use `Cstat` as the fit statistic.
+Also with `jaxspec`, make sure that you explicitly use a uniform prior for each of your parameters.
+
 ## Why is there no $\chi^2$ statistic ?
 
 When it comes to define the fitting statistic, the question of either using $\chi^2$ or C-stat arises
