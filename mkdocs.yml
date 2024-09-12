@@ -45,6 +45,7 @@ theme:
   features:
     - content.tabs.link
     - content.code.copy
+    - content.code.annotate
 #    - content.code.select
 #    - navigation.instant
     - navigation.tabs
