@@ -14,8 +14,6 @@ from haiku.initializers import Constant as HaikuConstant
 
 from ..util.integrate import integrate_interval
 from ..util.online_storage import table_manager
-
-# from ._additive.apec import APEC
 from .abc import AdditiveComponent
 
 

@@ -211,4 +211,4 @@ def test_mock_obsconf(instruments, obs_model_prior):
 
     for instrument in instruments:
         obsconf = ObsConfiguration.mock_from_instrument(instrument, exposure=1e5)
-        spectra = fakeit_for_multiple_parameters(obsconf, model, parameters)
+        fakeit_for_multiple_parameters(obsconf, model, parameters)

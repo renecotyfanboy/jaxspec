@@ -15,7 +15,7 @@ import numpyro.distributions as dist
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from jaxspec.data.util import load_example_obsconf
-from jaxspec.fit import NUTSFitter
+from jaxspec.fit import MCMCFitter
 from jaxspec.model.additive import Powerlaw, Blackbodyrad
 from jaxspec.model.multiplicative import Tbabs
 
@@ -36,7 +36,7 @@ prior = {
 }
 
 ulx_observations = load_example_obsconf()
-fitter = NUTSFitter(spectral_model, prior, ulx_observations)
+fitter = MCMCFitter(spectral_model, prior, ulx_observations)
 result = fitter.fit(num_samples=1_000)
 ```
 
