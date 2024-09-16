@@ -229,5 +229,29 @@ class ObsConfiguration(xr.Dataset):
             attrs=observation.attrs | instrument.attrs,
         )
 
+    @classmethod
+    def mock_from_instrument(
+        cls,
+        instrument: Instrument,
+        exposure: float,
+        low_energy: float = 1e-20,
+        high_energy: float = 1e20,
+    ):
+        n_channels = len(instrument.coords["instrument_channel"])
+
+        observation = Observation.from_matrix(
+            np.zeros(n_channels),
+            sparse.eye(n_channels),
+            np.arange(n_channels),
+            np.zeros(n_channels, dtype=bool),
+            exposure,
+            backratio=np.ones(n_channels),
+            attributes={"description": "Mock observation"} | instrument.attrs,
+        )
+
+        return cls.from_instrument(
+            instrument, observation, low_energy=low_energy, high_energy=high_energy
+        )
+
     def plot_counts(self, **kwargs):
         return self.folded_counts.plot.step(x="e_min_folded", where="post", **kwargs)
