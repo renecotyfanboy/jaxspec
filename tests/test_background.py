@@ -2,12 +2,12 @@ import matplotlib.pyplot as plt
 
 
 def test_gp_bkg(obs_model_prior):
-    from jaxspec.fit import NUTSFitter
+    from jaxspec.fit import MCMCFitter
     from jaxspec.model.background import GaussianProcessBackground
 
     obs_list, model, prior = obs_model_prior
     bkg_model = GaussianProcessBackground(e_min=0.3, e_max=8, n_nodes=20)
-    forward = NUTSFitter(model, prior, obs_list[0], background_model=bkg_model)
+    forward = MCMCFitter(model, prior, obs_list[0], background_model=bkg_model)
 
     res_1 = forward.fit(
         num_chains=4, num_warmup=100, num_samples=100, mcmc_kwargs={"progress_bar": False}
@@ -18,12 +18,12 @@ def test_gp_bkg(obs_model_prior):
 
 
 def test_subtract_bkg(obs_model_prior):
-    from jaxspec.fit import NUTSFitter
+    from jaxspec.fit import MCMCFitter
     from jaxspec.model.background import SubtractedBackground
 
     obs_list, model, prior = obs_model_prior
     bkg_model = SubtractedBackground()
-    forward = NUTSFitter(model, prior, obs_list[0], background_model=bkg_model)
+    forward = MCMCFitter(model, prior, obs_list[0], background_model=bkg_model)
 
     res_1 = forward.fit(
         num_chains=4, num_warmup=100, num_samples=100, mcmc_kwargs={"progress_bar": False}
@@ -35,12 +35,12 @@ def test_subtract_bkg(obs_model_prior):
 
 
 def test_subtract_bkg_with_error(obs_model_prior):
-    from jaxspec.fit import NUTSFitter
+    from jaxspec.fit import MCMCFitter
     from jaxspec.model.background import BackgroundWithError
 
     obs_list, model, prior = obs_model_prior
     bkg_model = BackgroundWithError()
-    forward = NUTSFitter(model, prior, obs_list[0], background_model=bkg_model)
+    forward = MCMCFitter(model, prior, obs_list[0], background_model=bkg_model)
 
     res_1 = forward.fit(
         num_chains=4, num_warmup=100, num_samples=100, mcmc_kwargs={"progress_bar": False}
@@ -53,12 +53,12 @@ def test_subtract_bkg_with_error(obs_model_prior):
 
 """
 def test_conjugate_bkg(obs_model_prior):
-    from jaxspec.fit import NUTSFitter
+    from jaxspec.fit import MCMCFitter
     from jaxspec.model.background import ConjugateBackground
 
     obs_list, model, prior = obs_model_prior
     bkg_model = ConjugateBackground()
-    forward = NUTSFitter(model, obs_list[0], background_model=bkg_model)
+    forward = MCMCFitter(model, obs_list[0], background_model=bkg_model)
 
     res_1 = forward.fit(prior, num_chains=4, num_warmup=100, num_samples=100, mcmc_kwargs={"progress_bar": False})
 

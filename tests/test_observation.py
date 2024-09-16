@@ -1,11 +1,11 @@
-from jaxspec.fit import NUTSFitter
+from jaxspec.fit import MCMCFitter
 
 
 def test_sparsify_matrix_in_model(obs_model_prior):
     obsconfigurations, model, prior = obs_model_prior
 
     for obsconf in obsconfigurations:
-        forward_model = NUTSFitter(
+        forward_model = MCMCFitter(
             model, prior, obsconf, background_model=None, sparsify_matrix=True
         )
         forward_model.fit(

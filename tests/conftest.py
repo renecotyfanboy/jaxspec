@@ -6,7 +6,7 @@ import numpyro  # noqa:E402
 import pytest  # noqa:E402
 
 from jax import config  # noqa:E402
-from jaxspec.fit import MinimizationFitter, NUTSFitter  # noqa:E402
+from jaxspec.fit import MCMCFitter  # noqa:E402
 
 config.update("jax_enable_x64", True)
 numpyro.set_platform("cpu")
@@ -61,56 +61,24 @@ def obs_model_prior(obsconfs):
 def get_individual_mcmc_results(obs_model_prior):
     obsconfs, model, prior = obs_model_prior
 
-    return [NUTSFitter(model, prior, obsconf).fit(num_samples=5000) for obsconf in obsconfs]
+    return [MCMCFitter(model, prior, obsconf).fit(num_samples=5000) for obsconf in obsconfs]
 
 
 @pytest.fixture(scope="session")
 def get_joint_mcmc_result(obs_model_prior):
     obsconfs, model, prior = obs_model_prior
 
-    return [NUTSFitter(model, prior, obsconfs).fit(num_samples=5000)]
+    return [MCMCFitter(model, prior, obsconfs).fit(num_samples=5000)]
 
 
 @pytest.fixture(scope="session")
-def get_individual_fit_results(obs_model_prior):
-    obsconfs, model, prior = obs_model_prior
-
-    return [
-        MinimizationFitter(model, prior, obsconf).fit(
-            num_samples=20_000, init_params=good_init_params
-        )
-        for obsconf in obsconfs
-    ]
-
-
-@pytest.fixture(scope="session")
-def get_joint_fit_result(obs_model_prior):
-    obsconfs, model, prior = obs_model_prior
-
-    return [
-        MinimizationFitter(model, prior, obsconfs).fit(
-            num_samples=20_000, init_params=good_init_params
-        )
-    ]
-
-
-@pytest.fixture(scope="session")
-def get_result_list(
-    get_individual_mcmc_results,
-    get_joint_mcmc_result,
-    # get_individual_fit_results,
-    # get_joint_fit_result,
-):
+def get_result_list(get_individual_mcmc_results, get_joint_mcmc_result):
     result_list = []
     result_list += get_individual_mcmc_results
     result_list += get_joint_mcmc_result
-    # result_list += get_individual_fit_results
-    # result_list += get_joint_fit_result
 
     name_list = []
     name_list += ["PN_mcmc", "MOS1_mcmc", "MOS2_mcmc"]
     name_list += ["Joint_mcmc"]
-    # name_list += ["PN_fit", "MOS1_fit", "MOS2_fit"]
-    # name_list += ["Joint_fit"]
 
     return name_list, result_list
