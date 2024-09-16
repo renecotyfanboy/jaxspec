@@ -27,6 +27,12 @@ cd jaxspec
 pip install -e .
 ```
 
+If you do not need to edit it, you can install it with `pip` directly
+
+```
+pip install git+https://github.com/renecotyfanboy/jaxspec --upgrade
+```
+
 ## GPU support
 
 The default `JAX` dependency in `jaxspec` does not include GPU support. However, it can easily be enabled by reinstalling
