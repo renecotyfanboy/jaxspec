@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "jaxspec"
-version = "0.1.1"
+version = "0.1.2dev"
 description = "jaxspec is a bayesian spectral fitting library for X-ray astronomy."
 authors = ["sdupourque <sdupourque@irap.omp.eu>"]
 license = "MIT"
