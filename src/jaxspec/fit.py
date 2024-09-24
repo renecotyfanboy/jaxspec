@@ -171,7 +171,7 @@ class BayesianModel:
             prior_distributions_func = prior_distributions
 
         self.prior_distributions_func = prior_distributions_func
-        self.init_params = self.get_initial_params()
+        self.init_params = self.prior_samples()
 
     @cached_property
     def observation_container(self) -> dict[str, ObsConfiguration]:
@@ -323,7 +323,7 @@ class BayesianModel:
 
         return theta
 
-    def get_initial_params(self, key: PRNGKey = PRNGKey(0), num_samples: int = 1):
+    def prior_samples(self, key: PRNGKey = PRNGKey(0), num_samples: int = 100):
         """
         Get initial parameters for the model by sampling from the prior distribution
 
@@ -332,9 +332,24 @@ class BayesianModel:
             num_samples: the number of samples to draw from the prior.
         """
 
-        return Predictive(
-            self.numpyro_model, return_sites=self.parameter_names, num_samples=num_samples
-        )(key, observed=False)
+        @jax.jit
+        def prior_sample(key):
+            return Predictive(
+                self.numpyro_model, return_sites=self.parameter_names, num_samples=num_samples
+            )(key, observed=False)
+
+        return prior_sample(key)
+
+    def mock_observations(self, parameters, key: PRNGKey = PRNGKey(0)):
+        @jax.jit
+        def fakeit(key, parameters):
+            return Predictive(
+                self.numpyro_model,
+                return_sites=self.observation_names,
+                posterior_samples=parameters,
+            )(key, observed=False)
+
+        return fakeit(key, parameters)
 
     def prior_predictive_coverage(
         self, key: PRNGKey = PRNGKey(0), num_samples: int = 1000, percentiles: tuple = (16, 84)
@@ -343,13 +358,8 @@ class BayesianModel:
         Check if the prior distribution include the observed data.
         """
         key_prior, key_posterior = jax.random.split(key, 2)
-        prior_params = self.get_initial_params(key=key_prior, num_samples=num_samples)
-        posterior_observations = Predictive(
-            self.numpyro_model,
-            return_sites=self.observation_names,
-            num_samples=num_samples,
-            posterior_samples=prior_params,
-        )(key, observed=False)
+        prior_params = self.prior_samples(key=key_prior, num_samples=num_samples)
+        posterior_observations = self.mock_observations(prior_params, key=key_posterior)
 
         for key, value in self.observation_container.items():
             fig, axs = plt.subplots(
