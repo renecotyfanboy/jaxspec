@@ -133,7 +133,8 @@ class SpectralModel:
         return self.__rich_repr__()
 
     def __repr__(self):
-        rich.print(self.__rich_repr__())
+        if not base.frame_stack:
+            rich.print(self.__rich_repr__())
         return ""
 
     def photon_flux(self, params, e_low, e_high, n_points=2):
