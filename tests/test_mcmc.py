@@ -1,4 +1,4 @@
-from jaxspec.fit import NSFitter
+from jaxspec.fit import BayesianModel, NSFitter
 
 
 def test_convergence(get_individual_mcmc_results, get_joint_mcmc_result):
@@ -12,3 +12,8 @@ def test_ns(obs_model_prior):
     obsconf = obsconfs[0]
     fitter = NSFitter(model, prior, obsconf)
     fitter.fit(num_samples=5000, num_live_points=200)
+
+
+def test_prior_predictive_coverage(obs_model_prior):
+    obsconfs, model, prior = obs_model_prior
+    BayesianModel(model, prior, obsconfs).prior_predictive_coverage()

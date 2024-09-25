@@ -10,6 +10,8 @@ import arviz as az
 import haiku as hk
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
+import numpy as np
 import numpyro
 
 from jax import random
@@ -24,6 +26,7 @@ from numpyro.infer.inspect import get_model_relations
 from numpyro.infer.reparam import TransformReparam
 from numpyro.infer.util import log_density
 
+from .analysis._plot import _plot_poisson_data_with_error
 from .analysis.results import FitResult
 from .data import ObsConfiguration
 from .model.abc import SpectralModel
@@ -168,7 +171,7 @@ class BayesianModel:
             prior_distributions_func = prior_distributions
 
         self.prior_distributions_func = prior_distributions_func
-        self.init_params = self.get_initial_params()
+        self.init_params = self.prior_samples()
 
     @cached_property
     def observation_container(self) -> dict[str, ObsConfiguration]:
@@ -287,6 +290,16 @@ class BayesianModel:
         observed_sites = relations["observed"]
         return [site for site in all_sites if site not in observed_sites]
 
+    @cached_property
+    def observation_names(self) -> list[str]:
+        """
+        List of the observations.
+        """
+        relations = get_model_relations(self.numpyro_model)
+        all_sites = relations["sample_sample"].keys()
+        observed_sites = relations["observed"]
+        return [site for site in all_sites if site in observed_sites]
+
     def array_to_dict(self, theta):
         """
         Convert an array of parameters to a dictionary of parameters.
@@ -310,7 +323,7 @@ class BayesianModel:
 
         return theta
 
-    def get_initial_params(self, key: PRNGKey = PRNGKey(0), num_samples: int = 1):
+    def prior_samples(self, key: PRNGKey = PRNGKey(0), num_samples: int = 100):
         """
         Get initial parameters for the model by sampling from the prior distribution
 
@@ -319,9 +332,84 @@ class BayesianModel:
             num_samples: the number of samples to draw from the prior.
         """
 
-        return Predictive(
-            self.numpyro_model, return_sites=self.parameter_names, num_samples=num_samples
-        )(key, observed=False)
+        @jax.jit
+        def prior_sample(key):
+            return Predictive(
+                self.numpyro_model, return_sites=self.parameter_names, num_samples=num_samples
+            )(key, observed=False)
+
+        return prior_sample(key)
+
+    def mock_observations(self, parameters, key: PRNGKey = PRNGKey(0)):
+        @jax.jit
+        def fakeit(key, parameters):
+            return Predictive(
+                self.numpyro_model,
+                return_sites=self.observation_names,
+                posterior_samples=parameters,
+            )(key, observed=False)
+
+        return fakeit(key, parameters)
+
+    def prior_predictive_coverage(
+        self, key: PRNGKey = PRNGKey(0), num_samples: int = 1000, percentiles: tuple = (16, 84)
+    ):
+        """
+        Check if the prior distribution include the observed data.
+        """
+        key_prior, key_posterior = jax.random.split(key, 2)
+        prior_params = self.prior_samples(key=key_prior, num_samples=num_samples)
+        posterior_observations = self.mock_observations(prior_params, key=key_posterior)
+
+        for key, value in self.observation_container.items():
+            fig, axs = plt.subplots(
+                nrows=2, ncols=1, sharex=True, figsize=(8, 8), height_ratios=[3, 1]
+            )
+
+            _plot_poisson_data_with_error(
+                axs[0],
+                value.out_energies,
+                value.folded_counts.values,
+                percentiles=percentiles,
+            )
+
+            axs[0].stairs(
+                np.max(posterior_observations["obs_" + key], axis=0),
+                edges=[*list(value.out_energies[0]), value.out_energies[1][-1]],
+                baseline=np.min(posterior_observations["obs_" + key], axis=0),
+                alpha=0.3,
+                fill=True,
+                color=(0.15, 0.25, 0.45),
+            )
+
+            # rank = np.vstack((posterior_observations["obs_" + key], value.folded_counts.values)).argsort(axis=0)[-1] / (num_samples) * 100
+            counts = posterior_observations["obs_" + key]
+            observed = value.folded_counts.values
+
+            num_samples = counts.shape[0]
+
+            less_than_obs = (counts < observed).sum(axis=0)
+            equal_to_obs = (counts == observed).sum(axis=0)
+
+            rank = (less_than_obs + 0.5 * equal_to_obs) / num_samples * 100
+
+            axs[1].stairs(rank, edges=[*list(value.out_energies[0]), value.out_energies[1][-1]])
+
+            axs[1].plot(
+                (value.out_energies.min(), value.out_energies.max()),
+                (50, 50),
+                color="black",
+                linestyle="--",
+            )
+
+            axs[1].set_xlabel("Energy (keV)")
+            axs[0].set_ylabel("Counts")
+            axs[1].set_ylabel("Rank (%)")
+            axs[1].set_ylim(0, 100)
+            axs[0].set_xlim(value.out_energies.min(), value.out_energies.max())
+            axs[0].loglog()
+            plt.suptitle(f"Prior Predictive coverage for {key}")
+            plt.show()
 
 
 class BayesianModelFitter(BayesianModel, ABC):
