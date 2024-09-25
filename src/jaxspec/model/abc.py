@@ -7,9 +7,11 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 import networkx as nx
+import rich
 
 from haiku._src import base
 from jax.scipy.integrate import trapezoid
+from rich.table import Table
 from simpleeval import simple_eval
 
 
@@ -109,6 +111,30 @@ class SpectralModel:
     @property
     def params(self):
         return self.transformed_func_photon.init(None, jnp.ones(10), jnp.ones(10))
+
+    def __rich_repr__(self):
+        table = Table(title=str(self))
+
+        table.add_column("Component", justify="right", style="bold", no_wrap=True)
+        table.add_column("Parameter")
+
+        params = self.params
+
+        for component in params.keys():
+            once = True
+
+            for parameters in params[component].keys():
+                table.add_row(component if once else "", parameters)
+                once = False
+
+        return table
+
+    def __repr_html_(self):
+        return self.__rich_repr__()
+
+    def __repr__(self):
+        rich.print(self.__rich_repr__())
+        return ""
 
     def photon_flux(self, params, e_low, e_high, n_points=2):
         r"""
