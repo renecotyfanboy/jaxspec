@@ -89,7 +89,6 @@ Then use the following lines to save and load the files:
 import dill
 
 # Save the results
-
 with open(r"result.pickle", "wb") as output_file:
     dill.dump(result, output_file)
 
