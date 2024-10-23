@@ -104,6 +104,8 @@ class CountForwardModel(hk.Module):
     A haiku module which allows to build the function that simulates the measured counts
     """
 
+    # TODO: It has no point of being a haiku module, it should be a simple function
+
     def __init__(self, model: SpectralModel, folding: ObsConfiguration, sparse=False):
         super().__init__()
         self.model = model
@@ -352,7 +354,9 @@ class BayesianModel:
         return fakeit(key, parameters)
 
     def prior_predictive_coverage(
-        self, key: PRNGKey = PRNGKey(0), num_samples: int = 1000, percentiles: tuple = (16, 84)
+        self,
+        key: PRNGKey = PRNGKey(0),
+        num_samples: int = 1000,
     ):
         """
         Check if the prior distribution include the observed data.
@@ -363,24 +367,36 @@ class BayesianModel:
 
         for key, value in self.observation_container.items():
             fig, axs = plt.subplots(
-                nrows=2, ncols=1, sharex=True, figsize=(8, 8), height_ratios=[3, 1]
+                nrows=2, ncols=1, sharex=True, figsize=(5, 6), height_ratios=[3, 1]
             )
 
             _plot_poisson_data_with_error(
                 axs[0],
                 value.out_energies,
                 value.folded_counts.values,
-                percentiles=percentiles,
+                percentiles=(16, 84),
             )
 
-            axs[0].stairs(
-                np.max(posterior_observations["obs_" + key], axis=0),
-                edges=[*list(value.out_energies[0]), value.out_energies[1][-1]],
-                baseline=np.min(posterior_observations["obs_" + key], axis=0),
-                alpha=0.3,
-                fill=True,
-                color=(0.15, 0.25, 0.45),
-            )
+            for i, (envelop_percentiles, color, alpha) in enumerate(
+                zip(
+                    [(16, 86), (2.5, 97.5), (0.15, 99.85)],
+                    ["#03045e", "#0077b6", "#00b4d8"],
+                    [0.5, 0.4, 0.3],
+                )
+            ):
+                lower, upper = np.percentile(
+                    posterior_observations["obs_" + key], envelop_percentiles, axis=0
+                )
+
+                axs[0].stairs(
+                    upper,
+                    edges=[*list(value.out_energies[0]), value.out_energies[1][-1]],
+                    baseline=lower,
+                    alpha=alpha,
+                    fill=True,
+                    color=color,
+                    label=rf"${1+i}\sigma$",
+                )
 
             # rank = np.vstack((posterior_observations["obs_" + key], value.folded_counts.values)).argsort(axis=0)[-1] / (num_samples) * 100
             counts = posterior_observations["obs_" + key]
@@ -408,7 +424,9 @@ class BayesianModel:
             axs[1].set_ylim(0, 100)
             axs[0].set_xlim(value.out_energies.min(), value.out_energies.max())
             axs[0].loglog()
+            axs[0].legend(loc="upper right")
             plt.suptitle(f"Prior Predictive coverage for {key}")
+            plt.tight_layout()
             plt.show()
 
 

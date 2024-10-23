@@ -1,5 +1,6 @@
 import numpy as np
 import xarray as xr
+
 from .ogip import DataPHA
 
 
@@ -23,7 +24,16 @@ class Observation(xr.Dataset):
     folded_background: xr.DataArray
     """The background counts, after grouping"""
 
-    __slots__ = ("grouping", "channel", "quality", "exposure", "background", "folded_background", "counts", "folded_counts")
+    __slots__ = (
+        "grouping",
+        "channel",
+        "quality",
+        "exposure",
+        "background",
+        "folded_background",
+        "counts",
+        "folded_counts",
+    )
 
     _default_attributes = {"description": "X-ray observation dataset"}
 
@@ -46,7 +56,11 @@ class Observation(xr.Dataset):
             background = np.zeros_like(counts, dtype=np.int64)
 
         data_dict = {
-            "counts": (["instrument_channel"], np.asarray(counts, dtype=np.int64), {"description": "Counts", "unit": "photons"}),
+            "counts": (
+                ["instrument_channel"],
+                np.asarray(counts, dtype=np.int64),
+                {"description": "Counts", "unit": "photons"},
+            ),
             "folded_counts": (
                 ["folded_channel"],
                 np.asarray(np.ma.filled(grouping @ counts), dtype=np.int64),
@@ -57,7 +71,11 @@ class Observation(xr.Dataset):
                 grouping,
                 {"description": "Grouping matrix."},
             ),
-            "quality": (["instrument_channel"], np.asarray(quality, dtype=np.int64), {"description": "Quality flag."}),
+            "quality": (
+                ["instrument_channel"],
+                np.asarray(quality, dtype=np.int64),
+                {"description": "Quality flag."},
+            ),
             "exposure": ([], float(exposure), {"description": "Total exposure", "unit": "s"}),
             "backratio": (
                 ["instrument_channel"],
@@ -84,20 +102,29 @@ class Observation(xr.Dataset):
         return cls(
             data_dict,
             coords={
-                "channel": (["instrument_channel"], np.asarray(channel, dtype=np.int64), {"description": "Channel number"}),
+                "channel": (
+                    ["instrument_channel"],
+                    np.asarray(channel, dtype=np.int64),
+                    {"description": "Channel number"},
+                ),
                 "grouped_channel": (
                     ["folded_channel"],
                     np.arange(len(grouping @ counts), dtype=np.int64),
                     {"description": "Channel number"},
                 ),
             },
-            attrs=cls._default_attributes if attributes is None else attributes | cls._default_attributes,
+            attrs=cls._default_attributes
+            if attributes is None
+            else attributes | cls._default_attributes,
         )
 
     @classmethod
     def from_ogip_container(cls, pha: DataPHA, bkg: DataPHA | None = None, **metadata):
         if bkg is not None:
-            backratio = np.nan_to_num((pha.backscal * pha.exposure * pha.areascal) / (bkg.backscal * bkg.exposure * bkg.areascal))
+            backratio = np.nan_to_num(
+                (pha.backscal * pha.exposure * pha.areascal)
+                / (bkg.backscal * bkg.exposure * bkg.areascal)
+            )
         else:
             backratio = np.ones_like(pha.counts)
 
@@ -114,6 +141,14 @@ class Observation(xr.Dataset):
 
     @classmethod
     def from_pha_file(cls, pha_path: str, bkg_path: str | None = None, **metadata):
+        """
+        Build an observation from a PHA file
+
+        Parameters:
+            pha_path : Path to the PHA file
+            bkg_path : Path to the background file
+            metadata : Additional metadata to add to the observation
+        """
         from .util import data_path_finder
 
         arf_path, rmf_path, bkg_path_default = data_path_finder(pha_path)
@@ -155,7 +190,16 @@ class Observation(xr.Dataset):
 
         fig = plt.figure(figsize=(6, 6))
         gs = fig.add_gridspec(
-            2, 2, width_ratios=(4, 1), height_ratios=(1, 4), left=0.1, right=0.9, bottom=0.1, top=0.9, wspace=0.05, hspace=0.05
+            2,
+            2,
+            width_ratios=(4, 1),
+            height_ratios=(1, 4),
+            left=0.1,
+            right=0.9,
+            bottom=0.1,
+            top=0.9,
+            wspace=0.05,
+            hspace=0.05,
         )
         ax = fig.add_subplot(gs[1, 0])
         ax_histx = fig.add_subplot(gs[0, 0], sharex=ax)
