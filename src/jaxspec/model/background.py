@@ -39,7 +39,7 @@ class SubtractedBackground(BackgroundModel):
         _, observed_counts = obs.out_energies, obs.folded_background.data
         numpyro.deterministic(f"{name}", observed_counts)
 
-        return jnp.zeros_like(observed_counts)
+        return observed_counts
 
 
 class BackgroundWithError(BackgroundModel):
