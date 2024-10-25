@@ -13,9 +13,9 @@ approach is equivalent to subtract the background to the observed spectrum when 
 from jaxspec.model.background import SubtractedBackground
 
 fitter = MCMCFitter(model, prior, obs, background_model=SubtractedBackground())
-result = fitter.fit(num_chains=4, num_warmup=1000, num_samples=1000, mcmc_kwargs={"progress_bar": True})
+result_bkg_substracted = fitter.fit(num_chains=16, num_warmup=1000, num_samples=5000, mcmc_kwargs={"progress_bar": True})
 
-result.plot_ppc()
+result_bkg_substracted.plot_ppc()
 ```
 
 ![Subtracted background](statics/subtract_background.png)
@@ -29,9 +29,9 @@ it is to consider each background bin as a Poisson realisation of a counting pro
 from jaxspec.model.background import BackgroundWithError
 
 fitter = MCMCFitter(model, prior, obs, background_model=BackgroundWithError())
-result = fitter.fit(num_chains=4, num_warmup=1000, num_samples=1000, mcmc_kwargs={"progress_bar": True})
+result_bkg_with_spread = fitter.fit(num_chains=16, num_warmup=1000, num_samples=5000, mcmc_kwargs={"progress_bar": True})
 
-result.plot_ppc()
+result_bkg_with_spread.plot_ppc()
 ```
 
 ![Subtracted background with errors](statics/subtract_background_with_errors.png)
@@ -44,9 +44,25 @@ nodes will drive the flexibility of the Gaussian process, and it should always b
 from jaxspec.model.background import GaussianProcessBackground
 
 forward = MCMCFitter(model, prior, obs, background_model=GaussianProcessBackground(e_min=0.3, e_max=8, n_nodes=20))
-result = forward.fit(num_chains=4, num_warmup=1000, num_samples=1000, mcmc_kwargs={"progress_bar": True})
+result_bkg_gp = forward.fit(num_chains=16, num_warmup=1000, num_samples=5000, mcmc_kwargs={"progress_bar": True})
 
-result.plot_ppc()
+result_bkg_gp.plot_ppc()
 ```
 
 ![Subtracted background with errors](statics/background_gp.png)
+
+We can compare the results for all these background models using the `plot_corner_comparison` function. 
+
+``` python
+from jaxspec.analysis.compare import plot_corner_comparison
+
+plot_corner_comparison(
+    {
+        "Background with no spread" : result_bkg_substracted,
+        "Background with spread" : result_bkg_with_spread,
+        "Gaussian process background" : result_bkg_gp,
+    }
+)
+```
+
+![Background comparison](statics/background_comparison.png)
