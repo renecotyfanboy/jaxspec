@@ -17,7 +17,6 @@ import numpyro
 from jax import random
 from jax.experimental.sparse import BCOO
 from jax.random import PRNGKey
-from jax.tree_util import tree_map
 from jax.typing import ArrayLike
 from numpyro.contrib.nested_sampling import NestedSampler
 from numpyro.distributions import Distribution, Poisson, TransformedDistribution
@@ -159,7 +158,7 @@ class BayesianModel:
         self.model = model
         self._observations = observations
         self.background_model = background_model
-        self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
+        self.pars = jax.tree.map(lambda x: jnp.float64(x), self.model.params)
         self.sparse = sparsify_matrix
 
         if not callable(prior_distributions):
@@ -206,7 +205,7 @@ class BayesianModel:
             for i, (key, observation) in enumerate(self.observation_container.items()):
                 # We expect that prior_params contains an array of parameters for each observation
                 # They can be identical or different for each observation
-                params = tree_map(lambda x: x[i], prior_params)
+                params = jax.tree.map(lambda x: x[i], prior_params)
 
                 obs_model = build_numpyro_model_for_single_obs(
                     observation, self.model, self.background_model, name=key, sparse=self.sparse
