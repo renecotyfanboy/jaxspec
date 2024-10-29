@@ -1,4 +1,6 @@
+import astropy.units as u
 import matplotlib.pyplot as plt
+import pytest
 
 from jaxspec.analysis.compare import plot_corner_comparison
 
@@ -62,5 +64,13 @@ def test_posterior_energy_flux(get_joint_mcmc_result):
 def test_posterior_luminosity(get_joint_mcmc_result):
     result = get_joint_mcmc_result[0]
     e_min, e_max = 0.7, 1.2
-    result.luminosity(e_min, e_max, register=True)
+
+    with pytest.raises(ValueError):
+        result.luminosity(e_min, e_max, register=True)
+
+    with pytest.raises(ValueError):
+        result.luminosity(e_min, e_max, distance=10 * u.kpc, redshift=0.1, register=True)
+
+    result.luminosity(e_min, e_max, redshift=0.1, register=True)
+
     assert f"luminosity_{e_min:.1f}_{e_max:.1f}" in list(result.inference_data.posterior.keys())
