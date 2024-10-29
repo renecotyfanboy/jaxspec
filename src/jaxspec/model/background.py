@@ -111,16 +111,18 @@ class GaussianProcessBackground(BackgroundModel):
             observed_counts = jnp.asarray(observed_counts)
 
         # The parameters of the GP model
-        mean = numpyro.sample(f"{name}_mean", dist.Normal(jnp.log(jnp.mean(observed_counts)), 2.0))
-        sigma = numpyro.sample(f"{name}_sigma", dist.HalfNormal(3.0))
-        rho = numpyro.sample(f"{name}_rho", dist.HalfNormal(10.0))
+        mean = numpyro.sample(
+            f"_bkg_{name}_mean", dist.Normal(jnp.log(jnp.mean(observed_counts)), 2.0)
+        )
+        sigma = numpyro.sample(f"_bkg_{name}_sigma", dist.HalfNormal(3.0))
+        rho = numpyro.sample(f"_bkg_{name}_rho", dist.HalfNormal(10.0))
 
         # Set up the kernel and GP objects
         kernel = sigma**2 * self.kernel(rho)
         nodes = jnp.linspace(0, 1, self.n_nodes)
         gp = GaussianProcess(kernel, nodes, diag=1e-5 * jnp.ones_like(nodes), mean=mean)
 
-        log_rate = numpyro.sample(f"_{name}_log_rate_nodes", gp.numpyro_dist())
+        log_rate = numpyro.sample(f"_bkg_{name}_log_rate_nodes", gp.numpyro_dist())
 
         interp_count_rate = jnp.exp(
             jnp.interp(energy, nodes * (self.e_max - self.e_min) + self.e_min, log_rate)

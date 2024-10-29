@@ -489,13 +489,13 @@ class FitResult:
 
         match y_type:
             case "counts":
-                y_units = u.photon
+                y_units = u.ct
             case "countrate":
-                y_units = u.photon / u.s
+                y_units = u.ct / u.s
             case "photon_flux":
-                y_units = u.photon / u.cm**2 / u.s
+                y_units = u.ct / u.cm**2 / u.s
             case "photon_flux_density":
-                y_units = u.photon / u.cm**2 / u.s / x_unit
+                y_units = u.ct / u.cm**2 / u.s / x_unit
             case _:
                 raise ValueError(
                     f"Unknown y_type: {y_type}. Must be 'counts', 'countrate', 'photon_flux' or 'photon_flux_density'"
@@ -566,16 +566,16 @@ class FitResult:
                     case "photon_flux_density":
                         denominator = (xbins[1] - xbins[0]) * integrated_arf * exposure
 
-                y_samples = (count * u.photon / denominator).to(y_units)
-                y_observed = (obsconf.folded_counts.data * u.photon / denominator).to(y_units)
+                y_samples = (count * u.ct / denominator).to(y_units)
+                y_observed = (obsconf.folded_counts.data * u.ct / denominator).to(y_units)
                 y_observed_low = (
                     nbinom.ppf(percentile[0] / 100, obsconf.folded_counts.data, 0.5)
-                    * u.photon
+                    * u.ct
                     / denominator
                 ).to(y_units)
                 y_observed_high = (
                     nbinom.ppf(percentile[1] / 100, obsconf.folded_counts.data, 0.5)
-                    * u.photon
+                    * u.ct
                     / denominator
                 ).to(y_units)
 
@@ -611,18 +611,18 @@ class FitResult:
                 if self.background_model is not None:
                     # We plot the background only if it is included in the fit, i.e. by subtracting
                     ratio = obsconf.folded_backratio.data
-                    y_samples_bkg = (bkg_count * u.photon / (denominator * ratio)).to(y_units)
+                    y_samples_bkg = (bkg_count * u.ct / (denominator * ratio)).to(y_units)
                     y_observed_bkg = (
-                        obsconf.folded_background.data * u.photon / (denominator * ratio)
+                        obsconf.folded_background.data * u.ct / (denominator * ratio)
                     ).to(y_units)
                     y_observed_bkg_low = (
                         nbinom.ppf(percentile[0] / 100, obsconf.folded_background.data, 0.5)
-                        * u.photon
+                        * u.ct
                         / (denominator * ratio)
                     ).to(y_units)
                     y_observed_bkg_high = (
                         nbinom.ppf(percentile[1] / 100, obsconf.folded_background.data, 0.5)
-                        * u.photon
+                        * u.ct
                         / (denominator * ratio)
                     ).to(y_units)
 
