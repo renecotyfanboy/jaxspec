@@ -35,3 +35,24 @@ Once the environment is set up, you can install jaxspec directly from pypi
 ```
 pip install jaxspec --upgrade
 ```
+
+## Citation 
+
+If you use `jaxspec` in your research, please consider citing the following article 
+
+```
+@ARTICLE{2024A&A...690A.317D,
+       author = {{Dupourqu{\'e}}, S. and {Barret}, D. and {Diez}, C.~M. and {Guillot}, S. and {Quintin}, E.},
+        title = "{jaxspec: A fast and robust Python library for X-ray spectral fitting}",
+      journal = {\aap},
+     keywords = {methods: data analysis, methods: statistical, X-rays: general},
+         year = 2024,
+        month = oct,
+       volume = {690},
+          eid = {A317},
+        pages = {A317},
+          doi = {10.1051/0004-6361/202451736},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2024A&A...690A.317D},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+```
