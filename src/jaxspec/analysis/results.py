@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import arviz as az
+import astropy.cosmology.units as cu
 import astropy.units as u
 import jax
 import jax.numpy as jnp
@@ -287,7 +288,8 @@ class FitResult:
         self,
         e_min: float,
         e_max: float,
-        redshift: float | ArrayLike = 0.1,
+        redshift: float | ArrayLike = None,
+        distance: float | ArrayLike = None,
         observer_frame: bool = True,
         cosmology: Cosmology = Planck18,
         unit: Unit = u.erg / u.s,
@@ -309,6 +311,17 @@ class FitResult:
 
         if not observer_frame:
             raise NotImplementedError()
+
+        if redshift is None and distance is None:
+            raise ValueError("Either redshift or distance must be specified.")
+
+        if distance is not None:
+            if redshift is not None:
+                raise ValueError("Redshift must be None as a distance is specified.")
+            else:
+                redshift = distance.to(
+                    cu.redshift, cu.redshift_distance(cosmology, kind="luminosity")
+                ).value
 
         @jax.jit
         @jnp.vectorize
