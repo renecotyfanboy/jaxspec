@@ -3,7 +3,30 @@ import operator
 import jax
 import jax.numpy as jnp
 
+from jaxspec._fit._build_model import build_numpyro_model_for_single_obs, build_prior
 from jaxspec.fit import BayesianModel
+from jaxspec.util.typing import PriorDictModel
+from numpyro.infer.inspect import get_model_relations
+
+
+def test_model_building(obs_model_prior):
+    """
+    Check that all parameters are built correctly within the numpyro model.
+    """
+    obs, spectral_model, prior_distributions = obs_model_prior
+
+    def numpyro_model():
+        prior = PriorDictModel.from_dict(prior_distributions).nested_dict
+        params = build_prior(prior, expand_shape=())
+        lower_model = build_numpyro_model_for_single_obs(obs[0], spectral_model, None)
+
+        lower_model(params)
+
+    relations = get_model_relations(numpyro_model)
+
+    assert {
+        key for key in relations["sample_param"].keys() if key not in relations["observed"]
+    } == set(prior_distributions.keys())
 
 
 def test_likelihood(obs_model_prior):
