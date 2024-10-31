@@ -7,7 +7,6 @@ from functools import cached_property
 from typing import Literal
 
 import arviz as az
-import haiku as hk
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -15,118 +14,21 @@ import numpy as np
 import numpyro
 
 from jax import random
-from jax.experimental.sparse import BCOO
 from jax.random import PRNGKey
-from jax.tree_util import tree_map
-from jax.typing import ArrayLike
 from numpyro.contrib.nested_sampling import NestedSampler
-from numpyro.distributions import Distribution, Poisson, TransformedDistribution
+from numpyro.distributions import Poisson, TransformedDistribution
 from numpyro.infer import AIES, ESS, MCMC, NUTS, Predictive
 from numpyro.infer.inspect import get_model_relations
 from numpyro.infer.reparam import TransformReparam
 from numpyro.infer.util import log_density
 
+from ._fit._build_model import build_prior, forward_model
 from .analysis._plot import _plot_poisson_data_with_error
 from .analysis.results import FitResult
 from .data import ObsConfiguration
 from .model.abc import SpectralModel
 from .model.background import BackgroundModel
 from .util.typing import PriorDictModel, PriorDictType
-
-
-def build_prior(prior: PriorDictType, expand_shape: tuple = (), prefix=""):
-    """
-    Transform a dictionary of prior distributions into a dictionary of parameters sampled from the prior.
-    Must be used within a numpyro model.
-    """
-    parameters = dict(hk.data_structures.to_haiku_dict(prior))
-
-    for i, (m, n, sample) in enumerate(hk.data_structures.traverse(prior)):
-        if isinstance(sample, Distribution):
-            parameters[m][n] = jnp.ones(expand_shape) * numpyro.sample(f"{prefix}{m}_{n}", sample)
-
-        elif isinstance(sample, ArrayLike):
-            parameters[m][n] = jnp.ones(expand_shape) * sample
-
-        else:
-            raise ValueError(
-                f"Invalid prior type {type(sample)} for parameter {prefix}{m}_{n} : {sample}"
-            )
-
-    return parameters
-
-
-def build_numpyro_model_for_single_obs(
-    obs: ObsConfiguration,
-    model: SpectralModel,
-    background_model: BackgroundModel,
-    name: str = "",
-    sparse: bool = False,
-) -> Callable:
-    """
-    Build a numpyro model for a given observation and spectral model.
-    """
-
-    def numpyro_model(prior_params, observed=True):
-        # prior_params = build_prior(prior_distributions, name=name)
-        transformed_model = hk.without_apply_rng(
-            hk.transform(lambda par: CountForwardModel(model, obs, sparse=sparse)(par))
-        )
-
-        if (getattr(obs, "folded_background", None) is not None) and (background_model is not None):
-            bkg_countrate = background_model.numpyro_model(
-                obs, model, name="bkg_" + name, observed=observed
-            )
-        elif (getattr(obs, "folded_background", None) is None) and (background_model is not None):
-            raise ValueError(
-                "Trying to fit a background model but no background is linked to this observation"
-            )
-
-        else:
-            bkg_countrate = 0.0
-
-        obs_model = jax.jit(lambda p: transformed_model.apply(None, p))
-        countrate = obs_model(prior_params)
-
-        # This is the case where we fit a model to a TOTAL spectrum as defined in OGIP standard
-        with numpyro.plate("obs_plate_" + name, len(obs.folded_counts)):
-            numpyro.sample(
-                "obs_" + name,
-                Poisson(countrate + bkg_countrate / obs.folded_backratio.data),
-                obs=obs.folded_counts.data if observed else None,
-            )
-
-    return numpyro_model
-
-
-class CountForwardModel(hk.Module):
-    """
-    A haiku module which allows to build the function that simulates the measured counts
-    """
-
-    def __init__(self, model: SpectralModel, folding: ObsConfiguration, sparse=False):
-        super().__init__()
-        self.model = model
-        self.energies = jnp.asarray(folding.in_energies)
-
-        if (
-            sparse
-        ):  # folding.transfer_matrix.data.density > 0.015 is a good criterion to consider sparsify
-            self.transfer_matrix = BCOO.from_scipy_sparse(
-                folding.transfer_matrix.data.to_scipy_sparse().tocsr()
-            )
-
-        else:
-            self.transfer_matrix = jnp.asarray(folding.transfer_matrix.data.todense())
-
-    def __call__(self, parameters):
-        """
-        Compute the count functions for a given observation.
-        """
-
-        expected_counts = self.transfer_matrix @ self.model.photon_flux(parameters, *self.energies)
-
-        return jnp.clip(expected_counts, a_min=1e-6)
 
 
 class BayesianModel:
@@ -157,7 +59,6 @@ class BayesianModel:
         self.model = model
         self._observations = observations
         self.background_model = background_model
-        self.pars = tree_map(lambda x: jnp.float64(x), self.model.params)
         self.sparse = sparsify_matrix
 
         if not callable(prior_distributions):
@@ -197,22 +98,50 @@ class BayesianModel:
         Build the numpyro model using the observed data, the prior distributions and the spectral model.
         """
 
-        def model(observed=True):
+        def numpyro_model(observed=True):
+            # Instantiate and register the parameters of the spectral model and the background
             prior_params = self.prior_distributions_func()
 
             # Iterate over all the observations in our container and build a single numpyro model for each observation
-            for i, (key, observation) in enumerate(self.observation_container.items()):
+            for i, (name, observation) in enumerate(self.observation_container.items()):
+                # Check that we can indeed fit a background
+                if (getattr(observation, "folded_background", None) is not None) and (
+                    self.background_model is not None
+                ):
+                    # This call should register the parameter and observation of our background model
+                    bkg_countrate = self.background_model.numpyro_model(
+                        observation, name=name, observed=observed
+                    )
+
+                elif (getattr(observation, "folded_background", None) is None) and (
+                    self.background_model is not None
+                ):
+                    raise ValueError(
+                        "Trying to fit a background model but no background is linked to this observation"
+                    )
+
+                else:
+                    bkg_countrate = 0.0
+
                 # We expect that prior_params contains an array of parameters for each observation
                 # They can be identical or different for each observation
-                params = tree_map(lambda x: x[i], prior_params)
+                params = jax.tree.map(lambda x: x[i], prior_params)
 
-                obs_model = build_numpyro_model_for_single_obs(
-                    observation, self.model, self.background_model, name=key, sparse=self.sparse
+                # Forward model the observation and get the associated countrate
+                obs_model = jax.jit(
+                    lambda par: forward_model(self.model, par, observation, sparse=self.sparse)
                 )
+                obs_countrate = obs_model(params)
 
-                obs_model(params, observed=observed)
+                # Register the observation as an observed site
+                with numpyro.plate("obs_plate_" + name, len(observation.folded_counts)):
+                    numpyro.sample(
+                        "obs_" + name,
+                        Poisson(obs_countrate + bkg_countrate / observation.folded_backratio.data),
+                        obs=observation.folded_counts.data if observed else None,
+                    )
 
-        return model
+        return numpyro_model
 
     @cached_property
     def transformed_numpyro_model(self) -> Callable:
@@ -352,7 +281,9 @@ class BayesianModel:
         return fakeit(key, parameters)
 
     def prior_predictive_coverage(
-        self, key: PRNGKey = PRNGKey(0), num_samples: int = 1000, percentiles: tuple = (16, 84)
+        self,
+        key: PRNGKey = PRNGKey(0),
+        num_samples: int = 1000,
     ):
         """
         Check if the prior distribution include the observed data.
@@ -363,24 +294,36 @@ class BayesianModel:
 
         for key, value in self.observation_container.items():
             fig, axs = plt.subplots(
-                nrows=2, ncols=1, sharex=True, figsize=(8, 8), height_ratios=[3, 1]
+                nrows=2, ncols=1, sharex=True, figsize=(5, 6), height_ratios=[3, 1]
             )
 
             _plot_poisson_data_with_error(
                 axs[0],
                 value.out_energies,
                 value.folded_counts.values,
-                percentiles=percentiles,
+                percentiles=(16, 84),
             )
 
-            axs[0].stairs(
-                np.max(posterior_observations["obs_" + key], axis=0),
-                edges=[*list(value.out_energies[0]), value.out_energies[1][-1]],
-                baseline=np.min(posterior_observations["obs_" + key], axis=0),
-                alpha=0.3,
-                fill=True,
-                color=(0.15, 0.25, 0.45),
-            )
+            for i, (envelop_percentiles, color, alpha) in enumerate(
+                zip(
+                    [(16, 86), (2.5, 97.5), (0.15, 99.85)],
+                    ["#03045e", "#0077b6", "#00b4d8"],
+                    [0.5, 0.4, 0.3],
+                )
+            ):
+                lower, upper = np.percentile(
+                    posterior_observations["obs_" + key], envelop_percentiles, axis=0
+                )
+
+                axs[0].stairs(
+                    upper,
+                    edges=[*list(value.out_energies[0]), value.out_energies[1][-1]],
+                    baseline=lower,
+                    alpha=alpha,
+                    fill=True,
+                    color=color,
+                    label=rf"${1+i}\sigma$",
+                )
 
             # rank = np.vstack((posterior_observations["obs_" + key], value.folded_counts.values)).argsort(axis=0)[-1] / (num_samples) * 100
             counts = posterior_observations["obs_" + key]
@@ -408,7 +351,9 @@ class BayesianModel:
             axs[1].set_ylim(0, 100)
             axs[0].set_xlim(value.out_energies.min(), value.out_energies.max())
             axs[0].loglog()
+            axs[0].legend(loc="upper right")
             plt.suptitle(f"Prior Predictive coverage for {key}")
+            plt.tight_layout()
             plt.show()
 
 
@@ -513,7 +458,11 @@ class BayesianModelFitter(BayesianModel, ABC):
             predictive_parameters
         ]
 
-        parameters = [x for x in inference_data.posterior.keys() if not x.endswith("_base")]
+        parameters = [
+            x
+            for x in inference_data.posterior.keys()
+            if not x.endswith("_base") or x.startswith("_")
+        ]
         inference_data.posterior = inference_data.posterior[parameters]
         inference_data.prior = inference_data.prior[parameters]
 

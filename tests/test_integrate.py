@@ -73,13 +73,13 @@ def test_integrate_interval_gradient():
 
     def hyp1f1_integral(a, b, z):
         def integrand(x, a, b, z):
-            return jnp.exp(z * x) * x ** (a - 1) * (1 - x) ** (-a + b - 1)
+            return jnp.exp(z * x) * x ** (a - 1.) * (1. - x) ** (-a + b - 1.)
 
-        return integrate_interval(integrand)(0, 1, a, b, z) * gamma(b) / (gamma(a) * gamma(b - a))
+        return integrate_interval(integrand)(0., 1., a, b, z) * gamma(b) / (gamma(a) * gamma(b - a))
 
-    a = 1.5
-    b = 10.0
-    z = 0.5
+    a = jnp.asarray(1.5)
+    b = jnp.asarray(10.0)
+    z = jnp.asarray(0.5)
 
     assert jnp.isclose(jax.grad(hyp1f1_integral)(a, b, z), jax.grad(hyp1f1)(a, b, z))
 
@@ -90,6 +90,6 @@ def test_integrate_positive_gradient():
     """
 
     gamma_integral = integrate_positive(lambda t, z: t ** (z - 1) * jnp.exp(-t))
-    z = 2.5
+    z = jnp.asarray(2.5)
 
     assert jnp.isclose(jax.grad(gamma_integral)(z), jax.grad(gamma)(z))
