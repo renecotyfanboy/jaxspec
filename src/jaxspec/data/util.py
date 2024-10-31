@@ -11,7 +11,7 @@ from astropy.io import fits
 from numpy.typing import ArrayLike
 from numpyro import handlers
 
-from ..fit import CountForwardModel
+from .._fit._build_model import CountForwardModel
 from ..model.abc import SpectralModel
 from ..util.online_storage import table_manager
 from . import Instrument, ObsConfiguration, Observation
