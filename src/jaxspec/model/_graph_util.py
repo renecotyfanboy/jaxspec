@@ -12,7 +12,7 @@ def get_component_names(graph: nx.DiGraph):
     """
     Get the set of component names from the nodes of a graph.
 
-    Args:
+    Parameters:
         graph: The graph to get the component names from.
     """
     return set(
@@ -24,7 +24,7 @@ def increment_name(name: str, used_names: set):
     """
     Increment the suffix number in a name if it is formated as 'name_1'.
 
-    Args:
+    Parameters:
         name: The name to increment.
         used_names: The set of names that are already used.
     """
@@ -50,7 +50,7 @@ def compose_with_rename(graph_1: nx.DiGraph, graph_2: nx.DiGraph):
     Compose two graphs by updating the 'name' attributes of nodes in graph_2,
     and return the graph joined on the 'out' node.
 
-    Args:
+    Parameters:
         graph_1: The first graph to compose.
         graph_2: The second graph to compose.
     """
@@ -86,9 +86,9 @@ def compose(
 ):
     """
     Compose two graphs by joining the 'out' node of graph_1 and graph_2, and turning
-    it to a 'operation' node with the relevant operator and add a new 'out' node.
+    it to an 'operation' node with the relevant operator and add a new 'out' node.
 
-    Args:
+    Parameters:
         graph_1: The first graph to compose.
         graph_2: The second graph to compose.
         operation: The string describing the operation to perform.

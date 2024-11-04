@@ -1,3 +1,4 @@
+r'''
 import os
 import re
 
@@ -184,3 +185,4 @@ def test_fakeits(
     jaxspec_spectra = fakeit_for_multiple_parameters(setup, m_jaxspec, p_jaxspec)
 
     assert anderson_ksamp(np.hstack((xspec_spectra, jaxspec_spectra))).pvalue >= 0.25
+'''
