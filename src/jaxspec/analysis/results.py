@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import arviz as az
@@ -102,7 +101,6 @@ class FitResult:
         self,
         bayesian_fitter: BayesianModel,
         inference_data: az.InferenceData,
-        structure: Mapping[K, V],
         background_model: BackgroundModel = None,
     ):
         self.model = bayesian_fitter.model
@@ -110,7 +108,6 @@ class FitResult:
         self.inference_data = inference_data
         self.obsconfs = bayesian_fitter.observation_container
         self.background_model = background_model
-        self._structure = structure
 
         # Add the model used in fit to the metadata
         for group in self.inference_data.groups():
@@ -173,7 +170,9 @@ class FitResult:
         with seed(rng_seed=0):
             input_parameters = self.bayesian_fitter.prior_distributions_func()
 
-        for module, parameter, value in traverse(input_parameters):
+        for key, value in input_parameters.items():
+            module, parameter = key.rsplit("_", 1)
+
             if f"{module}_{parameter}" in posterior.keys():
                 # We add as extra dimension as there might be different values per observation
                 if posterior[f"{module}_{parameter}"].shape == samples_shape:
@@ -181,19 +180,21 @@ class FitResult:
                 else:
                     to_set = posterior[f"{module}_{parameter}"]
 
-                input_parameters[module][parameter] = to_set
+                input_parameters[f"{module}_{parameter}"] = to_set
 
             else:
                 # The parameter is fixed in this case, so we just broadcast is over chain and draws
-                input_parameters[module][parameter] = value[None, None, ...]
+                input_parameters[f"{module}_{parameter}"] = value[None, None, ...]
 
-            if len(total_shape) < len(input_parameters[module][parameter].shape):
+            if len(total_shape) < len(input_parameters[f"{module}_{parameter}"].shape):
                 # If there are only chains and draws, we reduce
-                input_parameters[module][parameter] = input_parameters[module][parameter][..., 0]
+                input_parameters[f"{module}_{parameter}"] = input_parameters[
+                    f"{module}_{parameter}"
+                ][..., 0]
 
             else:
-                input_parameters[module][parameter] = jnp.broadcast_to(
-                    input_parameters[module][parameter], total_shape
+                input_parameters[f"{module}_{parameter}"] = jnp.broadcast_to(
+                    input_parameters[f"{module}_{parameter}"], total_shape
                 )
 
         return input_parameters

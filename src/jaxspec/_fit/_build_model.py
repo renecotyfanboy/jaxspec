@@ -1,21 +1,20 @@
-import jax
-import numpyro
-import haiku as hk
-import numpy as np
-import jax.numpy as jnp
-from typing import Callable
-from jax.experimental.sparse import BCOO
+from collections.abc import Callable
 from typing import TYPE_CHECKING
-from numpyro.distributions import Poisson
-from jax.typing import ArrayLike
-from numpyro.distributions import Distribution
 
+import haiku as hk
+import jax
+import jax.numpy as jnp
+import numpy as np
+import numpyro
+
+from jax.experimental.sparse import BCOO
+from jax.typing import ArrayLike
+from numpyro.distributions import Distribution, Poisson
 
 if TYPE_CHECKING:
-    from ..model.abc import SpectralModel
     from ..data import ObsConfiguration
-    from ..util.typing import PriorDictModel, PriorDictType
-
+    from ..model.abc import SpectralModel
+    from ..util.typing import PriorDictType
 
 
 class CountForwardModel(hk.Module):
@@ -25,7 +24,7 @@ class CountForwardModel(hk.Module):
 
     # TODO: It has no point of being a haiku module, it should be a simple function
 
-    def __init__(self, model: 'SpectralModel', folding: 'ObsConfiguration', sparse=False):
+    def __init__(self, model: "SpectralModel", folding: "ObsConfiguration", sparse=False):
         super().__init__()
         self.model = model
         self.energies = jnp.asarray(folding.in_energies)
@@ -51,12 +50,11 @@ class CountForwardModel(hk.Module):
 
 
 def forward_model(
-        model: 'SpectralModel',
-        parameters,
-        obs_configuration: 'ObsConfiguration',
-        sparse=False,
-    ):
-
+    model: "SpectralModel",
+    parameters,
+    obs_configuration: "ObsConfiguration",
+    sparse=False,
+):
     energies = np.asarray(obs_configuration.in_energies)
 
     if sparse:
@@ -86,7 +84,6 @@ def build_numpyro_model_for_single_obs(
     """
 
     def numpyro_model(prior_params, observed=True):
-
         # Return the expected countrate for a set of parameters
         obs_model = jax.jit(lambda par: forward_model(model, par, obs, sparse=sparse))
         countrate = obs_model(prior_params)
@@ -105,7 +102,6 @@ def build_numpyro_model_for_single_obs(
         else:
             bkg_countrate = 0.0
 
-
         # Register the observed value
         # This is the case where we fit a model to a TOTAL spectrum as defined in OGIP standard
         with numpyro.plate("obs_plate_" + name, len(obs.folded_counts)):
@@ -118,23 +114,27 @@ def build_numpyro_model_for_single_obs(
     return numpyro_model
 
 
-def build_prior(prior: 'PriorDictType', expand_shape: tuple = (), prefix=""):
+def build_prior(prior: "PriorDictType", expand_shape: tuple = (), prefix=""):
     """
     Transform a dictionary of prior distributions into a dictionary of parameters sampled from the prior.
     Must be used within a numpyro model.
     """
-    parameters = dict(hk.data_structures.to_haiku_dict(prior))
+    parameters = {}
 
-    for i, (m, n, sample) in enumerate(hk.data_structures.traverse(prior)):
-        if isinstance(sample, Distribution):
-            parameters[m][n] = jnp.ones(expand_shape) * numpyro.sample(f"{prefix}{m}_{n}", sample)
+    for key, value in prior.items():
+        # Split the key to extract the module name and parameter name
+        module_name, param_name = key.rsplit("_", 1)
+        if isinstance(value, Distribution):
+            parameters[key] = jnp.ones(expand_shape) * numpyro.sample(
+                f"{prefix}{module_name}_{param_name}", value
+            )
 
-        elif isinstance(sample, ArrayLike):
-            parameters[m][n] = jnp.ones(expand_shape) * sample
+        elif isinstance(value, ArrayLike):
+            parameters[key] = jnp.ones(expand_shape) * value
 
         else:
             raise ValueError(
-                f"Invalid prior type {type(sample)} for parameter {prefix}{m}_{n} : {sample}"
+                f"Invalid prior type {type(value)} for parameter {prefix}{module_name}_{param_name} : {value}"
             )
 
     return parameters

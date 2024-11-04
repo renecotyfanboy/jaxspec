@@ -28,7 +28,7 @@ from .analysis.results import FitResult
 from .data import ObsConfiguration
 from .model.abc import SpectralModel
 from .model.background import BackgroundModel
-from .util.typing import PriorDictModel, PriorDictType
+from .util.typing import PriorDictType
 
 
 class BayesianModel:
@@ -63,10 +63,12 @@ class BayesianModel:
 
         if not callable(prior_distributions):
             # Validate the entry with pydantic
-            prior = PriorDictModel.from_dict(prior_distributions).nested_dict
+            # prior = PriorDictModel.from_dict(prior_distributions).
 
             def prior_distributions_func():
-                return build_prior(prior, expand_shape=(len(self.observation_container),))
+                return build_prior(
+                    prior_distributions, expand_shape=(len(self.observation_container),)
+                )
 
         else:
             prior_distributions_func = prior_distributions
@@ -544,7 +546,6 @@ class MCMCFitter(BayesianModelFitter):
         return FitResult(
             self,
             inference_data,
-            self.model.params,
             background_model=self.background_model,
         )
 
@@ -613,6 +614,5 @@ class NSFitter(BayesianModelFitter):
         return FitResult(
             self,
             inference_data,
-            self.model.params,
             background_model=self.background_model,
         )

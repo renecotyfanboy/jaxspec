@@ -5,6 +5,7 @@ import chex
 import jax
 import pytest
 
+from jaxspec.data import ObsConfiguration
 from jaxspec.data.util import fakeit_for_multiple_parameters
 
 chex.set_n_cpu_devices(n=4)
@@ -23,15 +24,11 @@ def parameters():
     num_params = 1000
 
     parameters = {
-        "tbabs_1": {"N_H": rng.uniform(0.1, 0.4, size=num_params)},
-        "powerlaw_1": {
-            "alpha": rng.uniform(1, 3, size=num_params),
-            "norm": rng.exponential(10 ** (-0.5), size=num_params),
-        },
-        "blackbodyrad_1": {
-            "kT": rng.uniform(0.1, 3.0, size=num_params),
-            "norm": rng.exponential(10 ** (-3), size=num_params),
-        },
+        "tbabs_1_nh": rng.uniform(0.1, 0.4, size=num_params),
+        "powerlaw_1_alpha": rng.uniform(1, 3, size=num_params),
+        "powerlaw_1_norm": rng.exponential(10 ** (-0.5), size=num_params),
+        "blackbodyrad_1_kT": rng.uniform(0.1, 3.0, size=num_params),
+        "blackbodyrad_1_norm": rng.exponential(10 ** (-3), size=num_params),
     }
 
     return parameters
@@ -80,3 +77,9 @@ def test_fakeits_multiple_observation(obsconfs, model, parameters):
 
     spectra = fakeit_for_multiple_parameters(obsconf, model, parameters, apply_stat=True)
     chex.assert_type(spectra, int)
+
+
+def test_mock_obsconf(instruments, model, parameters):
+    for instrument in instruments:
+        obsconf = ObsConfiguration.mock_from_instrument(instrument, exposure=1e5)
+        fakeit_for_multiple_parameters(obsconf, model, parameters)

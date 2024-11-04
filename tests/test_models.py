@@ -1,64 +1,36 @@
-import os
-import sys
-import chex
 import jax.numpy as jnp
-import haiku as hk
+import pytest
 
-chex.set_n_cpu_devices(n=4)
-
-
-# Allow relative imports for github workflows
-current_dir = os.path.dirname(os.path.abspath(__file__))
-source_dir = os.path.abspath(os.path.join(current_dir, ".."))
-sys.path.append(source_dir)
+from jaxspec.model.additive import Additiveconstant
+from jaxspec.model.list import additive_components, multiplicative_components
+from jaxspec.model.multiplicative import MultiplicativeConstant
 
 
-class TestModules(chex.TestCase):
-    def setUp(self):
-        from jaxspec.model.list import (
-            model_components,
-            additive_components,
-        )
+@pytest.mark.parametrize("test_input", list(additive_components.keys()))
+def test_additive_components(test_input):
+    energy = jnp.geomspace(0.5, 10, 1000)
+    e_low = energy[:-1]
+    e_high = energy[1:]
 
-        self.module_dict = model_components.items()
-        self.additive_dict = additive_components.items()
-        self.energy = jnp.geomspace(0.1, 100, 50)
+    spectral_model = (
+        MultiplicativeConstant()
+        * MultiplicativeConstant()
+        * (Additiveconstant() + additive_components[test_input]())
+    )
+    out = spectral_model.turbo_flux(e_low, e_high)
+    assert out.shape == e_low.shape
 
-    @chex.all_variants
-    def test_all_continuum(self):
-        """
-        Test to evaluate energies with every component's continuum
-        """
 
-        for name, module in self.module_dict:
+@pytest.mark.parametrize("test_input", list(multiplicative_components.keys()))
+def test_multiplicative_components(test_input):
+    energy = jnp.geomspace(0.5, 10, 1000)
+    e_low = energy[:-1]
+    e_high = energy[1:]
 
-            @hk.testing.transform_and_run(jax_transform=self.variant)
-            def f(inputs):
-                return module().continuum(inputs)
-
-            out = f(self.energy)
-            self.assertEqual(out.shape, self.energy.shape, f"{name} continuum changes input shape")
-
-    @chex.all_variants
-    def test_all_lines(self):
-        """
-        Test to evaluate energies with every component's emission lines
-        """
-
-        for name, module in self.additive_dict:
-
-            @hk.testing.transform_and_run(jax_transform=self.variant)
-            def f(input_low, input_high):
-                return module().emission_lines(input_low, input_high)
-
-            out = f(self.energy[0:-1], self.energy[1:])
-            self.assertEqual(
-                out[0].shape,
-                self.energy[0:-1].shape,
-                f"{name} emission_lines change shape with flux",
-            )
-            self.assertEqual(
-                out[1].shape,
-                self.energy[0:-1].shape,
-                f"{name} emission_lines change shape with energies",
-            )
+    spectral_model = (
+        MultiplicativeConstant()
+        * multiplicative_components[test_input]()
+        * (Additiveconstant() + Additiveconstant())
+    )
+    out = spectral_model.turbo_flux(e_low, e_high)
+    assert out.shape == e_low.shape
