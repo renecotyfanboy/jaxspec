@@ -118,6 +118,7 @@ class SpectralModel(nnx.Module, Composable):
         """
         return str(self)
 
+    """
     def __str__(self) -> str:
         def build_expression(node_id):
             node = self.graph.nodes[node_id]
@@ -141,6 +142,7 @@ class SpectralModel(nnx.Module, Composable):
                 return build_expression(predecessors[0])
 
         return "This must be changed"  # build_expression("out")[1:-1]
+    """
 
     def compose(self, other, operation=None, operation_func=None):
         """

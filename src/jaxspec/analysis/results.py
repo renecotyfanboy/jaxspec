@@ -733,7 +733,7 @@ class FitResult:
                 ax[0].set_xlim(xbins.value.min(), xbins.value.max())
 
                 ax[0].legend(legend_plots, legend_labels)
-                fig.suptitle(self.model.to_string())
+                fig.suptitle("Posterior predictive")
                 fig.align_ylabels()
                 plt.subplots_adjust(hspace=0.0)
                 fig.tight_layout()

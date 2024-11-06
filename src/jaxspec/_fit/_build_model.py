@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-import haiku as hk
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -15,38 +14,6 @@ if TYPE_CHECKING:
     from ..data import ObsConfiguration
     from ..model.abc import SpectralModel
     from ..util.typing import PriorDictType
-
-
-class CountForwardModel(hk.Module):
-    """
-    A haiku module which allows to build the function that simulates the measured counts
-    """
-
-    # TODO: It has no point of being a haiku module, it should be a simple function
-
-    def __init__(self, model: "SpectralModel", folding: "ObsConfiguration", sparse=False):
-        super().__init__()
-        self.model = model
-        self.energies = jnp.asarray(folding.in_energies)
-
-        if (
-            sparse
-        ):  # folding.transfer_matrix.data.density > 0.015 is a good criterion to consider sparsify
-            self.transfer_matrix = BCOO.from_scipy_sparse(
-                folding.transfer_matrix.data.to_scipy_sparse().tocsr()
-            )
-
-        else:
-            self.transfer_matrix = jnp.asarray(folding.transfer_matrix.data.todense())
-
-    def __call__(self, parameters):
-        """
-        Compute the count functions for a given observation.
-        """
-
-        expected_counts = self.transfer_matrix @ self.model.photon_flux(parameters, *self.energies)
-
-        return jnp.clip(expected_counts, a_min=1e-6)
 
 
 def forward_model(
