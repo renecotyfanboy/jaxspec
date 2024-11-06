@@ -526,7 +526,6 @@ class FitResult:
                 2,
                 len(obsconf_container),
                 figsize=(6 * len(obsconf_container), 6),
-                sharex=True,
                 height_ratios=[0.7, 0.3],
             )
 
@@ -613,9 +612,9 @@ class FitResult:
                         y_observed.value - y_observed_low.value,
                         y_observed_high.value - y_observed.value,
                     ],
-                    color="black",
+                    color=color,
                     linestyle="none",
-                    alpha=0.3,
+                    alpha=0.8,
                     capsize=2,
                 )
 
@@ -659,9 +658,9 @@ class FitResult:
                             y_observed_bkg.value - y_observed_bkg_low.value,
                             y_observed_bkg_high.value - y_observed_bkg.value,
                         ],
-                        color="black",
+                        color=(0.26787604, 0.60085972, 0.63302651),
                         linestyle="none",
-                        alpha=0.3,
+                        alpha=0.8,
                         capsize=2,
                     )
 
