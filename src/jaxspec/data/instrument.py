@@ -80,7 +80,8 @@ class Instrument(xr.Dataset):
             specresp = DataARF.from_file(arf_path).specresp
 
         else:
-            specresp = np.ones(rmf.energ_lo.shape)
+            specresp = rmf.matrix.sum(axis=0)
+            rmf.sparse_matrix /= specresp
 
         return cls.from_matrix(rmf.sparse_matrix, specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max)
 
