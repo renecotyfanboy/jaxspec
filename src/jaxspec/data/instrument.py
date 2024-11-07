@@ -85,7 +85,14 @@ class Instrument(xr.Dataset):
 
         return cls.from_matrix(rmf.sparse_matrix, specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max)
 
-    def plot_redistribution(self, **kwargs):
+    def plot_redistribution(self,
+                            xscale:str="log",
+                            yscale:str="log",
+                            cmap=None,
+                            vmin:float=1e-6,
+                            vmax:float=1e0,
+                            add_labels:bool=True,
+                            **kwargs):
         """
         Plot the redistribution probability matrix
 
@@ -98,15 +105,19 @@ class Instrument(xr.Dataset):
             self.redistribution,
             x="e_max_unfolded",
             y="e_max_channel",
-            xscale="log",
-            yscale="log",
-            cmap=cmr.ember_r,
-            norm=colors.LogNorm(vmin=1e-6, vmax=1),
-            add_labels=True,
+            xscale=xscale,
+            yscale=yscale,
+            cmap=cmr.ember_r if cmap is None else cmap,
+            norm=colors.LogNorm(vmin=vmin, vmax=vmax),
+            add_labels=add_labels,
             **kwargs,
         )
 
-    def plot_area(self, **kwargs):
+    def plot_area(  self, 
+                    xscale:str="log",
+                    yscale:str="log",
+                    where:str="post",
+                    **kwargs):
         """
         Plot the effective area
 
@@ -114,4 +125,8 @@ class Instrument(xr.Dataset):
             **kwargs : `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.line.html#xarray.DataArray.plot.line
         """
 
-        return self.area.plot.step(x="e_min_unfolded", xscale="log", yscale="log", where="post", **kwargs)
+        return self.area.plot.step(x="e_min_unfolded", 
+                                    xscale=xscale,
+                                    yscale=yscale,
+                                    where=where, 
+                                    **kwargs)
