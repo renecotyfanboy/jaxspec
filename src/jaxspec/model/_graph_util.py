@@ -123,19 +123,22 @@ def export_to_mermaid(graph, file=None):
 
     # Add nodes
     for node, attributes in graph.nodes(data=True):
-        if attributes["type"] == "component":
-            name, number = attributes["name"].split("_")
-            mermaid_code += f'    {node}("{name.capitalize()} ({number})")\n'
-
-        if attributes["type"] == "operation":
-            if attributes["operation_type"] == "add":
-                mermaid_code += f"    {node}{{+}}\n"
-
-            if attributes["operation_type"] == "mul":
-                mermaid_code += f"    {node}{{x}}\n"
-
         if attributes["type"] == "out":
             mermaid_code += f'    {node}("Output")\n'
+
+        else:
+            operation_type, node_type = attributes["type"].split("_")
+
+            if node_type == "component":
+                name, number = attributes["name"].split("_")
+                mermaid_code += f'    {node}("{name.capitalize()} ({number})")\n'
+
+            elif node_type == "operation":
+                if operation_type == "add":
+                    mermaid_code += f"    {node}{{**+**}}\n"
+
+                elif operation_type == "mul":
+                    mermaid_code += f"    {node}{{**x**}}\n"
 
     # Draw connexion between nodes
     for source, target in graph.edges():

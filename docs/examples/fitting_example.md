@@ -32,9 +32,9 @@ Which will produce the following model:
 ```mermaid
 graph LR
     d2ec7634-2cde-4173-9be2-6a9d1cf9fa41("Tbabs (1)")
-    2dc512bd-fd4c-4e8d-ac5a-adfa5b90f3a6{"$$\times$$"}
+    2dc512bd-fd4c-4e8d-ac5a-adfa5b90f3a6{"**x**"}
     2e1ceb31-75f1-4514-adb2-b07de972a22a("Powerlaw (1)")
-    1d55d73e-7e10-4180-b96f-e5c1327ef037{"$$+$$"}
+    1d55d73e-7e10-4180-b96f-e5c1327ef037{"**+**"}
     d2c16179-e1f5-4dc9-8dee-6757f279b9e2("Blackbodyrad (1)")
     out("Output")
     d2ec7634-2cde-4173-9be2-6a9d1cf9fa41 --> 2dc512bd-fd4c-4e8d-ac5a-adfa5b90f3a6

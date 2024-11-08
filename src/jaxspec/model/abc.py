@@ -16,7 +16,7 @@ from simpleeval import simple_eval
 
 from jaxspec.util.typing import PriorDictType
 
-from ._graph_util import compose
+from ._graph_util import compose, export_to_mermaid
 
 
 def set_parameters(params: PriorDictType, state: nnx.State) -> nnx.State:
@@ -291,6 +291,18 @@ class SpectralModel(nnx.Module, Composable):
             return branches
 
         return sum(branches.values())
+
+    def to_mermaid(self, file: str | None = None):
+        """
+        This method returns the mermaid representation of the model.
+
+        Parameters:
+            file : The file to write the mermaid representation to.
+
+        Returns:
+            A string containing the mermaid representation of the model.
+        """
+        return export_to_mermaid(self.graph, file)
 
     @partial(jax.jit, static_argnums=0, static_argnames="n_points")
     def photon_flux(self, params, e_low, e_high, n_points=2):
