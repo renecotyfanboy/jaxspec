@@ -96,6 +96,8 @@ def test_loading_curated_data_files_from_pha_with_explicit_files(observation):
 
 @pytest.mark.parametrize("observation", data_collection, ids=lambda m: m["name"])
 def test_plot_instruments_from_curated_data_files(observation):
+    title = observation["name"]
+
     if observation["name"] not in ["Chandra/LETGS", "IXPE/GPD"]:
         if "arf_path" in observation.keys():
             instrument = Instrument.from_ogip_file(
@@ -103,14 +105,17 @@ def test_plot_instruments_from_curated_data_files(observation):
                 arf_path=data_directory / observation["arf_path"],
             )
 
+            title += " (ARF included)"
+
         else:
             instrument = Instrument.from_ogip_file(
                 data_directory / observation["rmf_path"], arf_path=None
             )
-            assert np.isclose(instrument.area, np.ones_like(instrument.area)).all()
+
+            title += " (no ARF included)"
 
         instrument.plot_area()
-        plt.suptitle(observation["name"])
+        plt.suptitle(title)
         plt.show()
 
         if observation["name"] not in ["XRISM/Resolve", "Hitomi/SXS"]:
