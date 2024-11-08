@@ -1,7 +1,10 @@
 import os
+
 import numpy as np
 import xarray as xr
+
 from matplotlib import colors
+
 from .ogip import DataARF, DataRMF
 
 
@@ -25,7 +28,15 @@ class Instrument(xr.Dataset):
     )
 
     @classmethod
-    def from_matrix(cls, redistribution_matrix, spectral_response, e_min_unfolded, e_max_unfolded, e_min_channel, e_max_channel):
+    def from_matrix(
+        cls,
+        redistribution_matrix,
+        spectral_response,
+        e_min_unfolded,
+        e_max_unfolded,
+        e_min_channel,
+        e_max_channel,
+    ):
         return cls(
             {
                 "redistribution": (
@@ -65,7 +76,7 @@ class Instrument(xr.Dataset):
         )
 
     @classmethod
-    def from_ogip_file(cls, rmf_path: str | os.PathLike, arf_path: str | os.PathLike = None):
+    def from_ogip_file(cls, rmf_path: str | os.PathLike, arf_path: str | os.PathLike | None = None):
         """
         Load the data from OGIP files.
 
@@ -80,37 +91,61 @@ class Instrument(xr.Dataset):
             specresp = DataARF.from_file(arf_path).specresp
 
         else:
-            specresp = np.ones(rmf.energ_lo.shape)
+            specresp = rmf.matrix.sum(axis=0)
+            rmf.sparse_matrix /= specresp
 
-        return cls.from_matrix(rmf.sparse_matrix, specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max)
+        return cls.from_matrix(
+            rmf.sparse_matrix, specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max
+        )
 
-    def plot_redistribution(self, **kwargs):
+    def plot_redistribution(
+        self,
+        xscale: str = "log",
+        yscale: str = "log",
+        cmap=None,
+        vmin: float = 1e-6,
+        vmax: float = 1e0,
+        add_labels: bool = True,
+        **kwargs,
+    ):
         """
         Plot the redistribution probability matrix
 
         Parameters:
+            xscale : The scale of the x-axis.
+            yscale : The scale of the y-axis.
+            cmap : The colormap to use.
+            vmin : The minimum value for the colormap.
+            vmax : The maximum value for the colormap.
+            add_labels : Whether to add labels to the plot.
             **kwargs : `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.plot.pcolormesh.html#xarray.plot.pcolormesh
         """
+
         import cmasher as cmr
 
         return xr.plot.pcolormesh(
             self.redistribution,
             x="e_max_unfolded",
             y="e_max_channel",
-            xscale="log",
-            yscale="log",
-            cmap=cmr.ember_r,
-            norm=colors.LogNorm(vmin=1e-6, vmax=1),
-            add_labels=True,
+            xscale=xscale,
+            yscale=yscale,
+            cmap=cmr.ember_r if cmap is None else cmap,
+            norm=colors.LogNorm(vmin=vmin, vmax=vmax),
+            add_labels=add_labels,
             **kwargs,
         )
 
-    def plot_area(self, **kwargs):
+    def plot_area(self, xscale: str = "log", yscale: str = "log", where: str = "post", **kwargs):
         """
         Plot the effective area
 
         Parameters:
+            xscale : The scale of the x-axis.
+            yscale : The scale of the y-axis.
+            where : The position of the steps.
             **kwargs : `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.line.html#xarray.DataArray.plot.line
         """
 
-        return self.area.plot.step(x="e_min_unfolded", xscale="log", yscale="log", where="post", **kwargs)
+        return self.area.plot.step(
+            x="e_min_unfolded", xscale=xscale, yscale=yscale, where=where, **kwargs
+        )
