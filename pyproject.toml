@@ -42,7 +42,7 @@ watermark = "^2.4.3"
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.1"
 mkdocs-material = "^9.4.6"
-mkdocstrings = {extras = ["python"], version = ">=0.24,<0.27"}
+mkdocstrings = {extras = ["python"], version = ">=0.24,<0.28"}
 mkdocs-jupyter = "^0.25.0"
 
 
