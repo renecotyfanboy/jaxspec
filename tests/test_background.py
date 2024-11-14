@@ -1,6 +1,3 @@
-import matplotlib.pyplot as plt
-
-
 def test_gp_bkg(obs_model_prior):
     from jaxspec.fit import MCMCFitter
     from jaxspec.model.background import GaussianProcessBackground
@@ -13,8 +10,6 @@ def test_gp_bkg(obs_model_prior):
         num_chains=4, num_warmup=100, num_samples=100, mcmc_kwargs={"progress_bar": False}
     )
     res_1.plot_ppc()
-    plt.suptitle("Gaussian Process Background")
-    plt.show()
 
 
 def test_subtract_bkg(obs_model_prior):
@@ -30,8 +25,6 @@ def test_subtract_bkg(obs_model_prior):
     )
 
     res_1.plot_ppc()
-    plt.suptitle("Subtracted Background")
-    plt.show()
 
 
 def test_subtract_bkg_with_error(obs_model_prior):
@@ -47,8 +40,6 @@ def test_subtract_bkg_with_error(obs_model_prior):
     )
 
     res_1.plot_ppc()
-    plt.suptitle("Subtracted Background with Error")
-    plt.show()
 
 
 def test_spectral_model_background(obs_model_prior):
@@ -77,8 +68,6 @@ def test_spectral_model_background(obs_model_prior):
     )
 
     res_1.plot_ppc()
-    plt.suptitle("Spectral model Background")
-    plt.show()
 
 
 """

@@ -8,4 +8,4 @@ def debug_info():
 
     # Cimer CamilleTheBest pour l'idée
     print(watermark())
-    print(watermark(packages="jaxspec,jax,jaxlib,numpyro,haiku,numpy,scipy"))
+    print(watermark(packages="jaxspec,jax,jaxlib,numpyro,flax,numpy,scipy"))

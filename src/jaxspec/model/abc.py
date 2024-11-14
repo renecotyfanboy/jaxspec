@@ -304,8 +304,8 @@ class SpectralModel(nnx.Module, Composable):
         """
         return export_to_mermaid(self.graph, file)
 
-    @partial(jax.jit, static_argnums=0, static_argnames="n_points")
-    def photon_flux(self, params, e_low, e_high, n_points=2):
+    @partial(jax.jit, static_argnums=0, static_argnames=("n_points", "split_branches"))
+    def photon_flux(self, params, e_low, e_high, n_points=2, split_branches=False):
         r"""
         Compute the expected counts between $E_\min$ and $E_\max$ by integrating the model.
 
@@ -330,7 +330,9 @@ class SpectralModel(nnx.Module, Composable):
         graphdef, state = nnx.split(self)
         state = set_parameters(params, state)
 
-        return nnx.call((graphdef, state)).turbo_flux(e_low, e_high, n_points=n_points)[0]
+        return nnx.call((graphdef, state)).turbo_flux(
+            e_low, e_high, n_points=n_points, return_branches=split_branches
+        )[0]
 
     @partial(jax.jit, static_argnums=0, static_argnames="n_points")
     def energy_flux(self, params, e_low, e_high, n_points=2):

@@ -10,7 +10,6 @@ import arviz as az
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
-import numpy as np
 import numpyro
 
 from jax import random
@@ -23,7 +22,11 @@ from numpyro.infer.reparam import TransformReparam
 from numpyro.infer.util import log_density
 
 from ._fit._build_model import build_prior, forward_model
-from .analysis._plot import _plot_poisson_data_with_error
+from .analysis._plot import (
+    _error_bars_for_observed_data,
+    _plot_binned_samples_with_error,
+    _plot_poisson_data_with_error,
+)
 from .analysis.results import FitResult
 from .data import ObsConfiguration
 from .model.abc import SpectralModel
@@ -295,37 +298,26 @@ class BayesianModel:
         posterior_observations = self.mock_observations(prior_params, key=key_posterior)
 
         for key, value in self.observation_container.items():
-            fig, axs = plt.subplots(
+            fig, ax = plt.subplots(
                 nrows=2, ncols=1, sharex=True, figsize=(5, 6), height_ratios=[3, 1]
             )
 
-            _plot_poisson_data_with_error(
-                axs[0],
-                value.out_energies,
-                value.folded_counts.values,
-                percentiles=(16, 84),
+            y_observed, y_observed_low, y_observed_high = _error_bars_for_observed_data(
+                value.folded_counts.values, 1.0, "ct"
             )
 
-            for i, (envelop_percentiles, color, alpha) in enumerate(
-                zip(
-                    [(16, 86), (2.5, 97.5), (0.15, 99.85)],
-                    ["#03045e", "#0077b6", "#00b4d8"],
-                    [0.5, 0.4, 0.3],
-                )
-            ):
-                lower, upper = np.percentile(
-                    posterior_observations["obs_" + key], envelop_percentiles, axis=0
-                )
+            true_data_plot = _plot_poisson_data_with_error(
+                ax[0],
+                value.out_energies,
+                y_observed.value,
+                y_observed_low.value,
+                y_observed_high.value,
+                alpha=0.7,
+            )
 
-                axs[0].stairs(
-                    upper,
-                    edges=[*list(value.out_energies[0]), value.out_energies[1][-1]],
-                    baseline=lower,
-                    alpha=alpha,
-                    fill=True,
-                    color=color,
-                    label=rf"${1+i}\sigma$",
-                )
+            prior_plot = _plot_binned_samples_with_error(
+                ax[0], value.out_energies, posterior_observations["obs_" + key], n_sigmas=3
+            )
 
             # rank = np.vstack((posterior_observations["obs_" + key], value.folded_counts.values)).argsort(axis=0)[-1] / (num_samples) * 100
             counts = posterior_observations["obs_" + key]
@@ -338,22 +330,22 @@ class BayesianModel:
 
             rank = (less_than_obs + 0.5 * equal_to_obs) / num_samples * 100
 
-            axs[1].stairs(rank, edges=[*list(value.out_energies[0]), value.out_energies[1][-1]])
+            ax[1].stairs(rank, edges=[*list(value.out_energies[0]), value.out_energies[1][-1]])
 
-            axs[1].plot(
+            ax[1].plot(
                 (value.out_energies.min(), value.out_energies.max()),
                 (50, 50),
                 color="black",
                 linestyle="--",
             )
 
-            axs[1].set_xlabel("Energy (keV)")
-            axs[0].set_ylabel("Counts")
-            axs[1].set_ylabel("Rank (%)")
-            axs[1].set_ylim(0, 100)
-            axs[0].set_xlim(value.out_energies.min(), value.out_energies.max())
-            axs[0].loglog()
-            axs[0].legend(loc="upper right")
+            ax[1].set_xlabel("Energy (keV)")
+            ax[0].set_ylabel("Counts")
+            ax[1].set_ylabel("Rank (%)")
+            ax[1].set_ylim(0, 100)
+            ax[0].set_xlim(value.out_energies.min(), value.out_energies.max())
+            ax[0].loglog()
+            ax[0].legend(loc="upper right")
             plt.suptitle(f"Prior Predictive coverage for {key}")
             plt.tight_layout()
             plt.show()
