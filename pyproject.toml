@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "jaxspec"
-version = "0.1.4"
+version = "0.2.0"
 description = "jaxspec is a bayesian spectral fitting library for X-ray astronomy."
 authors = ["sdupourque <sdupourque@irap.omp.eu>"]
 license = "MIT"
@@ -28,7 +28,7 @@ gpjax = "^0.8.0"
 jaxopt = "^0.8.1"
 tinygp = "^0.3.0"
 seaborn = "^0.13.1"
-sparse = "^0.15.1"
+sparse = "^0.15.4"
 optimistix = ">=0.0.7,<0.0.10"
 scipy = "<1.15"
 mendeleev = ">=0.15,<0.19"
@@ -37,6 +37,7 @@ jaxns = "<2.6"
 pooch = "^1.8.2"
 interpax = "^0.3.3"
 watermark = "^2.4.3"
+catppuccin = "^2.3.4"
 
 
 [tool.poetry.group.docs.dependencies]

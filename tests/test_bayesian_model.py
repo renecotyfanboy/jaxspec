@@ -5,7 +5,6 @@ import jax.numpy as jnp
 
 from jaxspec._fit._build_model import build_numpyro_model_for_single_obs, build_prior
 from jaxspec.fit import BayesianModel
-from jaxspec.util.typing import PriorDictModel
 from numpyro.infer.inspect import get_model_relations
 
 
@@ -16,8 +15,7 @@ def test_model_building(obs_model_prior):
     obs, spectral_model, prior_distributions = obs_model_prior
 
     def numpyro_model():
-        prior = PriorDictModel.from_dict(prior_distributions).nested_dict
-        params = build_prior(prior, expand_shape=())
+        params = build_prior(prior_distributions, expand_shape=())
         lower_model = build_numpyro_model_for_single_obs(obs[0], spectral_model, None)
 
         lower_model(params)

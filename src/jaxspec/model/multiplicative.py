@@ -1,14 +1,29 @@
 from __future__ import annotations
 
-import haiku as hk
+import flax.nnx as nnx
 import jax.numpy as jnp
 import numpy as np
 
 from astropy.table import Table
-from haiku.initializers import Constant as HaikuConstant
 
 from ..util.online_storage import table_manager
 from .abc import MultiplicativeComponent
+
+
+class MultiplicativeConstant(MultiplicativeComponent):
+    r"""
+    A multiplicative constant
+
+    !!! abstract "Parameters"
+        * $K$ (`norm`) $\left[\text{dimensionless}\right]$: The multiplicative constant.
+
+    """
+
+    def __init__(self):
+        self.norm = nnx.Param(1.0)
+
+    def factor(self, energy):
+        return self.norm
 
 
 class Expfac(MultiplicativeComponent):
@@ -20,19 +35,20 @@ class Expfac(MultiplicativeComponent):
     \text{if $E>E_c$}\\1 & \text{if $E<E_c$}\end{cases}
     $$
 
-    ??? abstract "Parameters"
-        * $A$ : Amplitude of the modification $\left[\text{dimensionless}\right]$
-        * $f$ : Exponential factor $\left[\text{keV}^{-1}\right]$
-        * $E_c$ : Start energy of modification $\left[\text{keV}\right]$
+    !!! abstract "Parameters"
+        * $A$ (`A`) $\left[\text{dimensionless}\right]$ : Amplitude of the modification
+        * $f$ (`f`) $\left[\text{keV}^{-1}\right]$ : Exponential factor
+        * $E_c$ (`E_c`) $\left[\text{keV}\right]$: Start energy of modification
 
     """
 
-    def continuum(self, energy):
-        amplitude = hk.get_parameter("A", [], float, init=HaikuConstant(1))
-        factor = hk.get_parameter("f", [], float, init=HaikuConstant(1))
-        pivot = hk.get_parameter("E_c", [], float, init=HaikuConstant(1))
+    def __init__(self):
+        self.A = nnx.Param(1.0)
+        self.f = nnx.Param(1.0)
+        self.E_c = nnx.Param(1.0)
 
-        return jnp.where(energy >= pivot, 1.0 + amplitude * jnp.exp(-factor * energy), 1.0)
+    def factor(self, energy):
+        return jnp.where(energy >= self.E_c, 1.0 + self.A * jnp.exp(-self.f * energy), 1.0)
 
 
 class Tbabs(MultiplicativeComponent):
@@ -45,49 +61,47 @@ class Tbabs(MultiplicativeComponent):
         \mathcal{M}(E) = \exp^{-N_{\text{H}}\sigma(E)}
     $$
 
-    ??? abstract "Parameters"
-        * $N_{\text{H}}$ : Equivalent hydrogen column density
-            $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
+    !!! abstract "Parameters"
+        * $N_{\text{H}}$ (`nh`) $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$ : Equivalent hydrogen column density
+
 
     !!! note
         Abundances and cross-sections $\sigma$ can be found in Wilms et al. (2000).
 
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self):
         table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+        self.energy = nnx.Variable(np.asarray(table["ENERGY"], dtype=np.float64))
+        self.sigma = nnx.Variable(np.asarray(table["SIGMA"], dtype=np.float64))
+        self.nh = nnx.Param(1.0)
 
-    def continuum(self, energy):
-        nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
+    def factor(self, energy):
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
 
-        return jnp.exp(-nh * sigma)
+        return jnp.exp(-self.nh * sigma)
 
 
 class Phabs(MultiplicativeComponent):
     r"""
     A photoelectric absorption model.
 
-    ??? abstract "Parameters"
-        * $N_{\text{H}}$ : Equivalent hydrogen column density
-            $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
+    !!! abstract "Parameters"
+        * $N_{\text{H}}$ (`nh`) $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$ : Equivalent hydrogen column density
+
 
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self):
         table = Table.read(table_manager.fetch("xsect_phabs_aspl.fits"))
-        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+        self.energy = nnx.Variable(np.asarray(table["ENERGY"], dtype=np.float64))
+        self.sigma = nnx.Variable(np.asarray(table["SIGMA"], dtype=np.float64))
+        self.nh = nnx.Param(1.0)
 
-    def continuum(self, energy):
-        nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
-        sigma = jnp.interp(energy, self.energy, self.sigma, left=jnp.inf, right=0.0)
+    def factor(self, energy):
+        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
 
-        return jnp.exp(-nh * sigma)
+        return jnp.exp(-self.nh * sigma)
 
 
 class Wabs(MultiplicativeComponent):
@@ -95,22 +109,19 @@ class Wabs(MultiplicativeComponent):
     A photo-electric absorption using Wisconsin (Morrison & McCammon 1983) cross-sections.
 
     ??? abstract "Parameters"
-        * $N_{\text{H}}$ : Equivalent hydrogen column density
-            $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
-
+        * $N_{\text{H}}$ (`nh`) $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$ : Equivalent hydrogen column density
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self):
         table = Table.read(table_manager.fetch("xsect_wabs_angr.fits"))
-        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+        self.energy = nnx.Variable(np.asarray(table["ENERGY"], dtype=np.float64))
+        self.sigma = nnx.Variable(np.asarray(table["SIGMA"], dtype=np.float64))
+        self.nh = nnx.Param(1.0)
 
-    def continuum(self, energy):
-        nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
+    def factor(self, energy):
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
 
-        return jnp.exp(-nh * sigma)
+        return jnp.exp(-self.nh * sigma)
 
 
 class Gabs(MultiplicativeComponent):
@@ -122,23 +133,26 @@ class Gabs(MultiplicativeComponent):
         \left( -\frac{\left(E-E_0\right)^2}{2 \sigma^2} \right) \right)
     $$
 
-    ??? abstract "Parameters"
-        * $\tau$ : Absorption strength $\left[\text{dimensionless}\right]$
-        * $\sigma$ : Absorption width $\left[\text{keV}\right]$
-        * $E_0$ : Absorption center $\left[\text{keV}\right]$
+    !!! abstract "Parameters"
+        * $\tau$ (`tau`) $\left[\text{dimensionless}\right]$ : Absorption strength
+        * $\sigma$ (`sigma`) $\left[\text{keV}\right]$ : Absorption width
+        * $E_0$ (`E0`) $\left[\text{keV}\right]$ : Absorption center
 
     !!! note
         The optical depth at line center is $\tau/(\sqrt{2 \pi} \sigma)$.
 
     """
 
-    def continuum(self, energy):
-        tau = hk.get_parameter("tau", [], float, init=HaikuConstant(1))
-        sigma = hk.get_parameter("sigma", [], float, init=HaikuConstant(1))
-        center = hk.get_parameter("E_0", [], float, init=HaikuConstant(1))
+    def __init__(self):
+        self.tau = nnx.Param(1.0)
+        self.sigma = nnx.Param(1.0)
+        self.E0 = nnx.Param(1.0)
 
+    def factor(self, energy):
         return jnp.exp(
-            -tau / (jnp.sqrt(2 * jnp.pi) * sigma) * jnp.exp(-0.5 * ((energy - center) / sigma) ** 2)
+            -self.tau
+            / (jnp.sqrt(2 * jnp.pi) * self.sigma)
+            * jnp.exp(-0.5 * ((energy - self.E0) / self.sigma) ** 2)
         )
 
 
@@ -151,16 +165,17 @@ class Highecut(MultiplicativeComponent):
         \left( \frac{E_c - E}{E_f} \right)& \text{if $E > E_c$}\\ 1 & \text{if $E < E_c$}\end{cases}
     $$
 
-    ??? abstract "Parameters"
-        * $E_c$ : Cutoff energy $\left[\text{keV}\right]$
-        * $E_f$ : Folding energy $\left[\text{keV}\right]$
+    !!! abstract "Parameters"
+        * $E_c$ (`Ec`) $\left[\text{keV}\right]$ : Cutoff energy
+        * $E_f$ (`Ef`) $\left[\text{keV}\right]$ : Folding energy
     """
 
-    def continuum(self, energy):
-        cutoff = hk.get_parameter("E_c", [], float, init=HaikuConstant(1))
-        folding = hk.get_parameter("E_f", [], float, init=HaikuConstant(1))
+    def __init__(self):
+        self.Ec = nnx.Param(1.0)
+        self.Ef = nnx.Param(1.0)
 
-        return jnp.where(energy <= cutoff, 1.0, jnp.exp((cutoff - energy) / folding))
+    def factor(self, energy):
+        return jnp.where(energy <= self.Ec, 1.0, jnp.exp((self.Ec - energy) / self.Ef))
 
 
 class Zedge(MultiplicativeComponent):
@@ -172,18 +187,21 @@ class Zedge(MultiplicativeComponent):
         & \text{if $E > E_c$}\\ 1 & \text{if $E < E_c$}\end{cases}
     $$
 
-    ??? abstract "Parameters"
-        * $E_c$ : Threshold energy
-        * $E_f$ : Absorption depth at the threshold
-        * $z$ : Redshift [dimensionless]
+    !!! abstract "Parameters"
+        * $E_c$ (`Ec`) $\left[\text{keV}\right]$ : Threshold energy
+        * $D$ (`D`) $\left[\text{dimensionless}\right]$ : Absorption depth at the threshold
+        * $z$ (`z`) $\left[\text{dimensionless}\right]$ : Redshift
     """
 
-    def continuum(self, energy):
-        E_c = hk.get_parameter("E_c", [], float, init=HaikuConstant(1))
-        D = hk.get_parameter("D", [], float, init=HaikuConstant(1))
-        z = hk.get_parameter("z", [], float, init=HaikuConstant(0))
+    def __init__(self):
+        self.Ec = nnx.Param(1.0)
+        self.D = nnx.Param(1.0)
+        self.z = nnx.Param(0.0)
 
-        return jnp.where(energy <= E_c, 1.0, jnp.exp(-D * (energy * (1 + z) / E_c) ** 3))
+    def factor(self, energy):
+        return jnp.where(
+            energy <= self.Ec, 1.0, jnp.exp(-self.D * (energy * (1 + self.z) / self.Ec) ** 3)
+        )
 
 
 class Tbpcf(MultiplicativeComponent):
@@ -194,28 +212,25 @@ class Tbpcf(MultiplicativeComponent):
         \mathcal{M}(E) = f \exp^{-N_{\text{H}}\sigma(E)} + (1-f)
     $$
 
-    ??? abstract "Parameters"
-        * $N_{\text{H}}$ : Equivalent hydrogen column density
-            $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$
-        * $f$ : Partial covering fraction, ranges between 0 and 1 [dimensionless]
+    !!! abstract "Parameters"
+        * $N_{\text{H}}$ (`nh`) $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$ : Equivalent hydrogen column density
+        * $f$ (`f`) $\left[\text{dimensionless}\right]$ : Partial covering fraction, ranges between 0 and 1
 
     !!! note
         Abundances and cross-sections $\sigma$ can be found in Wilms et al. (2000).
 
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self):
         table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-        self.energy = jnp.asarray(np.array(table["ENERGY"]), dtype=np.float64)
-        self.sigma = jnp.asarray(np.array(table["SIGMA"]), dtype=np.float64)
+        self.energy = nnx.Variable(np.asarray(table["ENERGY"], dtype=np.float64))
+        self.sigma = nnx.Variable(np.asarray(table["SIGMA"], dtype=np.float64))
+        self.nh = nnx.Param(1.0)
+        self.f = nnx.Param(0.2)
 
     def continuum(self, energy):
-        nh = hk.get_parameter("N_H", [], float, init=HaikuConstant(1))
-        f = hk.get_parameter("f", [], float, init=HaikuConstant(0.2))
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
-
-        return f * jnp.exp(-nh * sigma) + (1 - f)
+        return self.f * jnp.exp(-self.nh * sigma) + (1 - self.f)
 
 
 class FDcut(MultiplicativeComponent):
@@ -227,12 +242,13 @@ class FDcut(MultiplicativeComponent):
     $$
 
     ??? abstract "Parameters"
-        * $E_c$ : Cutoff energy $\left[\text{keV}\right]$
-        * $E_f$ : Folding energy $\left[\text{keV}\right]$
+        * $E_c$ (`Ec`) $\left[\text{keV}\right]$ : Cutoff energy
+        * $E_f$ (`Ef`) $\left[\text{keV}\right]$ : Folding energy
     """
 
-    def continuum(self, energy):
-        cutoff = hk.get_parameter("E_c", [], init=HaikuConstant(1))
-        folding = hk.get_parameter("E_f", [], init=HaikuConstant(1))
+    def __init__(self):
+        self.Ec = nnx.Param(1.0)
+        self.Ef = nnx.Param(3.0)
 
-        return (1 + jnp.exp((energy - cutoff) / folding)) ** -1
+    def continuum(self, energy):
+        return (1 + jnp.exp((energy - self.Ec) / self.Ef)) ** -1
