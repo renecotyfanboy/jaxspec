@@ -53,7 +53,7 @@ def obs_model_prior(obsconfs):
         "powerlaw_1_norm": dist.LogUniform(1e-5, 1e-2),
         "blackbodyrad_1_kT": dist.Uniform(0, 5),
         "blackbodyrad_1_norm": dist.LogUniform(1e-2, 1e2),
-        "tbabs_1_N_H": dist.Uniform(0, 1),
+        "tbabs_1_nh": dist.Uniform(0, 1),
     }
 
     return obsconfs, model, prior

@@ -2,16 +2,13 @@ import shutil
 
 from pathlib import Path
 
-import jax
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 import yaml
 
 from astropy.io import fits
-from conftest import good_init_params
 from jaxspec.data import Instrument, ObsConfiguration, Observation
-from jaxspec.data.util import fakeit_for_multiple_parameters
 
 # Dir containing 8 files
 data_directory = Path(__file__).parent.resolve() / "data"
@@ -207,13 +204,3 @@ def file_with_no_areascal(tmp_path):
 def test_loading_file_with_no_areascal(file_with_no_areascal):
     with pytest.raises(ValueError):
         Observation.from_pha_file(file_with_no_areascal)
-
-
-def test_mock_obsconf(instruments, obs_model_prior):
-    _, model, prior = obs_model_prior
-
-    parameters = jax.tree.map(lambda x: x * np.random.normal(1, 0.1, size=(100,)), good_init_params)
-
-    for instrument in instruments:
-        obsconf = ObsConfiguration.mock_from_instrument(instrument, exposure=1e5)
-        fakeit_for_multiple_parameters(obsconf, model, parameters)

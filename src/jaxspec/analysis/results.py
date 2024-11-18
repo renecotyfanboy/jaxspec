@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import arviz as az
@@ -15,12 +14,22 @@ import xarray as xr
 from astropy.cosmology import Cosmology, Planck18
 from astropy.units import Unit
 from chainconsumer import Chain, ChainConsumer, PlotConfig
-from haiku.data_structures import traverse
+from jax.experimental.sparse import BCOO
 from jax.typing import ArrayLike
 from numpyro.handlers import seed
-from scipy.integrate import trapezoid
 from scipy.special import gammaln
-from scipy.stats import nbinom
+
+from ._plot import (
+    BACKGROUND_COLOR,
+    BACKGROUND_DATA_COLOR,
+    COLOR_CYCLE,
+    SPECTRUM_COLOR,
+    SPECTRUM_DATA_COLOR,
+    _compute_effective_area,
+    _error_bars_for_observed_data,
+    _plot_binned_samples_with_error,
+    _plot_poisson_data_with_error,
+)
 
 if TYPE_CHECKING:
     from ..fit import BayesianModel
@@ -29,67 +38,6 @@ if TYPE_CHECKING:
 K = TypeVar("K")
 V = TypeVar("V")
 T = TypeVar("T")
-
-
-class HaikuDict(dict[str, dict[str, T]]): ...
-
-
-def _plot_binned_samples_with_error(
-    ax: plt.Axes,
-    x_bins: ArrayLike,
-    denominator: ArrayLike | None = None,
-    y_samples: ArrayLike | None = None,
-    color=(0.15, 0.25, 0.45),
-    percentile: tuple = (16, 84),
-):
-    """
-    Helper function to plot the posterior predictive distribution of the model. The function
-    computes the percentiles of the posterior predictive distribution and plot them as a shaded
-    area. If the observed data is provided, it is also plotted as a step function.
-
-    Parameters
-    ----------
-        x_bins: The bin edges of the data (2 x N).
-        y_samples: The samples of the posterior predictive distribution (Samples X N).
-        denominator: Values used to divided the samples, i.e. to get energy flux (N).
-        ax: The matplotlib axes object.
-        color: The color of the posterior predictive distribution.
-        y_observed: The observed data (N).
-        label: The label of the observed data.
-        percentile: The percentile of the posterior predictive distribution to plot.
-    """
-
-    mean, envelope = None, None
-
-    if denominator is None:
-        denominator = np.ones_like(x_bins[0])
-
-    mean = ax.stairs(
-        list(np.median(y_samples, axis=0) / denominator),
-        edges=[*list(x_bins[0]), x_bins[1][-1]],
-        color=color,
-        alpha=0.7,
-    )
-
-    if y_samples is not None:
-        if denominator is None:
-            denominator = np.ones_like(x_bins[0])
-
-        percentiles = np.percentile(y_samples, percentile, axis=0)
-
-        # The legend cannot handle fill_between, so we pass a fill to get a fancy icon
-        (envelope,) = ax.fill(np.nan, np.nan, alpha=0.3, facecolor=color)
-
-        ax.stairs(
-            percentiles[1] / denominator,
-            edges=[*list(x_bins[0]), x_bins[1][-1]],
-            baseline=percentiles[0] / denominator,
-            alpha=0.3,
-            fill=True,
-            color=color,
-        )
-
-    return [(mean, envelope)]
 
 
 class FitResult:
@@ -102,7 +50,6 @@ class FitResult:
         self,
         bayesian_fitter: BayesianModel,
         inference_data: az.InferenceData,
-        structure: Mapping[K, V],
         background_model: BackgroundModel = None,
     ):
         self.model = bayesian_fitter.model
@@ -110,7 +57,6 @@ class FitResult:
         self.inference_data = inference_data
         self.obsconfs = bayesian_fitter.observation_container
         self.background_model = background_model
-        self._structure = structure
 
         # Add the model used in fit to the metadata
         for group in self.inference_data.groups():
@@ -127,37 +73,31 @@ class FitResult:
 
         return all(az.rhat(self.inference_data) < 1.01)
 
-    @property
-    def _structured_samples(self):
-        """
-        Get samples from the parameter posterior distribution but keep their shape in terms of draw and chains.
-        """
+    def _ppc_folded_branches(self, obs_id):
+        obs = self.obsconfs[obs_id]
 
-        samples_flat = self._structured_samples_flat
+        if self.bayesian_fitter.sparse:
+            transfer_matrix = BCOO.from_scipy_sparse(
+                obs.transfer_matrix.data.to_scipy_sparse().tocsr()
+            )
 
-        samples_haiku = {}
+        else:
+            transfer_matrix = np.asarray(obs.transfer_matrix.data.todense())
 
-        for module, parameter, value in traverse(self._structure):
-            if samples_haiku.get(module, None) is None:
-                samples_haiku[module] = {}
-            samples_haiku[module][parameter] = samples_flat[f"{module}_{parameter}"]
+        energies = obs.in_energies
 
-        return samples_haiku
-
-    @property
-    def _structured_samples_flat(self):
-        """
-        Get samples from the parameter posterior distribution but keep their shape in terms of draw and chains.
-        """
-
-        var_names = [f"{m}_{n}" for m, n, _ in traverse(self._structure)]
-        posterior = az.extract(self.inference_data, var_names=var_names, combined=False)
-        samples_flat = {key: posterior[key].data for key in var_names}
-
-        return samples_flat
+        flux_func = jax.jit(
+            jax.vmap(jax.vmap(lambda p: self.model.photon_flux(p, *energies, split_branches=True)))
+        )
+        convolve_func = jax.jit(
+            jax.vmap(jax.vmap(lambda flux: jnp.clip(transfer_matrix @ flux, a_min=1e-6)))
+        )
+        return jax.tree.map(
+            lambda flux: np.random.poisson(convolve_func(flux)), flux_func(self.input_parameters)
+        )
 
     @property
-    def input_parameters(self) -> HaikuDict[ArrayLike]:
+    def input_parameters(self) -> dict[str, ArrayLike]:
         """
         The input parameters of the model.
         """
@@ -173,7 +113,9 @@ class FitResult:
         with seed(rng_seed=0):
             input_parameters = self.bayesian_fitter.prior_distributions_func()
 
-        for module, parameter, value in traverse(input_parameters):
+        for key, value in input_parameters.items():
+            module, parameter = key.rsplit("_", 1)
+
             if f"{module}_{parameter}" in posterior.keys():
                 # We add as extra dimension as there might be different values per observation
                 if posterior[f"{module}_{parameter}"].shape == samples_shape:
@@ -181,19 +123,21 @@ class FitResult:
                 else:
                     to_set = posterior[f"{module}_{parameter}"]
 
-                input_parameters[module][parameter] = to_set
+                input_parameters[f"{module}_{parameter}"] = to_set
 
             else:
                 # The parameter is fixed in this case, so we just broadcast is over chain and draws
-                input_parameters[module][parameter] = value[None, None, ...]
+                input_parameters[f"{module}_{parameter}"] = value[None, None, ...]
 
-            if len(total_shape) < len(input_parameters[module][parameter].shape):
+            if len(total_shape) < len(input_parameters[f"{module}_{parameter}"].shape):
                 # If there are only chains and draws, we reduce
-                input_parameters[module][parameter] = input_parameters[module][parameter][..., 0]
+                input_parameters[f"{module}_{parameter}"] = input_parameters[
+                    f"{module}_{parameter}"
+                ][..., 0]
 
             else:
-                input_parameters[module][parameter] = jnp.broadcast_to(
-                    input_parameters[module][parameter], total_shape
+                input_parameters[f"{module}_{parameter}"] = jnp.broadcast_to(
+                    input_parameters[f"{module}_{parameter}"], total_shape
                 )
 
         return input_parameters
@@ -380,62 +324,6 @@ class FitResult:
         return chain
 
     @property
-    def samples_haiku(self) -> HaikuDict[ArrayLike]:
-        """
-        Haiku-like structure for the samples e.g.
-
-        ```
-        {
-            'powerlaw_1' :
-            {
-                'alpha': ...,
-                'amplitude': ...
-            },
-
-            'blackbody_1':
-            {
-                'kT': ...,
-                'norm': ...
-            },
-
-            'tbabs_1':
-            {
-                'nH': ...
-            }
-        }
-        ```
-
-        """
-
-        params = {}
-
-        for module, parameter, value in traverse(self._structure):
-            if params.get(module, None) is None:
-                params[module] = {}
-            params[module][parameter] = self.samples_flat[f"{module}_{parameter}"]
-
-        return params
-
-    @property
-    def samples_flat(self) -> dict[str, ArrayLike]:
-        """
-        Flat structure for the samples e.g.
-
-        ```
-        {
-            'powerlaw_1_alpha': ...,
-            'powerlaw_1_amplitude': ...,
-            'blackbody_1_kT': ...,
-            'blackbody_1_norm': ...,
-            'tbabs_1_nH': ...,
-        }
-        ```
-        """
-        var_names = [f"{m}_{n}" for m, n, _ in traverse(self._structure)]
-        posterior = az.extract(self.inference_data, var_names=var_names)
-        return {key: posterior[key].data for key in var_names}
-
-    @property
     def log_likelihood(self) -> xr.Dataset:
         """
         Return the log_likelihood of each observation
@@ -475,12 +363,15 @@ class FitResult:
 
     def plot_ppc(
         self,
-        percentile: tuple[int, int] = (16, 84),
+        n_sigmas: int = 1,
         x_unit: str | u.Unit = "keV",
         y_type: Literal[
             "counts", "countrate", "photon_flux", "photon_flux_density"
         ] = "photon_flux_density",
-    ) -> plt.Figure:
+        plot_background: bool = True,
+        plot_components: bool = False,
+        style: str | Any = "default",
+    ) -> list[plt.Figure]:
         r"""
         Plot the posterior predictive distribution of the model. It also features a residual plot, defined using the
         following formula:
@@ -492,12 +383,16 @@ class FitResult:
             percentile: The percentile of the posterior predictive distribution to plot.
             x_unit: The units of the x-axis. It can be either a string (parsable by astropy.units) or an astropy unit. It must be homogeneous to either a length, a frequency or an energy.
             y_type: The type of the y-axis. It can be either "counts", "countrate", "photon_flux" or "photon_flux_density".
+            plot_background: Whether to plot the background model if it is included in the fit.
+            plot_components: Whether to plot the components of the model separately.
+            style: The style of the plot. It can be either a string or a matplotlib style context.
 
         Returns:
-            The matplotlib figure.
+            A list of matplotlib figures for each observation in the model.
         """
 
         obsconf_container = self.obsconfs
+        figure_list = []
         x_unit = u.Unit(x_unit)
 
         match y_type:
@@ -514,60 +409,24 @@ class FitResult:
                     f"Unknown y_type: {y_type}. Must be 'counts', 'countrate', 'photon_flux' or 'photon_flux_density'"
                 )
 
-        color = (0.15, 0.25, 0.45)
+        with plt.style.context(style):
+            for obs_id, obsconf in obsconf_container.items():
+                fig, ax = plt.subplots(
+                    2,
+                    1,
+                    figsize=(6, 6),
+                    sharex="col",
+                    height_ratios=[0.7, 0.3],
+                )
 
-        with plt.style.context("default"):
-            # Note to Simon : do not change xbins[1] - xbins[0] to
-            # np.diff, you already did this twice and forgot that it does not work since diff keeps the dimensions
-            # and enable weird broadcasting that makes the plot fail
-
-            fig, axs = plt.subplots(
-                2,
-                len(obsconf_container),
-                figsize=(6 * len(obsconf_container), 6),
-                sharex=True,
-                height_ratios=[0.7, 0.3],
-            )
-
-            plot_ylabels_once = True
-
-            for name, obsconf, ax in zip(
-                obsconf_container.keys(),
-                obsconf_container.values(),
-                axs.T if len(obsconf_container) > 1 else [axs],
-            ):
                 legend_plots = []
                 legend_labels = []
+
                 count = az.extract(
-                    self.inference_data, var_names=f"obs_{name}", group="posterior_predictive"
+                    self.inference_data, var_names=f"obs_{obs_id}", group="posterior_predictive"
                 ).values.T
-                bkg_count = (
-                    None
-                    if self.background_model is None
-                    else az.extract(
-                        self.inference_data, var_names=f"bkg_{name}", group="posterior_predictive"
-                    ).values.T
-                )
 
-                xbins = obsconf.out_energies * u.keV
-                xbins = xbins.to(x_unit, u.spectral())
-
-                # This compute the total effective area within all bins
-                # This is a bit weird since the following computation is equivalent to ignoring the RMF
-                exposure = obsconf.exposure.data * u.s
-                mid_bins_arf = obsconf.in_energies.mean(axis=0) * u.keV
-                mid_bins_arf = mid_bins_arf.to(x_unit, u.spectral())
-                e_grid = np.linspace(*xbins, 10)
-                interpolated_arf = np.interp(e_grid, mid_bins_arf, obsconf.area)
-                integrated_arf = (
-                    trapezoid(interpolated_arf, x=e_grid, axis=0)
-                    / (
-                        np.abs(
-                            xbins[1] - xbins[0]
-                        )  # Must fold in abs because some units reverse the ordering of the bins
-                    )
-                    * u.cm**2
-                )
+                xbins, exposure, integrated_arf = _compute_effective_area(obsconf, x_unit)
 
                 match y_type:
                     case "counts":
@@ -580,133 +439,109 @@ class FitResult:
                         denominator = (xbins[1] - xbins[0]) * integrated_arf * exposure
 
                 y_samples = (count * u.ct / denominator).to(y_units)
-                y_observed = (obsconf.folded_counts.data * u.ct / denominator).to(y_units)
-                y_observed_low = (
-                    nbinom.ppf(percentile[0] / 100, obsconf.folded_counts.data, 0.5)
-                    * u.ct
-                    / denominator
-                ).to(y_units)
-                y_observed_high = (
-                    nbinom.ppf(percentile[1] / 100, obsconf.folded_counts.data, 0.5)
-                    * u.ct
-                    / denominator
-                ).to(y_units)
 
-                # Use the helper function to plot the data and posterior predictive
-                legend_plots += _plot_binned_samples_with_error(
-                    ax[0],
-                    xbins.value,
-                    y_samples=y_samples.value,
-                    denominator=np.ones_like(y_observed).value,
-                    color=color,
-                    percentile=percentile,
+                y_observed, y_observed_low, y_observed_high = _error_bars_for_observed_data(
+                    obsconf.folded_counts.data, denominator, y_units
                 )
 
-                legend_labels.append("Model")
+                # Use the helper function to plot the data and posterior predictive
+                model_plot = _plot_binned_samples_with_error(
+                    ax[0], xbins.value, y_samples.value, color=SPECTRUM_COLOR, n_sigmas=n_sigmas
+                )
 
-                true_data_plot = ax[0].errorbar(
-                    np.sqrt(xbins.value[0] * xbins.value[1]),
+                true_data_plot = _plot_poisson_data_with_error(
+                    ax[0],
+                    xbins.value,
                     y_observed.value,
-                    xerr=np.abs(xbins.value - np.sqrt(xbins.value[0] * xbins.value[1])),
-                    yerr=[
-                        y_observed.value - y_observed_low.value,
-                        y_observed_high.value - y_observed.value,
-                    ],
-                    color="black",
-                    linestyle="none",
-                    alpha=0.3,
-                    capsize=2,
+                    y_observed_low.value,
+                    y_observed_high.value,
+                    color=SPECTRUM_DATA_COLOR,
+                    alpha=0.7,
                 )
 
                 legend_plots.append((true_data_plot,))
                 legend_labels.append("Observed")
+                legend_plots += model_plot
+                legend_labels.append("Model")
 
-                if self.background_model is not None:
+                # Plot the residuals
+                residual_samples = (obsconf.folded_counts.data - count) / np.diff(
+                    np.percentile(count, [16, 84], axis=0), axis=0
+                )
+
+                _plot_binned_samples_with_error(
+                    ax[1], xbins.value, residual_samples, color=SPECTRUM_COLOR, n_sigmas=n_sigmas
+                )
+
+                if plot_components:
+                    for (component_name, count), color in zip(
+                        self._ppc_folded_branches(obs_id).items(), COLOR_CYCLE
+                    ):
+                        # _ppc_folded_branches returns (n_chains, n_draws, n_bins) shaped arrays so we must flatten it
+                        y_samples = (
+                            count.reshape((count.shape[0] * count.shape[1], -1))
+                            * u.ct
+                            / denominator
+                        ).to(y_units)
+                        component_plot = _plot_binned_samples_with_error(
+                            ax[0],
+                            xbins.value,
+                            y_samples.value,
+                            color=color,
+                            linestyle="dashdot",
+                            n_sigmas=n_sigmas,
+                        )
+
+                        legend_plots += component_plot
+                        legend_labels.append(component_name)
+
+                if self.background_model is not None and plot_background:
                     # We plot the background only if it is included in the fit, i.e. by subtracting
-                    ratio = obsconf.folded_backratio.data
-                    y_samples_bkg = (bkg_count * u.ct / (denominator * ratio)).to(y_units)
-                    y_observed_bkg = (
-                        obsconf.folded_background.data * u.ct / (denominator * ratio)
-                    ).to(y_units)
-                    y_observed_bkg_low = (
-                        nbinom.ppf(percentile[0] / 100, obsconf.folded_background.data, 0.5)
-                        * u.ct
-                        / (denominator * ratio)
-                    ).to(y_units)
-                    y_observed_bkg_high = (
-                        nbinom.ppf(percentile[1] / 100, obsconf.folded_background.data, 0.5)
-                        * u.ct
-                        / (denominator * ratio)
-                    ).to(y_units)
-
-                    legend_plots += _plot_binned_samples_with_error(
-                        ax[0],
-                        xbins.value,
-                        y_samples=y_samples_bkg.value,
-                        denominator=np.ones_like(y_observed).value,
-                        color=(0.26787604, 0.60085972, 0.63302651),
-                        percentile=percentile,
+                    bkg_count = (
+                        None
+                        if self.background_model is None
+                        else az.extract(
+                            self.inference_data,
+                            var_names=f"bkg_{obs_id}",
+                            group="posterior_predictive",
+                        ).values.T
                     )
 
-                    legend_labels.append("Model (bkg)")
+                    ratio = obsconf.folded_backratio.data
 
-                    true_bkg_plot = ax[0].errorbar(
-                        np.sqrt(xbins.value[0] * xbins.value[1]),
+                    y_samples_bkg = (bkg_count * u.ct / (denominator * ratio)).to(y_units)
+
+                    y_observed_bkg, y_observed_bkg_low, y_observed_bkg_high = (
+                        _error_bars_for_observed_data(
+                            obsconf.folded_background.data, denominator * ratio, y_units
+                        )
+                    )
+
+                    model_bkg_plot = _plot_binned_samples_with_error(
+                        ax[0], xbins.value, y_samples_bkg.value, color=BACKGROUND_COLOR
+                    )
+
+                    true_bkg_plot = _plot_poisson_data_with_error(
+                        ax[0],
+                        xbins.value,
                         y_observed_bkg.value,
-                        xerr=np.abs(xbins.value - np.sqrt(xbins.value[0] * xbins.value[1])),
-                        yerr=[
-                            y_observed_bkg.value - y_observed_bkg_low.value,
-                            y_observed_bkg_high.value - y_observed_bkg.value,
-                        ],
-                        color="black",
-                        linestyle="none",
-                        alpha=0.3,
-                        capsize=2,
+                        y_observed_bkg_low.value,
+                        y_observed_bkg_high.value,
+                        color=BACKGROUND_DATA_COLOR,
+                        alpha=0.7,
                     )
 
                     legend_plots.append((true_bkg_plot,))
                     legend_labels.append("Observed (bkg)")
+                    legend_plots += model_bkg_plot
+                    legend_labels.append("Model (bkg)")
 
-                residual_samples = (obsconf.folded_counts.data - count) / np.diff(
-                    np.percentile(count, percentile, axis=0), axis=0
-                )
-
-                residuals = np.percentile(
-                    residual_samples,
-                    percentile,
-                    axis=0,
-                )
-
-                median_residuals = np.median(
-                    residual_samples,
-                    axis=0,
-                )
-
-                ax[1].stairs(
-                    residuals[1],
-                    edges=[*list(xbins.value[0]), xbins.value[1][-1]],
-                    baseline=list(residuals[0]),
-                    alpha=0.3,
-                    facecolor=color,
-                    fill=True,
-                )
-
-                ax[1].stairs(
-                    median_residuals,
-                    edges=[*list(xbins.value[0]), xbins.value[1][-1]],
-                    color=color,
-                    alpha=0.7,
-                )
-
-                max_residuals = np.max(np.abs(residuals))
+                max_residuals = np.max(np.abs(residual_samples))
 
                 ax[0].loglog()
                 ax[1].set_ylim(-max(3.5, max_residuals), +max(3.5, max_residuals))
-
-                if plot_ylabels_once:
-                    ax[0].set_ylabel(f"Folded spectrum\n [{y_units:latex_inline}]")
-                    ax[1].set_ylabel("Residuals \n" + r"[$\sigma$]")
-                    plot_ylabels_once = False
+                ax[0].set_ylabel(f"Folded spectrum\n [{y_units:latex_inline}]")
+                ax[1].set_ylabel("Residuals \n" + r"[$\sigma$]")
 
                 match getattr(x_unit, "physical_type"):
                     case "length":
@@ -721,24 +556,26 @@ class FitResult:
                             f"Must be 'length', 'energy' or 'frequency'"
                         )
 
-                ax[1].axhline(0, color=color, ls="--")
-                ax[1].axhline(-3, color=color, ls=":")
-                ax[1].axhline(3, color=color, ls=":")
+                ax[1].axhline(0, color=SPECTRUM_DATA_COLOR, ls="--")
+                ax[1].axhline(-3, color=SPECTRUM_DATA_COLOR, ls=":")
+                ax[1].axhline(3, color=SPECTRUM_DATA_COLOR, ls=":")
 
-                # ax[1].set_xticks(xticks, labels=xticks)
-                # ax[1].xaxis.set_minor_formatter(ticker.LogFormatter(minor_thresholds=(np.inf, np.inf)))
                 ax[1].set_yticks([-3, 0, 3], labels=[-3, 0, 3])
                 ax[1].set_yticks(range(-3, 4), minor=True)
 
                 ax[0].set_xlim(xbins.value.min(), xbins.value.max())
 
                 ax[0].legend(legend_plots, legend_labels)
-                fig.suptitle(self.model.to_string())
+                fig.suptitle(f"Posterior predictive - {obs_id}")
                 fig.align_ylabels()
                 plt.subplots_adjust(hspace=0.0)
                 fig.tight_layout()
+                figure_list.append(fig)
+                # fig.show()
 
-            return fig
+        plt.show()
+
+        return figure_list
 
     def table(self) -> str:
         r"""

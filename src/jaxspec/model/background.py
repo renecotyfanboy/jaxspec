@@ -10,7 +10,6 @@ from numpyro.distributions import Poisson
 from tinygp import GaussianProcess, kernels
 
 from .._fit._build_model import build_prior, forward_model
-from ..util.typing import PriorDictModel
 from .abc import SpectralModel
 
 
@@ -141,11 +140,11 @@ class GaussianProcessBackground(BackgroundModel):
 class SpectralBackgroundModel(BackgroundModel):
     def __init__(self, spectral_model: "SpectralModel", prior_distributions, sparse=False):
         self.spectral_model = spectral_model
-        self.prior = PriorDictModel.from_dict(prior_distributions).nested_dict
+        self.prior = prior_distributions
         self.sparse = sparse
 
     def numpyro_model(self, observation, name: str = "", observed=True):
-        params = build_prior(self.prior, prefix=f"_bkg_{name}")
+        params = build_prior(self.prior, prefix=f"_bkg_{name}_")
         bkg_model = jax.jit(
             lambda par: forward_model(self.spectral_model, par, observation, sparse=self.sparse)
         )
