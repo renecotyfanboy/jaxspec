@@ -28,7 +28,7 @@ seaborn = "^0.13.1"
 sparse = "^0.15.4"
 optimistix = ">=0.0.7,<0.0.10"
 scipy = "<1.15"
-mendeleev = ">=0.15,<0.19"
+mendeleev = ">=0.15,<0.20"
 jaxns = "<2.6"
 pooch = "^1.8.2"
 interpax = "^0.3.3"
@@ -40,7 +40,7 @@ flax = "^0.10.1"
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.1"
 mkdocs-material = "^9.4.6"
-mkdocstrings = {extras = ["python"], version = ">=0.24,<0.27"}
+mkdocstrings = {extras = ["python"], version = ">=0.24,<0.28"}
 mkdocs-jupyter = "^0.25.0"
 
 
