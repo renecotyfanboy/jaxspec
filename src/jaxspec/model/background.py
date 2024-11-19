@@ -137,7 +137,7 @@ class GaussianProcessBackground(BackgroundModel):
         return count_rate
 
 
-class SpectralBackgroundModel(BackgroundModel):
+class SpectralModelBackground(BackgroundModel):
     def __init__(self, spectral_model: "SpectralModel", prior_distributions, sparse=False):
         self.spectral_model = spectral_model
         self.prior = prior_distributions

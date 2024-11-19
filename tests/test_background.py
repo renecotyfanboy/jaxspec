@@ -47,7 +47,7 @@ def test_spectral_model_background(obs_model_prior):
 
     from jaxspec.fit import MCMCFitter
     from jaxspec.model.additive import Blackbodyrad, Powerlaw
-    from jaxspec.model.background import SpectralBackgroundModel
+    from jaxspec.model.background import SpectralModelBackground
 
     obs_list, model, prior = obs_model_prior
 
@@ -60,7 +60,7 @@ def test_spectral_model_background(obs_model_prior):
         "blackbodyrad_1_norm": dist.LogUniform(1e-5, 1e1),
     }
 
-    bkg_model = SpectralBackgroundModel(spectral_model_background, prior_background)
+    bkg_model = SpectralModelBackground(spectral_model_background, prior_background)
     forward = MCMCFitter(model, prior, obs_list[0], background_model=bkg_model)
 
     res_1 = forward.fit(

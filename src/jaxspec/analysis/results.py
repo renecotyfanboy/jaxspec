@@ -535,6 +535,7 @@ class FitResult:
                         y_samples_bkg.value,
                         color=BACKGROUND_COLOR,
                         alpha_envelope=alpha_envelope,
+                        n_sigmas=n_sigmas,
                     )
 
                     true_bkg_plot = _plot_poisson_data_with_error(

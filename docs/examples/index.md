@@ -47,13 +47,6 @@
 
     Use `arviz` to assess the quality of your fit
 
-
--   [__🚧 Use `bayeux` samplers__]()
-
-    ---
-
-    Add your sampler
-
 -   [__Build a custom model__](custom_model.md)
 
     ---
