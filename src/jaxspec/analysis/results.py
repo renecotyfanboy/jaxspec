@@ -370,6 +370,7 @@ class FitResult:
         ] = "photon_flux_density",
         plot_background: bool = True,
         plot_components: bool = False,
+        alpha_envelope: (float, float) = (0.15, 0.25),
         style: str | Any = "default",
     ) -> list[plt.Figure]:
         r"""
@@ -446,7 +447,12 @@ class FitResult:
 
                 # Use the helper function to plot the data and posterior predictive
                 model_plot = _plot_binned_samples_with_error(
-                    ax[0], xbins.value, y_samples.value, color=SPECTRUM_COLOR, n_sigmas=n_sigmas
+                    ax[0],
+                    xbins.value,
+                    y_samples.value,
+                    color=SPECTRUM_COLOR,
+                    n_sigmas=n_sigmas,
+                    alpha_envelope=alpha_envelope,
                 )
 
                 true_data_plot = _plot_poisson_data_with_error(
@@ -470,7 +476,12 @@ class FitResult:
                 )
 
                 _plot_binned_samples_with_error(
-                    ax[1], xbins.value, residual_samples, color=SPECTRUM_COLOR, n_sigmas=n_sigmas
+                    ax[1],
+                    xbins.value,
+                    residual_samples,
+                    color=SPECTRUM_COLOR,
+                    n_sigmas=n_sigmas,
+                    alpha_envelope=alpha_envelope,
                 )
 
                 if plot_components:
@@ -490,6 +501,7 @@ class FitResult:
                             color=color,
                             linestyle="dashdot",
                             n_sigmas=n_sigmas,
+                            alpha_envelope=alpha_envelope,
                         )
 
                         legend_plots += component_plot
@@ -518,7 +530,11 @@ class FitResult:
                     )
 
                     model_bkg_plot = _plot_binned_samples_with_error(
-                        ax[0], xbins.value, y_samples_bkg.value, color=BACKGROUND_COLOR
+                        ax[0],
+                        xbins.value,
+                        y_samples_bkg.value,
+                        color=BACKGROUND_COLOR,
+                        alpha_envelope=alpha_envelope,
                     )
 
                     true_bkg_plot = _plot_poisson_data_with_error(
