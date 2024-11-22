@@ -458,6 +458,43 @@ class NSatmos(AdditiveComponent):
         return jax.lax.select(r_normalized < 1.125, jnp.zeros_like(true_flux), true_flux)
 
 
+class Band(AdditiveComponent):
+    r"""
+    A Band function model
+
+    $$
+    \mathcal{M}(E) = \begin{cases} K \left( \frac{E}{100 \, \text{keV}}\right)^{\alpha_1}\exp(-\frac{E}{E_c})  &
+    \text{if $E < E_c (\alpha_1 - \alpha_2)$} \\
+    K \left[ (\alpha_1 - \alpha_2) \frac{E_c}{100 \, \text{keV}} \right]^{\alpha_1-\alpha_2} \left( \frac{E}{100 \, \text{keV}}\right)^{\alpha_2} \exp(-(\alpha_1 - \alpha_2))  & \text{if $E > E_c (\alpha_1 - \alpha_2)$}
+    \end{cases}
+    $$
+
+    !!! abstract "Parameters"
+        * $\alpha_1$ (`alpha1`) $\left[\text{dimensionless}\right]$ : First powerlaw index
+        * $\alpha_2$  (`alpha2`) $\left[\text{dimensionless}\right]$ : Second powerlaw index
+        * $E_c$  (`Ec`) $\left[\text{keV}\right]$ : Radius at infinity (modulated by gravitational effects)
+        * norm (`norm`) $\left[\frac{\text{photons}}{\text{keV}\text{cm}^2\text{s}}\right]$ : Normalization at the reference energy (100 keV)
+    """
+
+    def __init__(self):
+        self.alpha1 = nnx.Param(-1.0)
+        self.alpha2 = nnx.Param(-2.0)
+        self.Ec = nnx.Param(200.0)
+        self.norm = nnx.Param(1e-4)
+
+    def continuum(self, energy):
+        Epivot = 100.0
+        spectrum = jnp.where(
+            energy < self.Ec * (self.alpha1 - self.alpha2),
+            (energy / Epivot) ** self.alpha1 * jnp.exp(-energy / self.Ec),
+            ((self.alpha1 - self.alpha2) * (self.Ec / Epivot)) ** (self.alpha1 - self.alpha2)
+            * (energy / 100) ** self.alpha2
+            * jnp.exp(-(self.alpha1 - self.alpha2)),
+        )
+
+        return self.norm * spectrum
+
+
 '''
 class Diskpbb(AdditiveComponent):
     r"""
