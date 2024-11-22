@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import arviz as az
@@ -9,6 +10,7 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import xarray as xr
 
 from astropy.cosmology import Cosmology, Planck18
@@ -76,6 +78,13 @@ class FitResult:
     def _ppc_folded_branches(self, obs_id):
         obs = self.obsconfs[obs_id]
 
+        if len(next(iter(self.input_parameters.values())).shape) > 2:
+            idx = list(self.obsconfs.keys()).index(obs_id)
+            obs_parameters = jax.tree.map(lambda x: x[..., idx], self.input_parameters)
+
+        else:
+            obs_parameters = self.input_parameters
+
         if self.bayesian_fitter.sparse:
             transfer_matrix = BCOO.from_scipy_sparse(
                 obs.transfer_matrix.data.to_scipy_sparse().tocsr()
@@ -93,10 +102,10 @@ class FitResult:
             jax.vmap(jax.vmap(lambda flux: jnp.clip(transfer_matrix @ flux, a_min=1e-6)))
         )
         return jax.tree.map(
-            lambda flux: np.random.poisson(convolve_func(flux)), flux_func(self.input_parameters)
+            lambda flux: np.random.poisson(convolve_func(flux)), flux_func(obs_parameters)
         )
 
-    @property
+    @cached_property
     def input_parameters(self) -> dict[str, ArrayLike]:
         """
         The input parameters of the model.
@@ -299,29 +308,45 @@ class FitResult:
             parameters_type: The parameters_type to include in the chain.
         """
 
-        obs_id = self.inference_data.copy()
-
         if parameters_type == "model":
             keys_to_drop = [
                 key
-                for key in obs_id.posterior.keys()
+                for key in self.inference_data.posterior.keys()
                 if (key.startswith("_") or key.startswith("bkg"))
             ]
         elif parameters_type == "bkg":
-            keys_to_drop = [key for key in obs_id.posterior.keys() if not key.startswith("bkg")]
+            keys_to_drop = [
+                key for key in self.inference_data.posterior.keys() if not key.startswith("bkg")
+            ]
         else:
             raise ValueError(f"Unknown value for parameters_type: {parameters_type}")
 
-        obs_id.posterior = obs_id.posterior.drop_vars(keys_to_drop)
-        chain = Chain.from_arviz(obs_id, name)
+        reduced_id = az.extract(
+            self.inference_data,
+            var_names=[f"~{key}" for key in keys_to_drop] if keys_to_drop else None,
+            group="posterior",
+        )
 
-        """
-        chain.samples.columns = [
-            format_parameters(parameter) for parameter in chain.samples.columns
-        ]
-        """
+        df_list = []
 
-        return chain
+        for var, array in reduced_id.data_vars.items():
+            extra_dims = [dim for dim in array.dims if dim not in ["sample"]]
+
+            if extra_dims:
+                dim = extra_dims[
+                    0
+                ]  # We only support the case where the extra dimension comes from the observations
+
+                for coord, obs_id in zip(array.coords[dim], self.obsconfs.keys()):
+                    df = array.loc[{dim: coord}].to_pandas()
+                    df.name += f"\n[{obs_id}]"
+                    df_list.append(df)
+            else:
+                df_list.append(array.to_pandas())
+
+        df = pd.concat(df_list, axis=1)
+
+        return Chain(samples=df, name=name)
 
     @property
     def log_likelihood(self) -> xr.Dataset:

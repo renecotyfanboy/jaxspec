@@ -1,28 +1,47 @@
+# ruff: noqa: E402
+
 import chex
 
 chex.set_n_cpu_devices(n=4)
 
-import numpyro  # noqa:E402
-import pytest  # noqa:E402
+import jax.numpy as jnp
+import numpyro
+import numpyro.distributions as dist
+import pytest
 
-from jax import config  # noqa:E402
-from jaxspec.fit import MCMCFitter  # noqa:E402
+from jax import config
+from jaxspec.data.util import load_example_obsconf
+from jaxspec.fit import MCMCFitter
+from jaxspec.model.additive import Blackbodyrad, Powerlaw
+from jaxspec.model.multiplicative import Tbabs
 
 config.update("jax_enable_x64", True)
 numpyro.set_platform("cpu")
 numpyro.set_host_device_count(4)
 
-good_init_params = {
-    "blackbodyrad_1": {"kT": 0.7504268020515429, "norm": 0.19813098808509122},
-    "powerlaw_1": {"alpha": 2.0688055546595323, "norm": 0.00026474320883338153},
-    "tbabs_1": {"N_H": 0.10091221590755987},
+prior_shared_pars = {
+    "powerlaw_1_alpha": dist.Uniform(0, 5),
+    "powerlaw_1_norm": dist.LogUniform(1e-5, 1e-2),
+    "blackbodyrad_1_kT": dist.Uniform(0, 5),
+    "blackbodyrad_1_norm": dist.LogUniform(1e-2, 1e2),
+    "tbabs_1_nh": dist.Uniform(0, 1),
 }
+
+prior_split_pars = {
+    "powerlaw_1_alpha": dist.Uniform(0, 5),
+    "powerlaw_1_norm": dist.LogUniform(1e-5 * jnp.ones(3), 1e-2 * jnp.ones(3)),
+    "blackbodyrad_1_kT": dist.Uniform(0, 5),
+    "blackbodyrad_1_norm": dist.LogUniform(1e-2, 1e2),
+    "tbabs_1_nh": dist.Uniform(0, 1),
+}
+
+single_obsconf = load_example_obsconf("NGC7793_ULX4_PN")
+list_of_obsconf = list(load_example_obsconf("NGC7793_ULX4_ALL").values())
+dict_of_obsconf = load_example_obsconf("NGC7793_ULX4_ALL")
 
 
 @pytest.fixture(scope="session")
 def obsconfs():
-    from jaxspec.data.util import load_example_obsconf
-
     return list(load_example_obsconf("NGC7793_ULX4_ALL").values())
 
 
@@ -84,3 +103,23 @@ def get_result_list(get_individual_mcmc_results, get_joint_mcmc_result):
     name_list += ["Joint_mcmc"]
 
     return name_list, result_list
+
+
+spectral_model = Tbabs() * (Powerlaw() + Blackbodyrad())
+
+
+@pytest.fixture(scope="session")
+def prior_with_free_pars_on_obs():
+    """
+    Prior distribution with a free normalisation for each observation
+    """
+
+    return
+
+
+@pytest.fixture(scope="session")
+@pytest.mark.parametrize("obsconf, model, prior", ["NGC7793_ULX4_ALL"])
+def fitting_setup_multiple_obs_and_free_pars(obsconf, model, prior):
+    model = Tbabs() * (Powerlaw() + Blackbodyrad())
+
+    return obsconfs, model, prior

@@ -79,6 +79,22 @@ class BayesianModel:
         self.prior_distributions_func = prior_distributions_func
         self.init_params = self.prior_samples()
 
+        # Check the priors are suited for the observations
+        split_parameters = [
+            (param, shape[-1])
+            for param, shape in jax.tree.map(lambda x: x.shape, self.init_params).items()
+            if (len(shape) > 1)
+            and not param.startswith("_")
+            and not param.startswith("bkg")  # hardcoded for subtracted background
+        ]
+
+        for parameter, proposed_number_of_obs in split_parameters:
+            if proposed_number_of_obs != len(self.observation_container):
+                raise ValueError(
+                    f"Invalid splitting in the prior distribution. "
+                    f"Expected {len(self.observation_container)} but got {proposed_number_of_obs} for {parameter}"
+                )
+
     @cached_property
     def observation_container(self) -> dict[str, ObsConfiguration]:
         """
