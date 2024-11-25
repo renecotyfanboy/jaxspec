@@ -56,7 +56,7 @@ testbook = "^0.4.2"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = ">=3.5,<5.0"
-ruff = ">=0.2.1,<0.8.0"
+ruff = ">=0.2.1,<0.9.0"
 jupyterlab = "^4.0.7"
 notebook = "^7.0.6"
 ipywidgets = "^8.1.1"
