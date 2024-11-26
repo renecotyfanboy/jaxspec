@@ -47,11 +47,6 @@
 
     Use `arviz` to assess the quality of your fit
 
--   [__Build a custom model__](custom_model.md)
-
-    ---
-
-    Add a custom model to `jaxspec`
 
 -   [__Interface with other frameworks__](external_samplers.ipynb)
 

@@ -484,12 +484,14 @@ class Band(AdditiveComponent):
 
     def continuum(self, energy):
         Epivot = 100.0
+        alpha_diff = jnp.asarray(self.alpha1) - jnp.asarray(self.alpha2)
+
         spectrum = jnp.where(
-            energy < self.Ec * (self.alpha1 - self.alpha2),
+            energy < self.Ec * (alpha_diff),
             (energy / Epivot) ** self.alpha1 * jnp.exp(-energy / self.Ec),
-            ((self.alpha1 - self.alpha2) * (self.Ec / Epivot)) ** (self.alpha1 - self.alpha2)
+            (alpha_diff * (self.Ec / Epivot)) ** (alpha_diff)
             * (energy / 100) ** self.alpha2
-            * jnp.exp(-(self.alpha1 - self.alpha2)),
+            * jnp.exp(-alpha_diff),
         )
 
         return self.norm * spectrum

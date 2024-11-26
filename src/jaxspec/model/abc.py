@@ -377,9 +377,22 @@ class AdditiveComponent(ModelComponent):
     type = "additive"
 
     def continuum(self, energy):
+        r"""
+        Compute the continuum of the component.
+
+        Parameters:
+            energy : The energy at which to compute the continuum.
+        """
         return jnp.zeros_like(energy)
 
     def integrated_continuum(self, e_low, e_high):
+        r"""
+        Compute the integrated continuum between $E_\min$ and $E_\max$.
+
+        Parameters:
+            e_low: Lower bound of the energy bin.
+            e_high: Upper bound of the energy bin.
+        """
         return jnp.zeros_like((e_low + e_high) / 2)
 
     def _photon_flux(self, e_low, e_high, n_points=2):
@@ -415,4 +428,10 @@ class MultiplicativeComponent(ModelComponent):
     type = "multiplicative"
 
     def factor(self, energy):
+        """
+        Absorption factor applied for a given energy
+
+        Parameters:
+            energy : The energy at which to compute the factor.
+        """
         return jnp.ones_like(energy)

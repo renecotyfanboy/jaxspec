@@ -12,14 +12,13 @@
     options:
       members:
         - continuum
-        - emission_lines
+        - integrated_continuum
       show_root_heading: true
       show_root_toc_entry: false
 
 ::: jaxspec.model.abc.MultiplicativeComponent
     options:
       members:
-        - continuum
-        - emission_lines
+        - factor
       show_root_heading: true
       show_root_toc_entry: false
