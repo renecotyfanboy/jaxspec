@@ -299,27 +299,19 @@ class FitResult:
 
         return value
 
-    def to_chain(self, name: str, parameters_type: Literal["model", "bkg"] = "model") -> Chain:
+    def to_chain(self, name: str) -> Chain:
         """
         Return a ChainConsumer Chain object from the posterior distribution of the parameters_type.
 
         Parameters:
             name: The name of the chain.
-            parameters_type: The parameters_type to include in the chain.
         """
 
-        if parameters_type == "model":
-            keys_to_drop = [
-                key
-                for key in self.inference_data.posterior.keys()
-                if (key.startswith("_") or key.startswith("bkg"))
-            ]
-        elif parameters_type == "bkg":
-            keys_to_drop = [
-                key for key in self.inference_data.posterior.keys() if not key.startswith("bkg")
-            ]
-        else:
-            raise ValueError(f"Unknown value for parameters_type: {parameters_type}")
+        keys_to_drop = [
+            key
+            for key in self.inference_data.posterior.keys()
+            if (key.startswith("_") or key.startswith("bkg"))
+        ]
 
         reduced_id = az.extract(
             self.inference_data,
