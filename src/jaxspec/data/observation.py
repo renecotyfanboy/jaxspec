@@ -128,14 +128,19 @@ class Observation(xr.Dataset):
         else:
             backratio = np.ones_like(pha.counts)
 
+        if (bkg is not None) and ("NET" in pha.flags):
+            counts = pha.counts + bkg.counts * backratio
+        else:
+            counts = pha.counts
+
         return cls.from_matrix(
-            pha.counts,
+            counts,
             pha.grouping,
             pha.channel,
             pha.quality,
             pha.exposure,
             backratio=backratio,
-            background=bkg.counts if bkg is not None else None,
+            background=bkg.counts * backratio if bkg is not None else None,
             attributes=metadata,
         )
 

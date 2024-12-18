@@ -25,7 +25,7 @@ build:
       # Using insiders versions of mkdocs-material & mkdocstrings
       - pip uninstall mkdocs-material mkdocstrings mkdocstrings-python -y
       - pip install git+https://$GH_TOKEN@github.com/squidfunk/mkdocs-material-insiders.git@9.5.36-insiders-4.53.13
-      - pip install git+https://$GH_TOKEN@github.com/pawamoy-insiders/mkdocstrings-python.git
+      - pip install mkdocstrings-python #git+https://$GH_TOKEN@github.com/pawamoy-insiders/mkdocstrings-python.git
       - pip install mkdocs-jupyter # This is bugged, I enforced it manually, let's see if it works
 
   apt_packages:

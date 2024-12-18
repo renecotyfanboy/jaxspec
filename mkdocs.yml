@@ -17,7 +17,6 @@ nav:
     - Generate mock data : examples/fakeits.md
     - Add a background : examples/background.md
     - Good practices for MCMC: examples/work_with_arviz.ipynb
-    - Build a custom model : examples/custom_model.md
     - Interface with other frameworks : examples/external_samplers.ipynb
   #- Models:
   #    - models/index.md
@@ -108,6 +107,7 @@ plugins:
             - https://python.arviz.org/en/stable/objects.inv
             - https://jax.readthedocs.io/en/latest/objects.inv
             - https://docs.xarray.dev/en/stable/objects.inv
+            - https://flax.readthedocs.io/en/latest/objects.inv
             - https://jaxns.readthedocs.io/en/latest/objects.inv
           options:
             members_order: alphabetical

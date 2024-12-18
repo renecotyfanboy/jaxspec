@@ -48,18 +48,6 @@
     Use `arviz` to assess the quality of your fit
 
 
--   [__🚧 Use `bayeux` samplers__]()
-
-    ---
-
-    Add your sampler
-
--   [__Build a custom model__](custom_model.md)
-
-    ---
-
-    Add a custom model to `jaxspec`
-
 -   [__Interface with other frameworks__](external_samplers.ipynb)
 
     ---
