@@ -387,6 +387,7 @@ class FitResult:
         ] = "photon_flux_density",
         plot_background: bool = True,
         plot_components: bool = False,
+        scale: Literal["linear", "semilogx", "semilogy", "loglog"] = "loglog",
         alpha_envelope: (float, float) = (0.15, 0.25),
         style: str | Any = "default",
     ) -> list[plt.Figure]:
@@ -403,6 +404,8 @@ class FitResult:
             y_type: The type of the y-axis. It can be either "counts", "countrate", "photon_flux" or "photon_flux_density".
             plot_background: Whether to plot the background model if it is included in the fit.
             plot_components: Whether to plot the components of the model separately.
+            scale: The axes scaling
+            alpha_envelope: The transparency range for envelops
             style: The style of the plot. It can be either a string or a matplotlib style context.
 
         Returns:
@@ -536,13 +539,11 @@ class FitResult:
                         ).values.T
                     )
 
-                    ratio = obsconf.folded_backratio.data
-
-                    y_samples_bkg = (bkg_count * u.ct / (denominator * ratio)).to(y_units)
+                    y_samples_bkg = (bkg_count * u.ct / denominator).to(y_units)
 
                     y_observed_bkg, y_observed_bkg_low, y_observed_bkg_high = (
                         _error_bars_for_observed_data(
-                            obsconf.folded_background.data, denominator * ratio, y_units
+                            obsconf.folded_background.data, denominator, y_units
                         )
                     )
 
@@ -600,6 +601,21 @@ class FitResult:
                 ax[0].set_xlim(xbins.value.min(), xbins.value.max())
 
                 ax[0].legend(legend_plots, legend_labels)
+
+                match scale:
+                    case "linear":
+                        ax[0].set_xscale("linear")
+                        ax[0].set_yscale("linear")
+                    case "semilogx":
+                        ax[0].set_xscale("log")
+                        ax[0].set_yscale("linear")
+                    case "semilogy":
+                        ax[0].set_xscale("linear")
+                        ax[0].set_yscale("log")
+                    case "loglog":
+                        ax[0].set_xscale("log")
+                        ax[0].set_yscale("log")
+
                 fig.suptitle(f"Posterior predictive - {obs_id}")
                 fig.align_ylabels()
                 plt.subplots_adjust(hspace=0.0)

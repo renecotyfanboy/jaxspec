@@ -11,11 +11,11 @@ documentation = "https://jaxspec.readthedocs.io/en/latest/"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
-jax = ">=0.4.35,<0.5.0"
+jax = "^0.4.37"
 numpy = "<2.0.0"
 pandas = "^2.2.0"
 astropy = "^6.0.0"
-numpyro = "^0.15.3"
+numpyro = "^0.16.1"
 networkx = "^3.1"
 matplotlib = "^3.8.0"
 arviz = ">=0.17.1,<0.21.0"

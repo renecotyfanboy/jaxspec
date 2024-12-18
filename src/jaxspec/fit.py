@@ -158,7 +158,9 @@ class BayesianModel:
                 with numpyro.plate("obs_plate_" + name, len(observation.folded_counts)):
                     numpyro.sample(
                         "obs_" + name,
-                        Poisson(obs_countrate + bkg_countrate / observation.folded_backratio.data),
+                        Poisson(
+                            obs_countrate + bkg_countrate
+                        ),  # / observation.folded_backratio.data
                         obs=observation.folded_counts.data if observed else None,
                     )
 
@@ -599,11 +601,12 @@ class NSFitter(BayesianModelFitter):
         ns = NestedSampler(
             bayesian_model,
             constructor_kwargs=dict(
-                num_parallel_workers=1,
                 verbose=verbose,
                 difficult_model=True,
-                max_samples=1e6,
+                max_samples=1e5,
                 parameter_estimation=True,
+                gradient_guided=True,
+                # init_efficiency_threshold=0.01,
                 num_live_points=num_live_points,
             ),
             termination_kwargs=termination_kwargs if termination_kwargs else dict(),

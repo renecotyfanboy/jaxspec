@@ -1,9 +1,11 @@
-import numpy as np
 import os
+
 import astropy.units as u
+import numpy as np
 import sparse
-from astropy.table import QTable
+
 from astropy.io import fits
+from astropy.table import QTable
 
 
 class DataPHA:
@@ -25,6 +27,7 @@ class DataPHA:
         ancrfile=None,
         backscal=1.0,
         areascal=1.0,
+        flags=None,
     ):
         self.channel = np.asarray(channel, dtype=int)
         self.counts = np.asarray(counts, dtype=int)
@@ -36,6 +39,7 @@ class DataPHA:
         self.ancrfile = ancrfile
         self.backscal = np.asarray(backscal, dtype=float)
         self.areascal = np.asarray(areascal, dtype=float)
+        self.flags = flags
 
         if grouping is not None:
             # Indices array of the beginning of each group
@@ -55,7 +59,9 @@ class DataPHA:
                     data.append(True)
 
             # Create a COO sparse matrix
-            grp_matrix = sparse.COO((data, (rows, cols)), shape=(len(b_grp), len(channel)), fill_value=0)
+            grp_matrix = sparse.COO(
+                (data, (rows, cols)), shape=(len(b_grp), len(channel)), fill_value=0
+            )
 
         else:
             # Identity matrix case, use sparse for efficiency
@@ -74,12 +80,7 @@ class DataPHA:
 
         data = QTable.read(pha_file, "SPECTRUM")
         header = fits.getheader(pha_file, "SPECTRUM")
-
-        if header.get("HDUCLAS2") == "NET":
-            raise ValueError(
-                f"The HDUCLAS2={header.get('HDUCLAS2')} keyword in the PHA file is not supported."
-                f"Please open an issue if this is required."
-            )
+        flags = []
 
         if header.get("HDUCLAS3") == "RATE":
             raise ValueError(
@@ -114,6 +115,8 @@ class DataPHA:
         else:
             raise ValueError("No BACKSCAL found in the PHA file.")
 
+        backscal = np.where(backscal == 0, 1.0, backscal)
+
         if "AREASCAL" in header:
             areascal = header["AREASCAL"]
         elif "AREASCAL" in data.colnames:
@@ -121,8 +124,9 @@ class DataPHA:
         else:
             raise ValueError("No AREASCAL found in the PHA file.")
 
-        # Grouping and quality parameters are in binned PHA dataset
-        # Backfile, respfile and ancrfile are in primary header
+        if header.get("HDUCLAS2") == "NET":
+            flags.append("NET")
+
         kwargs = {
             "grouping": grouping,
             "quality": quality,
@@ -131,6 +135,7 @@ class DataPHA:
             "ancrfile": header.get("ANCRFILE"),
             "backscal": backscal,
             "areascal": areascal,
+            "flags": flags,
         }
 
         return cls(data["CHANNEL"], data["COUNTS"], header["EXPOSURE"], **kwargs)
@@ -176,7 +181,19 @@ class DataRMF:
         * [The Calibration Requirements for Spectral Analysis Addendum: Changes log](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html)
     """
 
-    def __init__(self, energ_lo, energ_hi, n_grp, f_chan, n_chan, matrix, channel, e_min, e_max, low_threshold=0.0):
+    def __init__(
+        self,
+        energ_lo,
+        energ_hi,
+        n_grp,
+        f_chan,
+        n_chan,
+        matrix,
+        channel,
+        e_min,
+        e_max,
+        low_threshold=0.0,
+    ):
         # RMF stuff
         self.energ_lo = energ_lo  # "Entry" energies
         self.energ_hi = energ_hi  # "Entry" energies
@@ -229,7 +246,9 @@ class DataRMF:
         idxs = data > low_threshold
 
         # Create a COO sparse matrix and then convert to CSR for efficiency
-        coo = sparse.COO([rows[idxs], cols[idxs]], data[idxs], shape=(len(self.energ_lo), len(self.channel)))
+        coo = sparse.COO(
+            [rows[idxs], cols[idxs]], data[idxs], shape=(len(self.energ_lo), len(self.channel))
+        )
         self.sparse_matrix = coo.T  # .tocsr()
 
     @property
