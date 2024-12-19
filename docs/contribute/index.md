@@ -1,6 +1,6 @@
-## Install JAXspec repository locally
+## Install `jaxspec` repository locally
 
-Adding content to the JAXspec's source code requires you to clone the repository locally. This is done by running the
+Adding content to the `jaxspec`'s source code requires you to clone the repository locally. This is done by running the
 following command in your terminal:
 
 ``` bash
@@ -10,7 +10,7 @@ cd jaxspec
 
 ## Set up a clean environment
 
-JAXspec uses [Poetry](https://python-poetry.org/) to manage its dependencies. We recommand to start from a fresh
+`jaxspec` uses [Poetry](https://python-poetry.org/) to manage its dependencies. We recommand to start from a fresh
 Python environment, and install Poetry. If you use conda, you can create a new environment with
 
 ``` bash
@@ -18,7 +18,7 @@ conda create -n jaxspec python=3.10
 conda activate jaxspec
 ```
 
-To install Poetry, run the following in the (jaxspec) environment:
+To install Poetry, run the following in the (`jaxspec`) environment:
 
 ``` bash
 pip install poetry
