@@ -46,6 +46,7 @@ class Observation(xr.Dataset):
         quality,
         exposure,
         background=None,
+        background_unscaled=None,
         backratio=1.0,
         attributes: dict | None = None,
     ):
@@ -92,9 +93,14 @@ class Observation(xr.Dataset):
                 np.asarray(background, dtype=np.int64),
                 {"description": "Background counts", "unit": "photons"},
             ),
+            "folded_background_unscaled": (
+                ["folded_channel"],
+                np.asarray(np.ma.filled(grouping @ background_unscaled), dtype=np.int64),
+                {"description": "Background counts", "unit": "photons"},
+            ),
             "folded_background": (
                 ["folded_channel"],
-                np.asarray(np.ma.filled(grouping @ background), dtype=np.int64),
+                np.asarray(np.ma.filled(grouping @ background), dtype=np.float64),
                 {"description": "Background counts", "unit": "photons"},
             ),
         }
@@ -141,6 +147,7 @@ class Observation(xr.Dataset):
             pha.exposure,
             backratio=backratio,
             background=bkg.counts * backratio if bkg is not None else None,
+            background_unscaled=bkg.counts if bkg is not None else None,
             attributes=metadata,
         )
 

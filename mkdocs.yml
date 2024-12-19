@@ -36,6 +36,7 @@ nav:
       - Cookbook: faq/cookbook.md
   - Contribute:
     - Index : contribute/index.md
+    - Internal: contribute/internal.md
     - XSPEC: contribute/xspec.md
 
 

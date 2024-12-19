@@ -157,8 +157,10 @@ class ObsConfiguration(xr.Dataset):
 
         if observation.folded_background is not None:
             folded_background = observation.folded_background.data[row_idx]
+            folded_background_unscaled = observation.folded_background_unscaled.data[row_idx]
         else:
             folded_background = np.zeros_like(folded_counts)
+            folded_background_unscaled = np.zeros_like(folded_counts)
 
         data_dict = {
             "transfer_matrix": (
@@ -200,6 +202,14 @@ class ObsConfiguration(xr.Dataset):
                     "unit": "photons",
                 },
             ),
+            "folded_background_unscaled": (
+                ["folded_channel"],
+                folded_background_unscaled,
+                {
+                    "description": "To be done",
+                    "unit": "photons",
+                },
+            ),
         }
 
         return cls(
@@ -234,8 +244,8 @@ class ObsConfiguration(xr.Dataset):
         cls,
         instrument: Instrument,
         exposure: float,
-        low_energy: float = 1e-20,
-        high_energy: float = 1e20,
+        low_energy: float = 1e-300,
+        high_energy: float = 1e300,
     ):
         """
         Create a mock observation configuration from an instrument object. The fake observation will have zero counts.

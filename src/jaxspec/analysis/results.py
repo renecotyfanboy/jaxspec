@@ -390,6 +390,7 @@ class FitResult:
         scale: Literal["linear", "semilogx", "semilogy", "loglog"] = "loglog",
         alpha_envelope: (float, float) = (0.15, 0.25),
         style: str | Any = "default",
+        title: str | None = None,
     ) -> list[plt.Figure]:
         r"""
         Plot the posterior predictive distribution of the model. It also features a residual plot, defined using the
@@ -616,13 +617,14 @@ class FitResult:
                         ax[0].set_xscale("log")
                         ax[0].set_yscale("log")
 
-                fig.suptitle(f"Posterior predictive - {obs_id}")
                 fig.align_ylabels()
                 plt.subplots_adjust(hspace=0.0)
                 fig.tight_layout()
                 figure_list.append(fig)
+                fig.suptitle(f"Posterior predictive - {obs_id}" if title is None else title)
                 # fig.show()
 
+        plt.tight_layout()
         plt.show()
 
         return figure_list
