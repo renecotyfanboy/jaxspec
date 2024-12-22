@@ -606,6 +606,7 @@ class NSFitter(BayesianModelFitter):
                 max_samples=1e5,
                 parameter_estimation=True,
                 gradient_guided=True,
+                devices=jax.devices(),
                 # init_efficiency_threshold=0.01,
                 num_live_points=num_live_points,
             ),

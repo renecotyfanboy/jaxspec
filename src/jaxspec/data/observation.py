@@ -53,8 +53,9 @@ class Observation(xr.Dataset):
         if attributes is None:
             attributes = {}
 
-        if background is None:
+        if background is None or background_unscaled is None:
             background = np.zeros_like(counts, dtype=np.int64)
+            background_unscaled = np.zeros_like(counts, dtype=np.int64)
 
         data_dict = {
             "counts": (
