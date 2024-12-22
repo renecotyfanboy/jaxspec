@@ -35,6 +35,14 @@ prior_split_pars = {
     "tbabs_1_nh": dist.Uniform(0, 1),
 }
 
+prior = {
+    "powerlaw_1_alpha": dist.Uniform(0, 5),
+    "powerlaw_1_norm": dist.LogUniform(1e-5, 1e-2),
+    "blackbodyrad_1_kT": dist.Uniform(0, 5),
+    "blackbodyrad_1_norm": dist.LogUniform(1e-2, 1e2),
+    "tbabs_1_nh": dist.Uniform(0, 1),
+}
+
 single_obsconf = load_example_obsconf("NGC7793_ULX4_PN")
 list_of_obsconf = list(load_example_obsconf("NGC7793_ULX4_ALL").values())
 dict_of_obsconf = load_example_obsconf("NGC7793_ULX4_ALL")
@@ -61,19 +69,10 @@ def instruments():
 
 @pytest.fixture(scope="session")
 def obs_model_prior(obsconfs):
-    import numpyro.distributions as dist
-
     from jaxspec.model.additive import Blackbodyrad, Powerlaw
     from jaxspec.model.multiplicative import Tbabs
 
     model = Tbabs() * (Powerlaw() + Blackbodyrad())
-    prior = {
-        "powerlaw_1_alpha": dist.Uniform(0, 5),
-        "powerlaw_1_norm": dist.LogUniform(1e-5, 1e-2),
-        "blackbodyrad_1_kT": dist.Uniform(0, 5),
-        "blackbodyrad_1_norm": dist.LogUniform(1e-2, 1e2),
-        "tbabs_1_nh": dist.Uniform(0, 1),
-    }
 
     return obsconfs, model, prior
 
