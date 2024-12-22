@@ -5,29 +5,35 @@ import pytest
 from jaxspec.analysis.compare import plot_corner_comparison
 
 
-def test_plot_ppc(request, get_result_list):
+def test_plot_ppc(get_result_list):
     for name, result in zip(*get_result_list):
         result.plot_ppc(plot_components=True, plot_background=False)
 
 
-def test_plot_ppc_components(request, get_result_list):
+def test_plot_scales(get_result_list):
+    name, result = next(zip(*get_result_list))
+    for case in ["linear", "semilogx", "semilogy", "loglog"]:
+        result.plot_ppc(plot_components=True, plot_background=False, scale=case)
+
+
+def test_plot_ppc_components(get_result_list):
     for name, result in zip(*get_result_list):
         result.plot_ppc(n_sigmas=2)
 
 
-def test_plot_ppc_units(request, get_result_list):
+def test_plot_ppc_units(get_result_list):
     for name, result in zip(*get_result_list):
         for x_unit in ["angstrom", "keV", "Hz", "nm"]:
             result.plot_ppc(x_unit=x_unit)
 
 
-def test_plot_ppc_dtypes(request, get_result_list):
+def test_plot_ppc_dtypes(get_result_list):
     for name, result in zip(*get_result_list):
         for y_type in ["counts", "countrate", "photon_flux", "photon_flux_density"]:
             result.plot_ppc(y_type=y_type)
 
 
-def test_plot_corner(request, get_result_list):
+def test_plot_corner(get_result_list):
     for name, result in zip(*get_result_list):
         result.plot_corner()
 
