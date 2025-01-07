@@ -105,10 +105,16 @@ def test_run_mcmc(model, prior, obsconf, expectation, sampler):
     """Try to generate mock observations from the given combination of observation and priors"""
     with expectation:
         forward_model = MCMCFitter(model, prior, obsconf, background_model=None)
-        forward_model.fit(
+        result = forward_model.fit(
             num_chains=4,
             num_warmup=10,
             num_samples=10,
             sampler=sampler,
             mcmc_kwargs={"progress_bar": False},
         )
+
+        result.photon_flux(0.7, 1.2, register=True)
+        result.energy_flux(0.7, 1.2, register=True)
+        result.luminosity(0.7, 1.2, redshift=0.01, register=True)
+        [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
+        result.to_chain("test")
