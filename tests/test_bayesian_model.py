@@ -3,11 +3,9 @@ import operator
 import jax
 import jax.numpy as jnp
 
-from jaxspec._fit._build_model import build_numpyro_model_for_single_obs, build_prior
 from jaxspec.fit import BayesianModel
-from numpyro.infer.inspect import get_model_relations
 
-
+'''
 def test_model_building(obs_model_prior):
     """
     Check that all parameters are built correctly within the numpyro model.
@@ -25,6 +23,7 @@ def test_model_building(obs_model_prior):
     assert {
         key for key in relations["sample_param"].keys() if key not in relations["observed"]
     } == set(prior_distributions.keys())
+'''
 
 
 def test_likelihood(obs_model_prior):

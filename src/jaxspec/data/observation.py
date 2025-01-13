@@ -46,14 +46,16 @@ class Observation(xr.Dataset):
         quality,
         exposure,
         background=None,
+        background_unscaled=None,
         backratio=1.0,
         attributes: dict | None = None,
     ):
         if attributes is None:
             attributes = {}
 
-        if background is None:
+        if background is None or background_unscaled is None:
             background = np.zeros_like(counts, dtype=np.int64)
+            background_unscaled = np.zeros_like(counts, dtype=np.int64)
 
         data_dict = {
             "counts": (
@@ -92,9 +94,14 @@ class Observation(xr.Dataset):
                 np.asarray(background, dtype=np.int64),
                 {"description": "Background counts", "unit": "photons"},
             ),
+            "folded_background_unscaled": (
+                ["folded_channel"],
+                np.asarray(np.ma.filled(grouping @ background_unscaled), dtype=np.int64),
+                {"description": "Background counts", "unit": "photons"},
+            ),
             "folded_background": (
                 ["folded_channel"],
-                np.asarray(np.ma.filled(grouping @ background), dtype=np.int64),
+                np.asarray(np.ma.filled(grouping @ background), dtype=np.float64),
                 {"description": "Background counts", "unit": "photons"},
             ),
         }
@@ -128,14 +135,20 @@ class Observation(xr.Dataset):
         else:
             backratio = np.ones_like(pha.counts)
 
+        if (bkg is not None) and ("NET" in pha.flags):
+            counts = pha.counts + bkg.counts * backratio
+        else:
+            counts = pha.counts
+
         return cls.from_matrix(
-            pha.counts,
+            counts,
             pha.grouping,
             pha.channel,
             pha.quality,
             pha.exposure,
             backratio=backratio,
-            background=bkg.counts if bkg is not None else None,
+            background=bkg.counts * backratio if bkg is not None else None,
+            background_unscaled=bkg.counts if bkg is not None else None,
             attributes=metadata,
         )
 
