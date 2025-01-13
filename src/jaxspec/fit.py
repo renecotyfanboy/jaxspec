@@ -79,6 +79,22 @@ class BayesianModel:
         self.prior_distributions_func = prior_distributions_func
         self.init_params = self.prior_samples()
 
+        # Check the priors are suited for the observations
+        split_parameters = [
+            (param, shape[-1])
+            for param, shape in jax.tree.map(lambda x: x.shape, self.init_params).items()
+            if (len(shape) > 1)
+            and not param.startswith("_")
+            and not param.startswith("bkg")  # hardcoded for subtracted background
+        ]
+
+        for parameter, proposed_number_of_obs in split_parameters:
+            if proposed_number_of_obs != len(self.observation_container):
+                raise ValueError(
+                    f"Invalid splitting in the prior distribution. "
+                    f"Expected {len(self.observation_container)} but got {proposed_number_of_obs} for {parameter}"
+                )
+
     @cached_property
     def observation_container(self) -> dict[str, ObsConfiguration]:
         """
@@ -142,7 +158,9 @@ class BayesianModel:
                 with numpyro.plate("obs_plate_" + name, len(observation.folded_counts)):
                     numpyro.sample(
                         "obs_" + name,
-                        Poisson(obs_countrate + bkg_countrate / observation.folded_backratio.data),
+                        Poisson(
+                            obs_countrate + bkg_countrate
+                        ),  # / observation.folded_backratio.data
                         obs=observation.folded_counts.data if observed else None,
                     )
 
@@ -583,11 +601,13 @@ class NSFitter(BayesianModelFitter):
         ns = NestedSampler(
             bayesian_model,
             constructor_kwargs=dict(
-                num_parallel_workers=1,
                 verbose=verbose,
                 difficult_model=True,
-                max_samples=1e6,
+                max_samples=1e5,
                 parameter_estimation=True,
+                gradient_guided=True,
+                devices=jax.devices(),
+                # init_efficiency_threshold=0.01,
                 num_live_points=num_live_points,
             ),
             termination_kwargs=termination_kwargs if termination_kwargs else dict(),

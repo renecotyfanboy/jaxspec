@@ -7,13 +7,17 @@ pulsating candidate NGC 7793 ULX-4 from [Quintin & $al.$ (2021)](https://ui.adsa
 import numpyro
 
 numpyro.enable_x64()
-numpyro.set_platform("cpu")
-numpyro.set_host_device_count(4)
+numpyro.set_platform("cpu") # (1)!
+numpyro.set_host_device_count(16) # (2)!
 ```
+
+1. In general `JAX` will automatically look for `cuda` or `tpu` devices. If you work with GPUs/TPUs, remove this line.
+2. Change this number to the number of cores you want to use. If you work with GPUs/TPUs, remove this line.
+
 
 !!! Warning
 
-    These lines are extremely important and must be run at the beginning of most of your scripts. It tells `JAX` how
+    These lines are extremely important and must be run **at the beginning** of most of your scripts. It tells `JAX` how
     many cores you want to use and enforces the double precision, which is crucial when running MCMC.
 
 ## Define your model
@@ -67,12 +71,14 @@ prior = {
     "powerlaw_1_norm": dist.LogUniform(1e-5, 1e-2),
     "blackbodyrad_1_kT": dist.Uniform(0, 5),
     "blackbodyrad_1_norm": dist.LogUniform(1e-2, 1e2),
-    "tbabs_1_N_H": dist.Uniform(0, 1)
+    "tbabs_1_nh": dist.Uniform(0, 1)
 }
 
 forward = MCMCFitter(spectral_model , prior , obs)
-result = forward.fit(num_chains=4, num_warmup=1000, num_samples=1000)
+result = forward.fit(num_chains=16, num_warmup=1000, num_samples=5000) # (1)!
 ```
+
+1.  1000 warmup steps and 1000 samples are a good starting point for most of the cases. We put 5000 to have smoother plots here.
 
 ## Gather results
 
@@ -81,35 +87,14 @@ will return a $\LaTeX$ compilable table. You can also plot the parameter covaria
 
 ```python
 result.plot_corner()
-plt.show();
 ```
 
 ![Corner plot](statics/fitting_example_corner.png)
 
-```python
-print(result.table())
-```
-```latex
-\begin{table}
-    \centering
-    \caption{Results of the fit}
-    \label{tab:results}
-    \begin{tabular}{cccccc}
-        \hline
-		Model & blackbodyrad_1_kT & blackbodyrad_1_norm & powerlaw_1_alpha & powerlaw_1_norm & tbabs_1_N_H \\
-		\hline
-		Tbabs() * (Powerlaw() + Blackbodyrad()) & $0.744^{+0.035}_{-0.036}$ & $0.199^{+0.026}_{-0.044}$ & $2.024^{+0.100}_{-0.105}$ & $\left( 26.4^{+2.6}_{-2.9} \right) \times 10^{-5}$ & $0.098^{+0.029}_{-0.028}$ \\
-		\hline
-    \end{tabular}
-\end{table}
-```
-
-
 You can also plot the posterior predictive spectra on this observation.
 
 ```python
-result.plot_ppc()
-plt.show();
+result.plot_ppc(plot_components=True, n_sigmas=2)
 ```
 
 ![Posterior predictive plot](statics/fitting_example_ppc.png)

@@ -11,7 +11,7 @@ def test_ns(obs_model_prior):
 
     obsconf = obsconfs[0]
     fitter = NSFitter(model, prior, obsconf)
-    fitter.fit(num_samples=5000, num_live_points=200)
+    fitter.fit(num_samples=10000, num_live_points=1000, plot_diagnostics=True)
 
 
 def test_prior_predictive_coverage(obs_model_prior):

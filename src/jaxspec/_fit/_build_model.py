@@ -1,14 +1,12 @@
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import numpyro
 
 from jax.experimental.sparse import BCOO
 from jax.typing import ArrayLike
-from numpyro.distributions import Distribution, Poisson
+from numpyro.distributions import Distribution
 
 if TYPE_CHECKING:
     from ..data import ObsConfiguration
@@ -37,48 +35,6 @@ def forward_model(
 
     # The result is clipped at 1e-6 to avoid 0 round-off and diverging likelihoods
     return jnp.clip(expected_counts, a_min=1e-6)
-
-
-def build_numpyro_model_for_single_obs(
-    obs,
-    model,
-    background_model,
-    name: str = "",
-    sparse: bool = False,
-) -> Callable:
-    """
-    Build a numpyro model for a given observation and spectral model.
-    """
-
-    def numpyro_model(prior_params, observed=True):
-        # Return the expected countrate for a set of parameters
-        obs_model = jax.jit(lambda par: forward_model(model, par, obs, sparse=sparse))
-        countrate = obs_model(prior_params)
-
-        # Handle the background model
-        if (getattr(obs, "folded_background", None) is not None) and (background_model is not None):
-            bkg_countrate = background_model.numpyro_model(
-                obs, model, name="bkg_" + name, observed=observed
-            )
-
-        elif (getattr(obs, "folded_background", None) is None) and (background_model is not None):
-            raise ValueError(
-                "Trying to fit a background model but no background is linked to this observation"
-            )
-
-        else:
-            bkg_countrate = 0.0
-
-        # Register the observed value
-        # This is the case where we fit a model to a TOTAL spectrum as defined in OGIP standard
-        with numpyro.plate("obs_plate_" + name, len(obs.folded_counts)):
-            numpyro.sample(
-                "obs_" + name,
-                Poisson(countrate + bkg_countrate / obs.folded_backratio.data),
-                obs=obs.folded_counts.data if observed else None,
-            )
-
-    return numpyro_model
 
 
 def build_prior(prior: "PriorDictType", expand_shape: tuple = (), prefix=""):
