@@ -19,7 +19,7 @@ from jaxspec.model.additive import Powerlaw, Blackbodyrad
 from jaxspec.model.multiplicative import Tbabs
 from jaxspec.data import ObsConfiguration
 
-obs = ObsConfiguration.from_pha_file('obs_1.pha')
+obsconf = ObsConfiguration.from_pha_file('obs_1.pha')
 model = Tbabs() * (Powerlaw() + Blackbodyrad())
 ```
 
@@ -46,7 +46,7 @@ And now we can fakeit!
 ``` python
 from jaxspec.data.util import fakeit_for_multiple_parameters
 
-spectra = fakeit_for_multiple_parameters(obs, model, parameters)
+spectra = fakeit_for_multiple_parameters(obsconf, model, parameters)
 ```
 
 Let's plot some of the resulting spectra
@@ -59,7 +59,7 @@ plt.figure(figsize=(5,4))
 for i in range(10):
 
     plt.step(
-        obs.out_energies[0],
+        obsconf.out_energies[0],
         spectra[i, :],
         where="post"
     )
@@ -73,7 +73,7 @@ plt.loglog()
 
 ## Using only the instrument
 
-If you don't have any observation you can use as a reference, you can still build a mock [ObsConfiguration][jaxspec.data.ObsConfiguration]
+If you don't have any observation you can use as a reference, you can still build a mock [`ObsConfiguration`][jaxspec.data.ObsConfiguration]
 using the instrument you want to use.
 
 ``` python
@@ -90,7 +90,7 @@ obsconf = ObsConfiguration.mock_from_instrument(
 )
 ```
 
-Then you can use this `obsconf` to fakeit
+Then you can use this [`ObsConfiguration`][jaxspec.data.ObsConfiguration] within `fakeit_for_multiple_parameters` as before.
 
 ``` python
 spectra = fakeit_for_multiple_parameters(obsconf, model, parameters)
@@ -155,7 +155,7 @@ sharded_parameters = jax.device_put(parameters, sharding)
 Then we can use these sharded parameters to compute the fakeits in parallel
 
 ``` python
-fakeit_for_multiple_parameters(obs, model, sharded_parameters, apply_stat=False)
+fakeit_for_multiple_parameters(obsconf, model, sharded_parameters, apply_stat=False)
 ```
 
 !!! info

@@ -1,20 +1,26 @@
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, TypeVar
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 import jax
+import jax.numpy as jnp
+import numpy as np
 import numpyro
 
 from astropy.io import fits
+from jax.experimental.sparse import BCOO
 from numpyro import handlers
 
-from .._fit._build_model import forward_model
 from ..model.abc import SpectralModel
 from ..util.online_storage import table_manager
 from . import Instrument, ObsConfiguration, Observation
 
 K = TypeVar("K")
 V = TypeVar("V")
+
+if TYPE_CHECKING:
+    from ..data import ObsConfiguration
+    from ..model.abc import SpectralModel
 
 
 def load_example_pha(
@@ -124,8 +130,40 @@ def load_example_obsconf(source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"])
         raise ValueError(f"{source} not recognized.")
 
 
+def forward_model_with_multiple_inputs(
+    model: "SpectralModel",
+    parameters,
+    obs_configuration: "ObsConfiguration",
+    sparse=False,
+):
+    energies = np.asarray(obs_configuration.in_energies)
+    parameter_dims = next(iter(parameters.values())).shape
+
+    def flux_func(p):
+        return model.photon_flux(p, *energies)
+
+    for _ in parameter_dims:
+        flux_func = jax.vmap(flux_func)
+
+    flux_func = jax.jit(flux_func)
+
+    if sparse:
+        # folding.transfer_matrix.data.density > 0.015 is a good criterion to consider sparsify
+        transfer_matrix = BCOO.from_scipy_sparse(
+            obs_configuration.transfer_matrix.data.to_scipy_sparse().tocsr()
+        )
+
+    else:
+        transfer_matrix = np.asarray(obs_configuration.transfer_matrix.data.todense())
+
+    expected_counts = jnp.matvec(transfer_matrix, flux_func(parameters))
+
+    # The result is clipped at 1e-6 to avoid 0 round-off and diverging likelihoods
+    return jnp.clip(expected_counts, a_min=1e-6)
+
+
 def fakeit_for_multiple_parameters(
-    instrument: ObsConfiguration | list[ObsConfiguration],
+    obsconfs: ObsConfiguration | list[ObsConfiguration],
     model: SpectralModel,
     parameters: Mapping[K, V],
     rng_key: int = 0,
@@ -137,7 +175,7 @@ def fakeit_for_multiple_parameters(
 
 
     Parameters:
-        instrument: The instrumental setup.
+        obsconfs: The observational setup(s).
         model: The model to use.
         parameters: The parameters of the model.
         rng_key: The random number generator seed.
@@ -145,12 +183,12 @@ def fakeit_for_multiple_parameters(
         sparsify_matrix: Whether to sparsify the matrix or not.
     """
 
-    instruments = [instrument] if isinstance(instrument, ObsConfiguration) else instrument
+    obsconf_list = [obsconfs] if isinstance(obsconfs, ObsConfiguration) else obsconfs
     fakeits = []
 
-    for i, obs in enumerate(instruments):
-        countrate = jax.vmap(lambda p: forward_model(model, p, instrument, sparse=sparsify_matrix))(
-            parameters
+    for i, obsconf in enumerate(obsconf_list):
+        countrate = forward_model_with_multiple_inputs(
+            model, parameters, obsconf, sparse=sparsify_matrix
         )
 
         if apply_stat:
