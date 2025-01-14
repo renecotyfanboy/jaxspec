@@ -71,6 +71,32 @@ plt.loglog()
 
 ![Some spectra](statics/fakeits.png)
 
+## Using only the instrument
+
+If you don't have any observation you can use as a reference, you can still build a mock [ObsConfiguration][jaxspec.data.ObsConfiguration]
+using the instrument you want to use.
+
+``` python
+from jaxspec.data import ObsConfiguration, Instrument
+
+instrument = Instrument.from_ogip_file(
+    "instrument.rmf",
+    arf_path="instrument.arf"
+)
+
+obsconf = ObsConfiguration.mock_from_instrument(
+    instrument,
+    exposure=1e5,
+)
+```
+
+Then you can use this `obsconf` to fakeit
+
+``` python
+spectra = fakeit_for_multiple_parameters(obsconf, model, parameters)
+```
+
+
 ## Computing in parallel
 
 Thanks to the amazing [PositionalSharding](https://jax.readthedocs.io/en/latest/jax.sharding.html#jax.sharding.PositionalSharding)
