@@ -59,10 +59,10 @@ data_directory = Path(__file__).parent.resolve() / "data"
 if not data_directory.exists():
     os.mkdir(data_directory)
 
-with open("data_files.yml") as file:
+with open(data_directory / "data_files.yml") as file:
     data_collection = yaml.safe_load(file)
 
-with open("data_hash.yml") as file:
+with open(data_directory / "data_hash.yml") as file:
     data_hash = yaml.safe_load(file)
 
 pooch_dataset = pooch.create(
