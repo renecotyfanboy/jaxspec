@@ -156,13 +156,13 @@ class Gauss(AdditiveComponent):
     $$\mathcal{M}\left( E \right) = \frac{K}{\sigma \sqrt{2 \pi}}\exp\left(\frac{-(E-E_L)^2}{2\sigma^2}\right)$$
 
     !!! abstract "Parameters"
-        * $E_L$ (`E_l`) $\left[\text{keV}\right]$ : Energy of the line
+        * $E_L$ (`El`) $\left[\text{keV}\right]$ : Energy of the line
         * $\sigma$ (`sigma`) $\left[\text{keV}\right]$ : Width of the line
         * $K$ (`norm`) $\left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$ : Normalization
     """
 
     def __init__(self):
-        self.E_l = nnx.Param(2.0)
+        self.El = nnx.Param(2.0)
         self.sigma = nnx.Param(1e-2)
         self.norm = nnx.Param(1.0)
 
@@ -170,12 +170,12 @@ class Gauss(AdditiveComponent):
         return self.norm * (
             jsp.stats.norm.cdf(
                 e_high,
-                loc=jnp.asarray(self.E_l, dtype=jnp.float64),
+                loc=jnp.asarray(self.El, dtype=jnp.float64),
                 scale=jnp.asarray(self.sigma, dtype=jnp.float64),
             )
             - jsp.stats.norm.cdf(
                 e_low,
-                loc=jnp.asarray(self.E_l, dtype=jnp.float64),
+                loc=jnp.asarray(self.El, dtype=jnp.float64),
                 scale=jnp.asarray(self.sigma, dtype=jnp.float64),
             )
         )
@@ -246,13 +246,13 @@ class Agauss(AdditiveComponent):
     \frac{K}{\sigma \sqrt{2 \pi}} \exp\left(\frac{-(\lambda - \lambda_L)^2}{2 \sigma^2}\right)$$
 
     !!! abstract "Parameters"
-        * $\lambda_L$ (`lambda_l`) $\left[\unicode{x212B}\right]$ : Wavelength of the line in Angström
+        * $\lambda_L$ (`lambdal`) $\left[\unicode{x212B}\right]$ : Wavelength of the line in Angström
         * $\sigma$ (`sigma`) $\left[\unicode{x212B}\right]$ : Width of the line width in Angström
         * $K$ (`norm`) $\left[\frac{\unicode{x212B}~\text{photons}}{\text{keV}\text{cm}^2\text{s}}\right]$: Normalization
     """
 
     def __init__(self):
-        self.lambda_l = nnx.Param(12.0)
+        self.lambdaL = nnx.Param(12.0)
         self.sigma = nnx.Param(1e-2)
         self.norm = nnx.Param(1.0)
 
@@ -261,7 +261,7 @@ class Agauss(AdditiveComponent):
 
         return self.norm * jsp.stats.norm.pdf(
             hc / energy,
-            loc=jnp.asarray(self.lambda_l, dtype=jnp.float64),
+            loc=jnp.asarray(self.lambdaL, dtype=jnp.float64),
             scale=jnp.asarray(self.sigma, dtype=jnp.float64),
         )
 
