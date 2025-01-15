@@ -57,8 +57,3 @@
   pha_path: "Lynx/HDXI/fakeit_lynx.pha"
   rmf_path: "Lynx/HDXI/xrs_hdxi.rmf"
   arf_path: "Lynx/HDXI/xrs_hdxi_3x10.arf"
-
-- name : "IXPE/GPD"
-  pha_path: ["IXPE/GPD/ixpe_det1_src_I.pha", "IXPE/GPD/ixpe_det1_src_Q.pha", "IXPE/GPD/ixpe_det1_src_U.pha"]
-  rmf_path: "IXPE/GPD/ixpe_d1_20170101_alpha075_02.rmf"
-  arf_path: ["IXPE/GPD/ixpe_d1_20170101_alpha075_03.arf", "IXPE/GPD/ixpe_d1_20170101_alpha075_03.mrf", "IXPE/GPD/ixpe_d1_20170101_alpha075_03.mrf"]

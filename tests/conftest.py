@@ -54,15 +54,16 @@ list_of_obsconf = list(load_example_obsconf("NGC7793_ULX4_ALL").values())
 dict_of_obsconf = load_example_obsconf("NGC7793_ULX4_ALL")
 
 # Dir containing 8 files
-data_directory = Path(__file__).parent.resolve() / "data"
+parent_directory = Path(__file__).parent.resolve()
+data_directory = parent_directory / "data"
 
 if not data_directory.exists():
     os.mkdir(data_directory)
 
-with open(data_directory / "data_files.yml") as file:
+with open(parent_directory / "data_files.yml") as file:
     data_collection = yaml.safe_load(file)
 
-with open(data_directory / "data_hash.yml") as file:
+with open(parent_directory / "data_hash.yml") as file:
     data_hash = yaml.safe_load(file)
 
 pooch_dataset = pooch.create(
