@@ -4,10 +4,16 @@ import chex
 
 chex.set_n_cpu_devices(n=4)
 
+import os
+
+from pathlib import Path
+
 import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
+import pooch
 import pytest
+import yaml
 
 from jax import config
 from jaxspec.data.util import load_example_obsconf
@@ -46,6 +52,27 @@ prior = {
 single_obsconf = load_example_obsconf("NGC7793_ULX4_PN")
 list_of_obsconf = list(load_example_obsconf("NGC7793_ULX4_ALL").values())
 dict_of_obsconf = load_example_obsconf("NGC7793_ULX4_ALL")
+
+# Dir containing 8 files
+data_directory = Path(__file__).parent.resolve() / "data"
+
+if not data_directory.exists():
+    os.mkdir(data_directory)
+
+with open("data_files.yml") as file:
+    data_collection = yaml.safe_load(file)
+
+with open("data_hash.yml") as file:
+    data_hash = yaml.safe_load(file)
+
+pooch_dataset = pooch.create(
+    base_url="https://github.com/HEACIT/curated-test-data/raw/main/",
+    path=str(data_directory),
+    registry=data_hash,
+)
+
+for file in data_hash.keys():
+    pooch_dataset.fetch(file)
 
 
 @pytest.fixture(scope="session")

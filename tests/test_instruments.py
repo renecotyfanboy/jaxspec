@@ -1,20 +1,11 @@
 import shutil
 
-from pathlib import Path
-
 import matplotlib.pyplot as plt
-import numpy as np
 import pytest
-import yaml
 
 from astropy.io import fits
+from conftest import data_collection, data_directory
 from jaxspec.data import Instrument, ObsConfiguration, Observation
-
-# Dir containing 8 files
-data_directory = Path(__file__).parent.resolve() / "data"
-
-with open(data_directory / "observations.yml") as file:
-    data_collection = yaml.safe_load(file)
 
 
 def test_loading_non_existent_files():
@@ -35,11 +26,7 @@ def test_loading_curated_data_files_from_pha(observation):
     # Not working either because the header are wrong or the file is a pha2
     not_working = ["XMM-Newton/RGS", "XRISM/Resolve", "Chandra/LETGS", "IXPE/GPD"]
 
-    if observation["name"] in not_working:
-        with pytest.raises(Exception):
-            ObsConfiguration.from_pha_file(data_directory / observation["pha_path"])
-
-    else:
+    if observation["name"] not in not_working:
         ObsConfiguration.from_pha_file(data_directory / observation["pha_path"])
 
 

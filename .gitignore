@@ -10,7 +10,7 @@ main.py
 doc_notebooks/
 
 .ipynb_checkpoints
-*/.ipynb_checkpoints/*
+tests/data/
 *.ipynb
 poetry.lock
 # IPython
