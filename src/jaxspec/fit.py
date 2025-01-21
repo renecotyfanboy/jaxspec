@@ -13,7 +13,9 @@ import matplotlib.pyplot as plt
 import numpyro
 
 from jax import random
+from jax.experimental import mesh_utils
 from jax.random import PRNGKey
+from jax.sharding import PositionalSharding
 from numpyro.contrib.nested_sampling import NestedSampler
 from numpyro.distributions import Poisson, TransformedDistribution
 from numpyro.infer import AIES, ESS, MCMC, NUTS, Predictive
@@ -312,13 +314,26 @@ class BayesianModel:
         Check if the prior distribution include the observed data.
         """
         key_prior, key_posterior = jax.random.split(key, 2)
+        n_devices = len(jax.local_devices())
+        sharding = PositionalSharding(mesh_utils.create_device_mesh((n_devices,)))
+
+        # Sample from prior and correct if the number of samples is not a multiple of the number of devices
+        if num_samples % n_devices != 0:
+            num_samples = num_samples + n_devices - (num_samples % n_devices)
+
         prior_params = self.prior_samples(key=key_prior, num_samples=num_samples)
-        posterior_observations = self.mock_observations(prior_params, key=key_posterior)
+
+        # Split the parameters on every device
+        sharded_parameters = jax.device_put(prior_params, sharding)
+        posterior_observations = self.mock_observations(sharded_parameters, key=key_posterior)
 
         for key, value in self.observation_container.items():
             fig, ax = plt.subplots(
                 nrows=2, ncols=1, sharex=True, figsize=(5, 6), height_ratios=[3, 1]
             )
+
+            legend_plots = []
+            legend_labels = []
 
             y_observed, y_observed_low, y_observed_high = _error_bars_for_observed_data(
                 value.folded_counts.values, 1.0, "ct"
@@ -336,6 +351,11 @@ class BayesianModel:
             prior_plot = _plot_binned_samples_with_error(
                 ax[0], value.out_energies, posterior_observations["obs_" + key], n_sigmas=3
             )
+
+            legend_plots.append((true_data_plot,))
+            legend_labels.append("Observed")
+            legend_plots += prior_plot
+            legend_labels.append("Prior Predictive")
 
             # rank = np.vstack((posterior_observations["obs_" + key], value.folded_counts.values)).argsort(axis=0)[-1] / (num_samples) * 100
             counts = posterior_observations["obs_" + key]
@@ -363,7 +383,7 @@ class BayesianModel:
             ax[1].set_ylim(0, 100)
             ax[0].set_xlim(value.out_energies.min(), value.out_energies.max())
             ax[0].loglog()
-            ax[0].legend(loc="upper right")
+            ax[0].legend(legend_plots, legend_labels)
             plt.suptitle(f"Prior Predictive coverage for {key}")
             plt.tight_layout()
             plt.show()
