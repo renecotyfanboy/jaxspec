@@ -530,8 +530,10 @@ class FitResult:
                             alpha_envelope=alpha_envelope,
                         )
 
+                        name = component_name.split("*")[-1]
+
                         legend_plots += component_plot
-                        legend_labels.append(component_name)
+                        legend_labels.append(name)
 
                 if self.background_model is not None and plot_background:
                     # We plot the background only if it is included in the fit, i.e. by subtracting
