@@ -1,3 +1,0 @@
-[submodule "tests/data"]
-	path = tests/data
-	url = https://github.com/HEACIT/curated-test-data
