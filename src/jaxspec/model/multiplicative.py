@@ -228,9 +228,9 @@ class Tbpcf(MultiplicativeComponent):
         self.nh = nnx.Param(1.0)
         self.f = nnx.Param(0.2)
 
-    def continuum(self, energy):
+    def factor(self, energy):
         sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
-        return self.f * jnp.exp(-self.nh * sigma) + (1 - self.f)
+        return self.f * jnp.exp(-self.nh * sigma) + (1.0 - self.f)
 
 
 class FDcut(MultiplicativeComponent):
@@ -250,5 +250,5 @@ class FDcut(MultiplicativeComponent):
         self.Ec = nnx.Param(1.0)
         self.Ef = nnx.Param(3.0)
 
-    def continuum(self, energy):
+    def factor(self, energy):
         return (1 + jnp.exp((energy - self.Ec) / self.Ef)) ** -1
