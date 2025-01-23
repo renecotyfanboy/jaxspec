@@ -664,7 +664,7 @@ class FitResult:
         """
 
         consumer = ChainConsumer()
-        consumer.add_chain(self.to_chain(self.model.to_string()))
+        consumer.add_chain(self.to_chain("Results"))
         consumer.set_plot_config(config)
 
         # Context for default mpl style

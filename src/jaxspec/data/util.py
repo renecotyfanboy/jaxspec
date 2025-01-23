@@ -172,7 +172,29 @@ def fakeit_for_multiple_parameters(
 ):
     """
     Convenience function to simulate multiple spectra from a given model and a set of parameters.
+    This is supposed to be somewhat optimized and can handle multiple parameters at once without blowing
+    up the memory. The parameters should be passed as a dictionary with the parameter name as the key and
+    the parameter values as the values, the value can be a scalar or a nd-array.
 
+    # Example:
+
+    ``` python
+    from jaxspec.data.util import fakeit_for_multiple_parameters
+    from numpy.random import default_rng
+
+    rng = default_rng(42)
+    size = (10, 30)
+
+    parameters = {
+        "tbabs_1_nh": rng.uniform(0.1, 0.4, size=size),
+        "powerlaw_1_alpha": rng.uniform(1, 3, size=size),
+        "powerlaw_1_norm": rng.exponential(10 ** (-0.5), size=size),
+        "blackbodyrad_1_kT": rng.uniform(0.1, 3.0, size=size),
+        "blackbodyrad_1_norm": rng.exponential(10 ** (-3), size=size)
+    }
+
+    spectra = fakeit_for_multiple_parameters(obsconf, model, parameters)
+    ```
 
     Parameters:
         obsconfs: The observational setup(s).
