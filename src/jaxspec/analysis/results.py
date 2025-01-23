@@ -391,6 +391,8 @@ class FitResult:
         alpha_envelope: (float, float) = (0.15, 0.25),
         style: str | Any = "default",
         title: str | None = None,
+        figsize: tuple[float, float] = (6, 6),
+        x_lims: tuple[float, float] | None = None,
     ) -> list[plt.Figure]:
         r"""
         Plot the posterior predictive distribution of the model. It also features a residual plot, defined using the
@@ -400,7 +402,7 @@ class FitResult:
         {(\text{Posterior counts})_{84\%}-(\text{Posterior counts})_{16\%}} $$
 
         Parameters:
-            percentile: The percentile of the posterior predictive distribution to plot.
+            n_sigmas: The number of sigmas to plot the envelops.
             x_unit: The units of the x-axis. It can be either a string (parsable by astropy.units) or an astropy unit. It must be homogeneous to either a length, a frequency or an energy.
             y_type: The type of the y-axis. It can be either "counts", "countrate", "photon_flux" or "photon_flux_density".
             plot_background: Whether to plot the background model if it is included in the fit.
@@ -408,6 +410,9 @@ class FitResult:
             scale: The axes scaling
             alpha_envelope: The transparency range for envelops
             style: The style of the plot. It can be either a string or a matplotlib style context.
+            title: The title of the plot.
+            figsize: The size of the figure.
+            x_lims: The limits of the x-axis.
 
         Returns:
             A list of matplotlib figures for each observation in the model.
@@ -436,7 +441,7 @@ class FitResult:
                 fig, ax = plt.subplots(
                     2,
                     1,
-                    figsize=(6, 6),
+                    figsize=figsize,
                     sharex="col",
                     height_ratios=[0.7, 0.3],
                 )
@@ -525,8 +530,10 @@ class FitResult:
                             alpha_envelope=alpha_envelope,
                         )
 
+                        name = component_name.split("*")[-1]
+
                         legend_plots += component_plot
-                        legend_labels.append(component_name)
+                        legend_labels.append(name)
 
                 if self.background_model is not None and plot_background:
                     # We plot the background only if it is included in the fit, i.e. by subtracting
@@ -617,6 +624,9 @@ class FitResult:
                         ax[0].set_xscale("log")
                         ax[0].set_yscale("log")
 
+                if x_lims is not None:
+                    ax[0].set_xlim(*x_lims)
+
                 fig.align_ylabels()
                 plt.subplots_adjust(hspace=0.0)
                 fig.tight_layout()
@@ -654,7 +664,7 @@ class FitResult:
         """
 
         consumer = ChainConsumer()
-        consumer.add_chain(self.to_chain(self.model.to_string()))
+        consumer.add_chain(self.to_chain("Results"))
         consumer.set_plot_config(config)
 
         # Context for default mpl style

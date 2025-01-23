@@ -1,0 +1,59 @@
+# This file contains the list of observations contained in this repository.
+- name: "Chandra/ACIS"
+  pha_path: "Chandra/ACIS/acisf04487_001N023_r0009_pha3.fits.gz"
+  rmf_path: "Chandra/ACIS/acisf04487_001N022_r0009_rmf3.fits.gz"
+  arf_path: "Chandra/ACIS/acisf04487_001N022_r0009_arf3.fits.gz"
+
+- name: "Chandra/LETGS"
+  pha_path: "Chandra/LETGS/pha2.gz"
+  rmf_path: "Chandra/LETGS/leg_1.rmf.gz"
+  arf_path: "Chandra/LETGS/leg_1.arf.gz"
+
+- name: "NuSTAR/FPMA"
+  pha_path: "NuSTAR/FPMA/nu90402339002A01_sr.pha"
+  rmf_path: "NuSTAR/FPMA/nu90402339002A01_sr.rmf"
+  arf_path: "NuSTAR/FPMA/nu90402339002A01_sr.arf"
+
+- name: "NuSTAR/FPMB"
+  pha_path: "NuSTAR/FPMB/nu90402339002B01_sr.pha"
+  rmf_path: "NuSTAR/FPMB/nu90402339002B01_sr.rmf"
+  arf_path: "NuSTAR/FPMB/nu90402339002B01_sr.arf"
+
+- name: "XMM-Newton/EPIC-pn"
+  pha_path: "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits"
+  rmf_path: "XMM-Newton/EPIC-PN/PN.rmf"
+  arf_path: "XMM-Newton/EPIC-PN/PN.arf"
+
+- name: "XMM-Newton/EPIC-MOS1"
+  pha_path: "XMM-Newton/EPIC-MOS1/MOS1_spectrum_grp.fits"
+  rmf_path: "XMM-Newton/EPIC-MOS1/MOS1.rmf"
+  arf_path: "XMM-Newton/EPIC-MOS1/MOS1.arf"
+
+- name: "XMM-Newton/EPIC-MOS2"
+  pha_path: "XMM-Newton/EPIC-MOS2/MOS2_spectrum_grp.fits"
+  rmf_path: "XMM-Newton/EPIC-MOS2/MOS2.rmf"
+  arf_path: "XMM-Newton/EPIC-MOS2/MOS2.arf"
+
+- name: "XMM-Newton/RGS"
+  pha_path: "XMM-Newton/RGS/P0871591801R1S004SRSPEC1003.FIT.gz"
+  rmf_path: "XMM-Newton/RGS/P0871591801R1S004RSPMAT1003.FIT.gz"
+
+- name: "NICER/XTI"
+  pha_path: "NICER/XTI/g2_b_001_raw_opt.pha"
+  rmf_path: "NICER/XTI/2050300110.rmf"
+  arf_path: "NICER/XTI/2050300110_g2_b_001.arf"
+
+- name: "XRISM/Resolve"
+  pha_path: "XRISM/Resolve/xa_merged_p0px1000_Hp.pi.gz"
+  rmf_path: "XRISM/Resolve/xa_merged_p0px1000_HpS.rmf.gz"
+  arf_path: "XRISM/Resolve/rsl_standard_GVclosed.arf"
+
+- name: "Hitomi/SXS"
+  pha_path: "Hitomi/SXS/ah100040040sxs_src_grp.pha.gz"
+  rmf_path: "Hitomi/SXS/ah100040040sxs.rmf.gz"
+  arf_path: "Hitomi/SXS/ah100040040sxs.arf.gz"
+
+- name : "Lynx/HDXI"
+  pha_path: "Lynx/HDXI/fakeit_lynx.pha"
+  rmf_path: "Lynx/HDXI/xrs_hdxi.rmf"
+  arf_path: "Lynx/HDXI/xrs_hdxi_3x10.arf"
