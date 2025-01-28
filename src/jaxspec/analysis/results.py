@@ -140,9 +140,9 @@ class FitResult:
 
             if len(total_shape) < len(input_parameters[f"{module}_{parameter}"].shape):
                 # If there are only chains and draws, we reduce
-                input_parameters[f"{module}_{parameter}"] = input_parameters[
-                    f"{module}_{parameter}"
-                ][..., 0]
+                input_parameters[f"{module}_{parameter}"] = jnp.broadcast_to(
+                    input_parameters[f"{module}_{parameter}"][..., 0], total_shape
+                )
 
             else:
                 input_parameters[f"{module}_{parameter}"] = jnp.broadcast_to(
