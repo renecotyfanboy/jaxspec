@@ -491,6 +491,9 @@ class FitResult:
                     alpha=0.7,
                 )
 
+                lowest_y = y_observed.min()
+                highest_y = y_observed.max()
+
                 legend_plots.append((true_data_plot,))
                 legend_labels.append("Observed")
                 legend_plots += model_plot
@@ -574,6 +577,9 @@ class FitResult:
                         alpha=0.7,
                     )
 
+                    lowest_y = min(lowest_y, y_observed_bkg.min())
+                    highest_y = max(highest_y, y_observed_bkg.max())
+
                     legend_plots.append((true_bkg_plot,))
                     legend_labels.append("Observed (bkg)")
                     legend_plots += model_bkg_plot
@@ -607,7 +613,7 @@ class FitResult:
                 ax[1].set_yticks(range(-3, 4), minor=True)
 
                 ax[0].set_xlim(xbins.value.min(), xbins.value.max())
-
+                ax[0].set_ylim(lowest_y.value * 0.8, highest_y.value * 1.2)
                 ax[0].legend(legend_plots, legend_labels)
 
                 match scale:
