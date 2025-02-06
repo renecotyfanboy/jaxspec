@@ -227,12 +227,15 @@ class Diskbb(AdditiveComponent):
             return e**2 * (kT / tin) ** (-2 / p - 1) / (jnp.exp(e / kT) - 1)
 
         integral = integrate_interval(integrand)
+        norm = jnp.asarray(self.norm)
+        Tin = jnp.asarray(self.Tin)
+
         return (
-            self.norm
+            norm
             * 2.78e-3
             * (0.75 / p)
-            / self.Tin
-            * jnp.vectorize(lambda e: integral(tout, self.Tin, e, self.Tin, p))(energy)
+            / jnp.asarray(Tin)
+            * jnp.vectorize(lambda e: integral(tout, Tin, e, Tin, p))(energy)
         )
 
 
