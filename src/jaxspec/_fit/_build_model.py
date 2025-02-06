@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
@@ -19,6 +20,8 @@ def forward_model(
     parameters,
     obs_configuration: "ObsConfiguration",
     sparse=False,
+    gain: Callable | None = None,
+    shift: Callable | None = None,
 ):
     energies = np.asarray(obs_configuration.in_energies)
 
@@ -31,10 +34,13 @@ def forward_model(
     else:
         transfer_matrix = np.asarray(obs_configuration.transfer_matrix.data.todense())
 
-    expected_counts = transfer_matrix @ model.photon_flux(parameters, *energies)
+    energies = shift(energies) if shift is not None else energies
+    factor = gain(energies) if gain is not None else 1.0
+    factor = jnp.clip(factor, min=0.0)  # Ensure the gain is positive to avoid NaNs
+    expected_counts = transfer_matrix @ (model.photon_flux(parameters, *energies) * factor)
 
     # The result is clipped at 1e-6 to avoid 0 round-off and diverging likelihoods
-    return jnp.clip(expected_counts, a_min=1e-6)
+    return jnp.clip(expected_counts, min=1e-6)
 
 
 def build_prior(prior: "PriorDictType", expand_shape: tuple = (), prefix=""):

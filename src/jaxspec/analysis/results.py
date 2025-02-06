@@ -491,8 +491,8 @@ class FitResult:
                     alpha=0.7,
                 )
 
-                lowest_y = y_observed.min()
-                highest_y = y_observed.max()
+                lowest_y = np.nanmin(y_observed)
+                highest_y = np.nanmax(y_observed)
 
                 legend_plots.append((true_data_plot,))
                 legend_labels.append("Observed")
@@ -577,18 +577,18 @@ class FitResult:
                         alpha=0.7,
                     )
 
-                    lowest_y = min(lowest_y, y_observed_bkg.min())
-                    highest_y = max(highest_y, y_observed_bkg.max())
+                    lowest_y = np.nanmin(lowest_y, np.nanmin(y_observed_bkg))
+                    highest_y = np.nanmax(highest_y, np.nanmax(y_observed_bkg))
 
                     legend_plots.append((true_bkg_plot,))
                     legend_labels.append("Observed (bkg)")
                     legend_plots += model_bkg_plot
                     legend_labels.append("Model (bkg)")
 
-                max_residuals = np.max(np.abs(residual_samples))
+                max_residuals = np.nanmax(np.abs(residual_samples))
 
                 ax[0].loglog()
-                ax[1].set_ylim(-max(3.5, max_residuals), +max(3.5, max_residuals))
+                ax[1].set_ylim(-np.nanmax([3.5, max_residuals]), +np.nanmax([3.5, max_residuals]))
                 ax[0].set_ylabel(f"Folded spectrum\n [{y_units:latex_inline}]")
                 ax[1].set_ylabel("Residuals \n" + r"[$\sigma$]")
 
@@ -635,9 +635,9 @@ class FitResult:
 
                 fig.align_ylabels()
                 plt.subplots_adjust(hspace=0.0)
+                fig.suptitle(f"Posterior predictive - {obs_id}" if title is None else title)
                 fig.tight_layout()
                 figure_list.append(fig)
-                fig.suptitle(f"Posterior predictive - {obs_id}" if title is None else title)
                 # fig.show()
 
         plt.tight_layout()
