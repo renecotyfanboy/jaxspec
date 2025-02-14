@@ -9,7 +9,8 @@ from jax.scipy.integrate import trapezoid
 from numpyro.distributions import Poisson
 from tinygp import GaussianProcess, kernels
 
-from .._fit._build_model import build_prior, forward_model
+from jaxspec.fit._build_model import build_prior, forward_model
+
 from .abc import SpectralModel
 
 
@@ -42,7 +43,7 @@ class SubtractedBackground(BackgroundModel):
 
     def numpyro_model(self, observation, name: str = "", observed=True):
         _, observed_counts = observation.out_energies, observation.folded_background.data
-        numpyro.deterministic(f"bkg_{name}", observed_counts)
+        numpyro.deterministic(f"bkg/~/{name}", observed_counts)
 
         return observed_counts
 
@@ -61,11 +62,11 @@ class BackgroundWithError(BackgroundModel):
         _, observed_counts = obs.out_energies, obs.folded_background.data
         alpha = observed_counts + 1
         beta = 1
-        countrate = numpyro.sample(f"_bkg_{name}_countrate", dist.Gamma(alpha, rate=beta))
+        countrate = numpyro.sample(f"bkg/~/_{name}_countrate", dist.Gamma(alpha, rate=beta))
 
-        with numpyro.plate(f"bkg_{name}_plate", len(observed_counts)):
+        with numpyro.plate(f"bkg/~/{name}_plate", len(observed_counts)):
             numpyro.sample(
-                f"bkg_{name}", dist.Poisson(countrate), obs=observed_counts if observed else None
+                f"bkg/~/{name}", dist.Poisson(countrate), obs=observed_counts if observed else None
             )
 
         return countrate
@@ -111,17 +112,17 @@ class GaussianProcessBackground(BackgroundModel):
 
         # The parameters of the GP model
         mean = numpyro.sample(
-            f"_bkg_{name}_mean", dist.Normal(jnp.log(jnp.mean(observed_counts)), 2.0)
+            f"bkg/~/_{name}_mean", dist.Normal(jnp.log(jnp.mean(observed_counts)), 2.0)
         )
-        sigma = numpyro.sample(f"_bkg_{name}_sigma", dist.HalfNormal(3.0))
-        rho = numpyro.sample(f"_bkg_{name}_rho", dist.HalfNormal(10.0))
+        sigma = numpyro.sample(f"bkg/~/_{name}_sigma", dist.HalfNormal(3.0))
+        rho = numpyro.sample(f"bkg/~/_{name}_rho", dist.HalfNormal(10.0))
 
         # Set up the kernel and GP objects
         kernel = sigma**2 * self.kernel(rho)
         nodes = jnp.linspace(0, 1, self.n_nodes)
         gp = GaussianProcess(kernel, nodes, diag=1e-5 * jnp.ones_like(nodes), mean=mean)
 
-        log_rate = numpyro.sample(f"_bkg_{name}_log_rate_nodes", gp.numpyro_dist())
+        log_rate = numpyro.sample(f"bkg/~/_{name}_log_rate_nodes", gp.numpyro_dist())
 
         interp_count_rate = jnp.exp(
             jnp.interp(energy, nodes * (self.e_max - self.e_min) + self.e_min, log_rate)
@@ -129,9 +130,9 @@ class GaussianProcessBackground(BackgroundModel):
         count_rate = trapezoid(interp_count_rate, energy, axis=0)
 
         # Finally, our observation model is Poisson
-        with numpyro.plate("bkg_plate_" + name, len(observed_counts)):
+        with numpyro.plate("bkg/~/plate_" + name, len(observed_counts)):
             numpyro.sample(
-                f"bkg_{name}", dist.Poisson(count_rate), obs=observed_counts if observed else None
+                f"bkg/~/{name}", dist.Poisson(count_rate), obs=observed_counts if observed else None
             )
 
         return count_rate
@@ -150,9 +151,9 @@ class SpectralModelBackground(BackgroundModel):
         )
         bkg_countrate = bkg_model(params)
 
-        with numpyro.plate("bkg_plate_" + name, len(observation.folded_background)):
+        with numpyro.plate("bkg/~/plate_" + name, len(observation.folded_background)):
             numpyro.sample(
-                "bkg_" + name,
+                "bkg/~/" + name,
                 Poisson(bkg_countrate),
                 obs=observation.folded_background.data if observed else None,
             )

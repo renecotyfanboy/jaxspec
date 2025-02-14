@@ -11,9 +11,9 @@ from jax.typing import ArrayLike
 from numpyro.distributions import Distribution
 
 if TYPE_CHECKING:
-    from ..data import ObsConfiguration
-    from ..model.abc import SpectralModel
-    from ..util.typing import PriorDictType
+    from jaxspec.data import ObsConfiguration
+    from jaxspec.model.abc import SpectralModel
+    from jaxspec.util.typing import PriorDictType
 
 
 def forward_model(

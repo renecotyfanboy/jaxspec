@@ -18,7 +18,7 @@ class ConstantGain(GainModel):
         self.prior_distribution = prior_distribution
 
     def numpyro_model(self, observation_name: str):
-        factor = numpyro.sample(f"ins_gain_{observation_name}", self.prior_distribution)
+        factor = numpyro.sample(f"ins/~/gain_{observation_name}", self.prior_distribution)
 
         def gain(energy):
             return factor
@@ -34,7 +34,7 @@ class PolynomialGain(GainModel):
 
     def numpyro_model(self, observation_name: str):
         polynomial_coefficient = numpyro.sample(
-            f"ins_gain_{observation_name}", self.prior_distribution
+            f"ins/~/gain_{observation_name}", self.prior_distribution
         )
 
         if self.degree == 0:
@@ -64,7 +64,7 @@ class PolynomialShift(ShiftModel):
 
     def numpyro_model(self, observation_name: str):
         polynomial_coefficient = numpyro.sample(
-            f"ins_shift_{observation_name}", self.prior_distribution
+            f"ins/~/shift_{observation_name}", self.prior_distribution
         )
 
         if self.degree == 0:

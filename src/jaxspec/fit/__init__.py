@@ -23,18 +23,18 @@ from numpyro.infer.inspect import get_model_relations
 from numpyro.infer.reparam import TransformReparam
 from numpyro.infer.util import log_density
 
-from ._fit._build_model import build_prior, forward_model
-from .analysis._plot import (
+from ..analysis._plot import (
     _error_bars_for_observed_data,
     _plot_binned_samples_with_error,
     _plot_poisson_data_with_error,
 )
-from .analysis.results import FitResult
-from .data import ObsConfiguration
-from .model.abc import SpectralModel
-from .model.background import BackgroundModel
-from .model.instrument import InstrumentModel
-from .util.typing import PriorDictType
+from ..analysis.results import FitResult
+from ..data import ObsConfiguration
+from ..model.abc import SpectralModel
+from ..model.background import BackgroundModel
+from ..model.instrument import InstrumentModel
+from ..util.typing import PriorDictType
+from ._build_model import build_prior, forward_model
 
 
 class BayesianModel:
@@ -76,7 +76,9 @@ class BayesianModel:
 
             def prior_distributions_func():
                 return build_prior(
-                    prior_distributions, expand_shape=(len(self.observation_container),)
+                    prior_distributions,
+                    expand_shape=(len(self.observation_container),),
+                    prefix="mod/~/",
                 )
 
         else:
@@ -168,9 +170,9 @@ class BayesianModel:
                 obs_countrate = obs_model(params)
 
                 # Register the observation as an observed site
-                with numpyro.plate("obs_plate_" + name, len(observation.folded_counts)):
+                with numpyro.plate("obs_plate/~/" + name, len(observation.folded_counts)):
                     numpyro.sample(
-                        "obs_" + name,
+                        "obs/~/" + name,
                         Poisson(
                             obs_countrate + bkg_countrate
                         ),  # / observation.folded_backratio.data
