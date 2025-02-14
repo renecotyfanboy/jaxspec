@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import numpyro
@@ -22,6 +23,7 @@ def forward_model(
     sparse=False,
     gain: Callable | None = None,
     shift: Callable | None = None,
+    split_branches: bool = False,
 ):
     energies = np.asarray(obs_configuration.in_energies)
 
@@ -35,12 +37,19 @@ def forward_model(
         transfer_matrix = np.asarray(obs_configuration.transfer_matrix.data.todense())
 
     energies = shift(energies) if shift is not None else energies
+    energies = jnp.clip(energies, min=1e-6)  # Ensure shifted energies remain positive
     factor = gain(energies) if gain is not None else 1.0
     factor = jnp.clip(factor, min=0.0)  # Ensure the gain is positive to avoid NaNs
-    expected_counts = transfer_matrix @ (model.photon_flux(parameters, *energies) * factor)
 
-    # The result is clipped at 1e-6 to avoid 0 round-off and diverging likelihoods
-    return jnp.clip(expected_counts, min=1e-6)
+    if not split_branches:
+        expected_counts = transfer_matrix @ (model.photon_flux(parameters, *energies) * factor)
+        return jnp.clip(expected_counts, min=1e-6)  # Ensure the expected counts are positive
+
+    else:
+        model_flux = model.photon_flux(parameters, *energies, split_branches=True)
+        return jax.tree.map(
+            lambda f: jnp.clip(transfer_matrix @ (f * factor), min=1e-6), model_flux
+        )
 
 
 def build_prior(prior: "PriorDictType", expand_shape: tuple = (), prefix=""):
