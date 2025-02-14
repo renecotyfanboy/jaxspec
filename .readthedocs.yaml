@@ -13,21 +13,17 @@ build:
   # These packages are needed to build docs with image optimization
   jobs:
     post_create_environment:
-      # Install poetry
-      # https://python-poetry.org/docs/#installing-manually
-      - pip install poetry
-      # Tell poetry to not use a virtual environment
-      - poetry config virtualenvs.create false
+      # Install uv
+      - pip install uv
     post_install:
       # Install dependencies with 'docs' dependency group
-      # https://python-poetry.org/docs/managing-dependencies/#dependency-groups
-      - poetry install --with docs
+      - uv pip install -r pyproject.toml
       # Using insiders versions of mkdocs-material & mkdocstrings
-      - pip uninstall mkdocs-material -y # mkdocstrings mkdocstrings-python
-      - pip install git+https://$GH_TOKEN@github.com/squidfunk/mkdocs-material-insiders.git@9.5.36-insiders-4.53.13
-      - pip install mkdocstrings mkdocstrings-python #git+https://$GH_TOKEN@github.com/pawamoy-insiders/mkdocstrings-python.git
-      - pip install mkdocs-autorefs
-      - pip install mkdocs-jupyter # This is bugged, I enforced it manually, let's see if it works
+      - uv pip uninstall mkdocs-material # mkdocstrings mkdocstrings-python
+      - uv pip install git+https://$GH_TOKEN@github.com/squidfunk/mkdocs-material-insiders.git@9.5.36-insiders-4.53.13
+      - uv pip install mkdocstrings mkdocstrings-python
+      - uv pip install mkdocs-autorefs
+      - uv pip install mkdocs-jupyter # This is bugged, I enforced it manually, let's see if it works
 
   apt_packages:
     - libcairo2-dev
