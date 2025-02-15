@@ -33,6 +33,7 @@ from .analysis.results import FitResult
 from .data import ObsConfiguration
 from .model.abc import SpectralModel
 from .model.background import BackgroundModel
+from .model.instrument import InstrumentModel
 from .util.typing import PriorDictType
 
 
@@ -48,6 +49,7 @@ class BayesianModel:
         prior_distributions: PriorDictType | Callable,
         observations: ObsConfiguration | list[ObsConfiguration] | dict[str, ObsConfiguration],
         background_model: BackgroundModel = None,
+        instrument_model: InstrumentModel = None,
         sparsify_matrix: bool = False,
     ):
         """
@@ -59,11 +61,13 @@ class BayesianModel:
                 callable function that returns parameter samples.
             observations: the observations to fit the model to.
             background_model: the background model to fit.
+            instrument_model: the instrument model to fit.
             sparsify_matrix: whether to sparsify the transfer matrix.
         """
         self.model = model
         self._observations = observations
         self.background_model = background_model
+        self.instrument_model = instrument_model
         self.sparse = sparsify_matrix
 
         if not callable(prior_distributions):
@@ -150,9 +154,16 @@ class BayesianModel:
                 # They can be identical or different for each observation
                 params = jax.tree.map(lambda x: x[i], prior_params)
 
+                if self.instrument_model is not None:
+                    gain, shift = self.instrument_model.get_gain_and_shift_model(name)
+                else:
+                    gain, shift = None, None
+
                 # Forward model the observation and get the associated countrate
                 obs_model = jax.jit(
-                    lambda par: forward_model(self.model, par, observation, sparse=self.sparse)
+                    lambda par: forward_model(
+                        self.model, par, observation, sparse=self.sparse, gain=gain, shift=shift
+                    )
                 )
                 obs_countrate = obs_model(params)
 
