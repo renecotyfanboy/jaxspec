@@ -11,3 +11,4 @@ docs
 .cache
 .github
 .ipynb_checkpoints
+.venv

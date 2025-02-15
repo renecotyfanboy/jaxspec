@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM renecoty/heasoft:poetry
+FROM renecoty/heasoft:v6.34
 
 WORKDIR /jaxspec
 
@@ -8,16 +8,12 @@ USER root
 RUN apt-get update && \
     apt-get install -y git
 
-RUN pip install poetry
+RUN pip install uv
 
-COPY pyproject.toml /jaxspec/
+ADD src /jaxspec/src
+ADD tests /jaxspec/tests
+ADD pyproject.toml /jaxspec/pyproject.toml
+ADD README.md /jaxspec/README.md
 
-ENV POETRY_VIRTUALENVS_IN_PROJECT=0 \
-    POETRY_VIRTUALENVS_CREATE=0 \
-    POETRY_CACHE_DIR=/tmp/poetry_cache
-
-RUN poetry install --no-root --no-ansi --no-interaction
-
-COPY . /jaxspec
-
-RUN poetry install --no-ansi --no-interaction
+RUN uv sync --no-group docs --no-group dev --python 3.12
+ENV PATH="/app/.venv/bin:$PATH"
