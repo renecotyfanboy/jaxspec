@@ -228,12 +228,17 @@ def fakeit_for_multiple_parameters(
     return fakeits[0] if len(fakeits) == 1 else fakeits
 
 
-def data_path_finder(pha_path: str) -> tuple[str | None, str | None, str | None]:
+def data_path_finder(
+    pha_path: str, require_arf: bool = True, require_rmf: bool = True, require_bkg: bool = False
+) -> tuple[str | None, str | None, str | None]:
     """
     Function which tries its best to find the ARF, RMF and BKG files associated with a given PHA file.
 
     Parameters:
         pha_path: The PHA file path.
+        require_arf: Whether to raise an error if the ARF file is not found.
+        require_rmf: Whether to raise an error if the RMF file is not found.
+        require_bkg: Whether to raise an error if the BKG file is not found.
 
     Returns:
         arf_path: The ARF file path.
@@ -241,23 +246,23 @@ def data_path_finder(pha_path: str) -> tuple[str | None, str | None, str | None]
         bkg_path: The BKG file path.
     """
 
-    def find_path(file_name: str, directory: str) -> str | None:
+    def find_path(file_name: str, directory: str, raise_err: bool = True) -> str | None:
         if file_name.lower() != "none" and file_name != "":
-            return find_file_or_compressed_in_dir(file_name, directory)
+            return find_file_or_compressed_in_dir(file_name, directory, raise_err)
         else:
             return None
 
     header = fits.getheader(pha_path, "SPECTRUM")
     directory = str(Path(pha_path).parent)
 
-    arf_path = find_path(header.get("ANCRFILE", "none"), directory)
-    rmf_path = find_path(header.get("RESPFILE", "none"), directory)
-    bkg_path = find_path(header.get("BACKFILE", "none"), directory)
+    arf_path = find_path(header.get("ANCRFILE", "none"), directory, require_arf)
+    rmf_path = find_path(header.get("RESPFILE", "none"), directory, require_rmf)
+    bkg_path = find_path(header.get("BACKFILE", "none"), directory, require_bkg)
 
     return arf_path, rmf_path, bkg_path
 
 
-def find_file_or_compressed_in_dir(path: str | Path, directory: str | Path) -> str:
+def find_file_or_compressed_in_dir(path: str | Path, directory: str | Path, raise_err: bool) -> str:
     """
     Try to find a file or its .gz compressed version in a given directory and return
     the full path of the file.
@@ -275,5 +280,5 @@ def find_file_or_compressed_in_dir(path: str | Path, directory: str | Path) -> s
         if file.suffix == ".gz":
             return str(file)
 
-    else:
+    elif raise_err:
         raise FileNotFoundError(f"Can't find {path}(.gz) in {directory}.")

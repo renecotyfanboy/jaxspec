@@ -85,7 +85,11 @@ class ObsConfiguration(xr.Dataset):
 
         from .util import data_path_finder
 
-        arf_path_default, rmf_path_default, bkg_path_default = data_path_finder(pha_path)
+        arf_path_default, rmf_path_default, bkg_path_default = data_path_finder(
+            pha_path,
+            require_arf=arf_path is None,
+            require_rmf=rmf_path is None,
+        )
 
         arf_path = arf_path_default if arf_path is None else arf_path
         rmf_path = rmf_path_default if rmf_path is None else rmf_path
