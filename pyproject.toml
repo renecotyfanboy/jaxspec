@@ -10,7 +10,7 @@ dependencies = [
     "jax>=0.5.0,<0.6",
     "numpy<3.0.0",
     "pandas>=2.2.0,<3",
-    "astropy>=6.0.0,<7",
+    "astropy>=6.0.0,<8",
     "numpyro>=0.17.0,<0.18",
     "networkx~=3.1",
     "matplotlib>=3.8.0,<4",
