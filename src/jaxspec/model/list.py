@@ -1,4 +1,5 @@
 import inspect
+
 from .abc import ModelComponent
 from .additive import *  # noqa: F403
 from .multiplicative import *  # noqa: F403
@@ -8,7 +9,9 @@ def all_models(cls: ModelComponent) -> list[ModelComponent]:
     """
     Return a list of all the subclasses of a given ModelComponent class
     """
-    subclasses = list(set(cls.__subclasses__()).union([s for c in cls.__subclasses__() for s in all_models(c)]))
+    subclasses = list(
+        set(cls.__subclasses__()).union([s for c in cls.__subclasses__() for s in all_models(c)])
+    )
 
     return [s for s in subclasses if not inspect.isabstract(s)]
 
