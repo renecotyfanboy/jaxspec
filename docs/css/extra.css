@@ -1,0 +1,13 @@
+a.card-link center {
+    width: fit-content;
+    display: block;
+    margin: 0 auto;
+}
+
+a.card-link .card-title {
+    font-size: 1.5em;
+}
+
+a.card-link {
+    color: initial; // Make cards have white text until hovered.
+}

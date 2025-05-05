@@ -172,6 +172,7 @@ extra_css:
   - css/material.css
   - css/mkdocstrings.css
   - css/xarray.css
+  - css/extra.css
 
 extra_javascript:
   - javascripts/mathjax.js
