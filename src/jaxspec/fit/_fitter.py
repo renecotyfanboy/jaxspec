@@ -1,0 +1,277 @@
+import warnings
+
+from abc import ABC, abstractmethod
+from typing import Literal
+
+import arviz as az
+import jax
+import numpyro
+
+from jax import random
+from jax.random import PRNGKey
+from numpyro.contrib.nested_sampling import NestedSampler
+from numpyro.infer import AIES, ESS, MCMC, NUTS, Predictive
+
+from ..analysis.results import FitResult
+from ._bayesian_model import BayesianModel
+
+
+class BayesianModelFitter(BayesianModel, ABC):
+    def build_inference_data(
+        self,
+        posterior_samples,
+        num_chains: int = 1,
+        num_predictive_samples: int = 1000,
+        key: PRNGKey = PRNGKey(42),
+        use_transformed_model: bool = False,
+        filter_inference_data: bool = True,
+    ) -> az.InferenceData:
+        """
+        Build an [InferenceData][arviz.InferenceData] object from posterior samples.
+
+        Parameters:
+            posterior_samples: the samples from the posterior distribution.
+            num_chains: the number of chains used to sample the posterior.
+            num_predictive_samples: the number of samples to draw from the prior.
+            key: the random key used to initialize the sampler.
+            use_transformed_model: whether to use the transformed model to build the InferenceData.
+            filter_inference_data: whether to filter the InferenceData to keep only the relevant parameters.
+        """
+
+        numpyro_model = (
+            self.transformed_numpyro_model if use_transformed_model else self.numpyro_model
+        )
+
+        keys = random.split(key, 3)
+
+        posterior_predictive = Predictive(numpyro_model, posterior_samples)(keys[0], observed=False)
+
+        prior = Predictive(numpyro_model, num_samples=num_predictive_samples * num_chains)(
+            keys[1], observed=False
+        )
+
+        log_likelihood = numpyro.infer.log_likelihood(numpyro_model, posterior_samples)
+
+        seeded_model = numpyro.handlers.substitute(
+            numpyro.handlers.seed(numpyro_model, keys[3]),
+            substitute_fn=numpyro.infer.init_to_sample,
+        )
+
+        observations = {
+            name: site["value"]
+            for name, site in numpyro.handlers.trace(seeded_model).get_trace().items()
+            if site["type"] == "sample" and site["is_observed"]
+        }
+
+        def reshape_first_dimension(arr):
+            new_dim = arr.shape[0] // num_chains
+            new_shape = (num_chains, new_dim) + arr.shape[1:]
+            reshaped_array = arr.reshape(new_shape)
+
+            return reshaped_array
+
+        posterior_samples = {
+            key: reshape_first_dimension(value) for key, value in posterior_samples.items()
+        }
+        prior = {key: value[None, :] for key, value in prior.items()}
+        posterior_predictive = {
+            key: reshape_first_dimension(value) for key, value in posterior_predictive.items()
+        }
+        log_likelihood = {
+            key: reshape_first_dimension(value) for key, value in log_likelihood.items()
+        }
+
+        inference_data = az.from_dict(
+            posterior_samples,
+            prior=prior,
+            posterior_predictive=posterior_predictive,
+            log_likelihood=log_likelihood,
+            observed_data=observations,
+        )
+
+        return (
+            self.filter_inference_data(inference_data) if filter_inference_data else inference_data
+        )
+
+    def filter_inference_data(
+        self,
+        inference_data: az.InferenceData,
+    ) -> az.InferenceData:
+        """
+        Filter the inference data to keep only the relevant parameters for the observations.
+
+        - Removes predictive parameters from deterministic random variables (e.g. kernel of background GP)
+        - Removes parameters build from reparametrised variables (e.g. ending with `"_base"`)
+        """
+
+        predictive_parameters = []
+
+        for key, value in self.observation_container.items():
+            if self.background_model is not None:
+                predictive_parameters.append(f"obs/~/{key}")
+                predictive_parameters.append(f"bkg/~/{key}")
+            else:
+                predictive_parameters.append(f"obs/~/{key}")
+
+        inference_data.posterior_predictive = inference_data.posterior_predictive[
+            predictive_parameters
+        ]
+
+        parameters = [
+            x
+            for x in inference_data.posterior.keys()
+            if not x.endswith("_base") or x.startswith("_")
+        ]
+        inference_data.posterior = inference_data.posterior[parameters]
+        inference_data.prior = inference_data.prior[parameters]
+
+        return inference_data
+
+    @abstractmethod
+    def fit(self, **kwargs) -> FitResult: ...
+
+
+class MCMCFitter(BayesianModelFitter):
+    """
+    A class to fit a model to a given set of observation using a Bayesian approach. This class uses samplers
+    from numpyro to perform the inference on the model parameters.
+    """
+
+    kernel_dict = {
+        "nuts": NUTS,
+        "aies": AIES,
+        "ess": ESS,
+    }
+
+    def fit(
+        self,
+        rng_key: int = 0,
+        num_chains: int = len(jax.devices()),
+        num_warmup: int = 1000,
+        num_samples: int = 1000,
+        sampler: Literal["nuts", "aies", "ess"] = "nuts",
+        use_transformed_model: bool = True,
+        kernel_kwargs: dict = {},
+        mcmc_kwargs: dict = {},
+    ) -> FitResult:
+        """
+        Fit the model to the data using a MCMC sampler from numpyro.
+
+        Parameters:
+            rng_key: the random key used to initialize the sampler.
+            num_chains: the number of chains to run.
+            num_warmup: the number of warmup steps.
+            num_samples: the number of samples to draw.
+            sampler: the sampler to use. Can be one of "nuts", "aies" or "ess".
+            use_transformed_model: whether to use the transformed model to build the InferenceData.
+            kernel_kwargs: additional arguments to pass to the kernel. See [`NUTS`][numpyro.infer.mcmc.MCMCKernel] for more details.
+            mcmc_kwargs: additional arguments to pass to the MCMC sampler. See [`MCMC`][numpyro.infer.mcmc.MCMC] for more details.
+
+        Returns:
+            A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
+        """
+
+        bayesian_model = (
+            self.transformed_numpyro_model if use_transformed_model else self.numpyro_model
+        )
+
+        chain_kwargs = {
+            "num_warmup": num_warmup,
+            "num_samples": num_samples,
+            "num_chains": num_chains,
+        }
+
+        kernel = self.kernel_dict[sampler](bayesian_model, **kernel_kwargs)
+
+        mcmc_kwargs = chain_kwargs | mcmc_kwargs
+
+        if sampler in ["aies", "ess"] and mcmc_kwargs.get("chain_method", None) != "vectorized":
+            mcmc_kwargs["chain_method"] = "vectorized"
+            warnings.warn("The chain_method is set to 'vectorized' for AIES and ESS samplers")
+
+        mcmc = MCMC(kernel, **mcmc_kwargs)
+        keys = random.split(random.PRNGKey(rng_key), 3)
+
+        mcmc.run(keys[0])
+
+        posterior = mcmc.get_samples()
+
+        inference_data = self.build_inference_data(
+            posterior, num_chains=num_chains, use_transformed_model=True
+        )
+
+        return FitResult(
+            self,
+            inference_data,
+            background_model=self.background_model,
+        )
+
+
+class NSFitter(BayesianModelFitter):
+    r"""
+    A class to fit a model to a given set of observation using the Nested Sampling algorithm. This class uses the
+    [`DefaultNestedSampler`][jaxns.DefaultNestedSampler] from [`jaxns`](https://jaxns.readthedocs.io/en/latest/) which
+    implements the [Phantom-Powered Nested Sampling](https://arxiv.org/abs/2312.11330) algorithm.
+
+    !!! info
+        Ensure large prior volume is covered by the prior distributions to ensure the algorithm yield proper results.
+
+    """
+
+    def fit(
+        self,
+        rng_key: int = 0,
+        num_samples: int = 1000,
+        num_live_points: int = 1000,
+        plot_diagnostics=False,
+        termination_kwargs: dict | None = None,
+        verbose=True,
+    ) -> FitResult:
+        """
+        Fit the model to the data using the Phantom-Powered nested sampling algorithm.
+
+        Parameters:
+            rng_key: the random key used to initialize the sampler.
+            num_samples: the number of samples to draw.
+            num_live_points: the number of live points to use at the start of the NS algorithm.
+            plot_diagnostics: whether to plot the diagnostics of the NS algorithm.
+            termination_kwargs: additional arguments to pass to the termination criterion of the NS algorithm.
+            verbose: whether to print the progress of the NS algorithm.
+
+        Returns:
+            A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
+        """
+
+        bayesian_model = self.transformed_numpyro_model
+        keys = random.split(random.PRNGKey(rng_key), 4)
+
+        ns = NestedSampler(
+            bayesian_model,
+            constructor_kwargs=dict(
+                verbose=verbose,
+                difficult_model=True,
+                max_samples=1e5,
+                parameter_estimation=True,
+                gradient_guided=True,
+                devices=jax.devices(),
+                # init_efficiency_threshold=0.01,
+                num_live_points=num_live_points,
+            ),
+            termination_kwargs=termination_kwargs if termination_kwargs else dict(),
+        )
+
+        ns.run(keys[0])
+
+        if plot_diagnostics:
+            ns.diagnostics()
+
+        posterior = ns.get_samples(keys[1], num_samples=num_samples)
+        inference_data = self.build_inference_data(
+            posterior, num_chains=1, use_transformed_model=True
+        )
+
+        return FitResult(
+            self,
+            inference_data,
+            background_model=self.background_model,
+        )
