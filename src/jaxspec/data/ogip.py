@@ -109,7 +109,7 @@ class DataPHA:
             raise ValueError("No QUALITY column found in the PHA file.")
 
         if "BACKSCAL" in header:
-            backscal = header["BACKSCAL"] * np.ones_like(data["CHANNEL"])
+            backscal = header["BACKSCAL"] * np.ones_like(data["CHANNEL"], dtype=float)
         elif "BACKSCAL" in data.colnames:
             backscal = data["BACKSCAL"]
         else:
