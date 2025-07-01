@@ -138,7 +138,14 @@ class DataPHA:
             "flags": flags,
         }
 
-        return cls(data["CHANNEL"], data["COUNTS"], header["EXPOSURE"], **kwargs)
+        if "COUNTS" in data.colnames:
+            counts = data["COUNTS"]
+        elif "RATE" in data.colnames:
+            counts = data["RATE"] * header["EXPOSURE"]
+        else:
+            raise ValueError("No COUNTS or RATE column found in the PHA file.")
+
+        return cls(data["CHANNEL"], counts, header["EXPOSURE"], **kwargs)
 
 
 class DataARF:

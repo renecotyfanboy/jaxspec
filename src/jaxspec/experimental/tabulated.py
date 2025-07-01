@@ -1,5 +1,7 @@
+import jax
 import jax.numpy as jnp
 import numpy as np
+import xarray as xr
 
 from astropy.table import Table
 from flax import nnx
@@ -9,6 +11,7 @@ from jax.typing import ArrayLike
 from tqdm.auto import tqdm
 
 from ..model.abc import AdditiveComponent
+from .interpolator import RegularGridInterpolatorWithGrad
 
 
 class TableManager:
@@ -98,6 +101,28 @@ class TabulatedModel(nnx.Module):
         return jnp.asarray(parameter_list, dtype=float)
 
 
+"""
+import numpy as np
+from scipy.sparse import csr_matrix
+
+def redistribution_matrix(old_e_low, old_e_high, new_e_low, new_e_high):
+    new_bins = jnp.stack([new_e_low, new_e_high], axis=1)
+
+    def scan_body(carry, new_bin):
+        new_low, new_high = new_bin
+
+        # Compute the overlap between the current new bin and all old bins.
+        lower_bounds = jnp.maximum(old_e_low, new_low)
+        upper_bounds = jnp.minimum(old_e_high, new_high)
+        overlap_fraction = jnp.maximum(0, upper_bounds - lower_bounds) / (old_e_high - old_e_low)
+
+        return carry, overlap_fraction
+
+    _, matrix = lax.scan(scan_body, None, new_bins)
+    return matrix.T
+"""
+
+
 def redistribute(
     integrated_spectrum: ArrayLike,
     old_e_low: ArrayLike,
@@ -150,8 +175,90 @@ class AdditiveTabulated(AdditiveComponent, TabulatedModel):
             self._parameter_table, self._spectra_table, fill_value=0.0
         )
 
+    def _integrate_on_grid(self):
+        return self._interpolator(self.get_parameter_list()).squeeze()
+
     def integrated_continuum(self, e_low, e_high):
-        integrated_spectrum = self._interpolator(self.get_parameter_list()).squeeze()
+        integrated_spectrum = self._integrate_on_grid()
+        return jnp.asarray(self.norm) * redistribute(
+            integrated_spectrum, *self._energies_table, e_low, e_high
+        )
+
+
+class TabulatedModelXarray(nnx.Module):
+    """
+    See https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/ogip_92_009/ogip_92_009.pdf
+    """
+
+    def __init__(self, table_path: str):
+        ds = xr.open_dataset(table_path)
+
+        self._parameters = [dim for dim in ds["spectra"].dims if dim != "energy"]
+        self._parameter_table = [np.asarray(ds[key]) for key in self._parameters]
+        self._spectra_table = ds["spectra"]
+        self._energies_table = (np.asarray(ds["energy_low"]), np.asarray(ds["energy_high"]))
+
+        # Instantiate the parameters of the nnx.Module
+        for parameter_name, parameter_value in zip(self._parameters, self._parameter_table):
+            setattr(
+                self,
+                parameter_name,
+                nnx.Param(np.median(parameter_value) + np.random.uniform(-5e-1, +5e-1)),
+            )
+
+    def get_parameter_list(self):
+        parameter_list = []
+        for parameter_name in self._parameters:
+            parameter_list.append(getattr(self, parameter_name))
+
+        return jnp.asarray(parameter_list, dtype=float)
+
+
+class AdditiveTabulatedXarray(AdditiveComponent, TabulatedModelXarray):
+    def __init__(self, table_path: str):
+        super().__init__(table_path)
+
+        self.norm = nnx.Param(1.0)
+
+        interpolator = RegularGridInterpolatorWithGrad(
+            self._parameter_table, np.asarray(self._spectra_table)
+        )
+
+        def callback(pars):
+            value, grad = interpolator(pars)
+            return np.vstack([value[None, :], grad])
+
+        result = callback(self.get_parameter_list())
+
+        out_type = jax.ShapeDtypeStruct(jnp.shape(result), jnp.result_type(result))
+
+        @jax.custom_jvp
+        def spectrum_interpolation(pars):
+            result = jax.pure_callback(
+                lambda p: callback(p), out_type, pars, vmap_method="legacy_vectorized"
+            )
+            return result[0, ...]
+
+        @spectrum_interpolation.defjvp
+        def spectrum_interpolation_jvp(primals, tangents):
+            pars = primals
+            pars_dot = tangents
+
+            result = jax.pure_callback(
+                lambda p: callback(p), out_type, pars, vmap_method="legacy_vectorized"
+            )
+            value = result[0, ...]
+            grad = result[1:, ...]
+
+            return value, jnp.squeeze(jnp.asarray(pars_dot) @ grad)
+
+        self._spectrum_interpolation = spectrum_interpolation
+
+    def _integrate_on_grid(self):
+        return self._spectrum_interpolation(jnp.asarray(self.get_parameter_list()))
+
+    def integrated_continuum(self, e_low, e_high):
+        integrated_spectrum = self._integrate_on_grid()
         return jnp.asarray(self.norm) * redistribute(
             integrated_spectrum, *self._energies_table, e_low, e_high
         )

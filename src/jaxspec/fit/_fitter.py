@@ -5,12 +5,14 @@ from typing import Literal
 
 import arviz as az
 import jax
+import matplotlib.pyplot as plt
 import numpyro
 
 from jax import random
 from jax.random import PRNGKey
 from numpyro.contrib.nested_sampling import NestedSampler
-from numpyro.infer import AIES, ESS, MCMC, NUTS, Predictive
+from numpyro.infer import AIES, ESS, MCMC, NUTS, SVI, Predictive, Trace_ELBO
+from numpyro.infer.autoguide import AutoMultivariateNormal
 
 from ..analysis.results import FitResult
 from ._bayesian_model import BayesianModel
@@ -106,12 +108,14 @@ class BayesianModelFitter(BayesianModel, ABC):
 
         predictive_parameters = []
 
-        for key, value in self.observation_container.items():
+        for key, value in self._observation_container.items():
             if self.background_model is not None:
                 predictive_parameters.append(f"obs/~/{key}")
                 predictive_parameters.append(f"bkg/~/{key}")
+            #                predictive_parameters.append(f"ins/~/{key}")
             else:
                 predictive_parameters.append(f"obs/~/{key}")
+        #                predictive_parameters.append(f"ins/~/{key}")
 
         inference_data.posterior_predictive = inference_data.posterior_predictive[
             predictive_parameters
@@ -120,7 +124,7 @@ class BayesianModelFitter(BayesianModel, ABC):
         parameters = [
             x
             for x in inference_data.posterior.keys()
-            if not x.endswith("_base") or x.startswith("_")
+            if not (x.endswith("_base") or x.startswith("_"))
         ]
         inference_data.posterior = inference_data.posterior[parameters]
         inference_data.prior = inference_data.prior[parameters]
@@ -197,7 +201,7 @@ class MCMCFitter(BayesianModelFitter):
         posterior = mcmc.get_samples()
 
         inference_data = self.build_inference_data(
-            posterior, num_chains=num_chains, use_transformed_model=True
+            posterior, num_chains=num_chains, use_transformed_model=use_transformed_model
         )
 
         return FitResult(
@@ -226,6 +230,7 @@ class NSFitter(BayesianModelFitter):
         plot_diagnostics=False,
         termination_kwargs: dict | None = None,
         verbose=True,
+        use_transformed_model: bool = True,
     ) -> FitResult:
         """
         Fit the model to the data using the Phantom-Powered nested sampling algorithm.
@@ -267,7 +272,52 @@ class NSFitter(BayesianModelFitter):
 
         posterior = ns.get_samples(keys[1], num_samples=num_samples)
         inference_data = self.build_inference_data(
-            posterior, num_chains=1, use_transformed_model=True
+            posterior, num_chains=1, use_transformed_model=use_transformed_model
+        )
+
+        return FitResult(
+            self,
+            inference_data,
+            background_model=self.background_model,
+        )
+
+
+class VIFitter(BayesianModelFitter):
+    def fit(
+        self,
+        rng_key: int = 0,
+        num_steps: int = 10_000,
+        optimizer=numpyro.optim.Adam(step_size=0.0005),
+        loss=Trace_ELBO(),
+        num_samples: int = 1000,
+        guide=None,
+        use_transformed_model: bool = True,
+        plot_diagnostics: bool = False,
+    ) -> FitResult:
+        bayesian_model = (
+            self.transformed_numpyro_model if use_transformed_model else self.numpyro_model
+        )
+
+        if guide is None:
+            guide = AutoMultivariateNormal(bayesian_model)
+
+        svi = SVI(bayesian_model, guide, optimizer, loss=loss)
+
+        keys = random.split(random.PRNGKey(rng_key), 3)
+        svi_result = svi.run(keys[0], num_steps)
+        params = svi_result.params
+
+        if plot_diagnostics:
+            plt.plot(svi_result.losses)
+            plt.xlabel("Steps")
+            plt.ylabel("ELBO loss")
+            plt.semilogy()
+
+        predictive = Predictive(guide, params=params, num_samples=num_samples)
+        posterior = predictive(keys[1])
+
+        inference_data = self.build_inference_data(
+            posterior, num_chains=1, use_transformed_model=use_transformed_model
         )
 
         return FitResult(

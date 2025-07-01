@@ -87,15 +87,18 @@ class ObsConfiguration(xr.Dataset):
 
         arf_path_default, rmf_path_default, bkg_path_default = data_path_finder(
             pha_path,
-            require_arf=arf_path is None,
+            require_arf=(arf_path is None) and (arf_path != ""),
             require_rmf=rmf_path is None,
+            require_bkg=bkg_path is None,
         )
 
         arf_path = arf_path_default if arf_path is None else arf_path
         rmf_path = rmf_path_default if rmf_path is None else rmf_path
         bkg_path = bkg_path_default if bkg_path is None else bkg_path
 
-        instrument = Instrument.from_ogip_file(rmf_path, arf_path=arf_path)
+        instrument = Instrument.from_ogip_file(
+            rmf_path, arf_path=arf_path if arf_path != "" else None
+        )
         observation = Observation.from_pha_file(pha_path, bkg_path=bkg_path)
 
         return cls.from_instrument(
@@ -145,7 +148,6 @@ class ObsConfiguration(xr.Dataset):
         transfer_matrix = grouping @ (redistribution * area * exposure)
 
         # Exclude bins out of the considered energy range, and bins without contribution from the RMF
-
         row_idx = (e_min > low_energy) & (e_max < high_energy) & (grouping.sum(axis=1) > 0)
         col_idx = (e_min_unfolded > 0) & (redistribution.sum(axis=0) > 0)
 

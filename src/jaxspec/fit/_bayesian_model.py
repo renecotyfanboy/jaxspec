@@ -2,12 +2,14 @@ import operator
 
 from collections.abc import Callable
 from functools import cached_property
+from typing import Any
 
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpyro
 
+from flax import nnx
 from jax.experimental import mesh_utils
 from jax.random import PRNGKey
 from jax.sharding import PositionalSharding
@@ -30,11 +32,13 @@ from ..util.typing import PriorDictType
 from ._build_model import build_prior, forward_model
 
 
-class BayesianModel:
+class BayesianModel(nnx.Module):
     """
     Base class for a Bayesian model. This class contains the necessary methods to build a model, sample from the prior
     and compute the log-likelihood and posterior probability.
     """
+
+    settings: dict[str, Any]
 
     def __init__(
         self,
@@ -44,6 +48,7 @@ class BayesianModel:
         background_model: BackgroundModel = None,
         instrument_model: InstrumentModel = None,
         sparsify_matrix: bool = False,
+        n_points: int = 2,
     ):
         """
         Build a Bayesian model for a given spectral model and observations.
@@ -58,18 +63,18 @@ class BayesianModel:
             sparsify_matrix: whether to sparsify the transfer matrix.
         """
 
-        self.model = model
+        self.spectral_model = model
         self._observations = observations
         self.background_model = background_model
         self.instrument_model = instrument_model
-        self.sparse = sparsify_matrix
+        self.settings = {"sparse": sparsify_matrix}
 
         if not callable(prior_distributions):
 
             def prior_distributions_func():
                 return build_prior(
                     prior_distributions,
-                    expand_shape=(len(self.observation_container),),
+                    expand_shape=(len(self._observation_container),),
                     prefix="mod/~/",
                 )
 
@@ -83,7 +88,7 @@ class BayesianModel:
             prior_params = self.prior_distributions_func()
 
             # Iterate over all the observations in our container and build a single numpyro model for each observation
-            for i, (name, observation) in enumerate(self.observation_container.items()):
+            for i, (name, observation) in enumerate(self._observation_container.items()):
                 # Check that we can indeed fit a background
                 if (getattr(observation, "folded_background", None) is not None) and (
                     self.background_model is not None
@@ -115,7 +120,13 @@ class BayesianModel:
                 # Forward model the observation and get the associated countrate
                 obs_model = jax.jit(
                     lambda par: forward_model(
-                        self.model, par, observation, sparse=self.sparse, gain=gain, shift=shift
+                        self.spectral_model,
+                        par,
+                        observation,
+                        sparse=self.settings.get("sparse", False),
+                        gain=gain,
+                        shift=shift,
+                        n_points=n_points,
                     )
                 )
 
@@ -125,33 +136,31 @@ class BayesianModel:
                 with numpyro.plate("obs_plate/~/" + name, len(observation.folded_counts)):
                     numpyro.sample(
                         "obs/~/" + name,
-                        Poisson(
-                            obs_countrate + bkg_countrate
-                        ),  # / observation.folded_backratio.data
+                        Poisson(obs_countrate + bkg_countrate / observation.folded_backratio.data),
                         obs=observation.folded_counts.data if observed else None,
                     )
 
         self.numpyro_model = numpyro_model
-        self.init_params = self.prior_samples()
-
+        self._init_params = self.prior_samples()
         # Check the priors are suited for the observations
         split_parameters = [
             (param, shape[-1])
-            for param, shape in jax.tree.map(lambda x: x.shape, self.init_params).items()
+            for param, shape in jax.tree.map(lambda x: x.shape, self._init_params).items()
             if (len(shape) > 1)
             and not param.startswith("_")
             and not param.startswith("bkg")  # hardcoded for subtracted background
+            and not param.startswith("ins")
         ]
 
         for parameter, proposed_number_of_obs in split_parameters:
-            if proposed_number_of_obs != len(self.observation_container):
+            if proposed_number_of_obs != len(self._observation_container):
                 raise ValueError(
                     f"Invalid splitting in the prior distribution. "
-                    f"Expected {len(self.observation_container)} but got {proposed_number_of_obs} for {parameter}"
+                    f"Expected {len(self._observation_container)} but got {proposed_number_of_obs} for {parameter}"
                 )
 
     @cached_property
-    def observation_container(self) -> dict[str, ObsConfiguration]:
+    def _observation_container(self) -> dict[str, ObsConfiguration]:
         """
         The observations used in the fit as a dictionary of observations.
         """
@@ -235,7 +244,7 @@ class BayesianModel:
         return log_posterior_prob
 
     @cached_property
-    def parameter_names(self) -> list[str]:
+    def _parameter_names(self) -> list[str]:
         """
         A list of parameter names for the model.
         """
@@ -260,7 +269,7 @@ class BayesianModel:
         """
         input_params = {}
 
-        for index, key in enumerate(self.parameter_names):
+        for index, key in enumerate(self._parameter_names):
             input_params[key] = theta[index]
 
         return input_params
@@ -270,9 +279,9 @@ class BayesianModel:
         Convert a dictionary of parameters to an array of parameters.
         """
 
-        theta = jnp.zeros(len(self.parameter_names))
+        theta = jnp.zeros(len(self._parameter_names))
 
-        for index, key in enumerate(self.parameter_names):
+        for index, key in enumerate(self._parameter_names):
             theta = theta.at[index].set(dict_of_params[key])
 
         return theta
@@ -289,7 +298,7 @@ class BayesianModel:
         @jax.jit
         def prior_sample(key):
             return Predictive(
-                self.numpyro_model, return_sites=self.parameter_names, num_samples=num_samples
+                self.numpyro_model, return_sites=self._parameter_names, num_samples=num_samples
             )(key, observed=False)
 
         return prior_sample(key)
@@ -327,7 +336,7 @@ class BayesianModel:
         sharded_parameters = jax.device_put(prior_params, sharding)
         posterior_observations = self.mock_observations(sharded_parameters, key=key_posterior)
 
-        for key, value in self.observation_container.items():
+        for key, value in self._observation_container.items():
             fig, ax = plt.subplots(
                 nrows=2, ncols=1, sharex=True, figsize=(5, 6), height_ratios=[3, 1]
             )

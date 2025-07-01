@@ -54,17 +54,17 @@ class FitResult:
         inference_data: az.InferenceData,
         background_model: BackgroundModel = None,
     ):
-        self.model = bayesian_fitter.model
+        self.model = bayesian_fitter.spectral_model
         self.bayesian_fitter = bayesian_fitter
         self.inference_data = inference_data
-        self.obsconfs = bayesian_fitter.observation_container
+        self.obsconfs = bayesian_fitter._observation_container
         self.background_model = background_model
 
         # Add the model used in fit to the metadata
         for group in self.inference_data.groups():
             group_name = group.split("/")[-1]
             metadata = getattr(self.inference_data, group_name).attrs
-            metadata["model"] = str(self.model)
+            # metadata["model"] = str(self.model)
             # TODO : Store metadata about observations used in the fitting process
 
     @property
@@ -85,7 +85,7 @@ class FitResult:
         else:
             obs_parameters = self.input_parameters
 
-        if self.bayesian_fitter.sparse:
+        if self.bayesian_fitter.settings.get("sparse", False):
             transfer_matrix = BCOO.from_scipy_sparse(
                 obs.transfer_matrix.data.to_scipy_sparse().tocsr()
             )
@@ -124,13 +124,14 @@ class FitResult:
 
         for key, value in input_parameters.items():
             module, parameter = key.rsplit("_", 1)
+            key_to_search = f"mod/~/{module}_{parameter}"
 
-            if f"{module}_{parameter}" in posterior.keys():
+            if key_to_search in posterior.keys():
                 # We add as extra dimension as there might be different values per observation
-                if posterior[f"{module}_{parameter}"].shape == samples_shape:
-                    to_set = posterior[f"{module}_{parameter}"][..., None]
+                if posterior[key_to_search].shape == samples_shape:
+                    to_set = posterior[key_to_search][..., None]
                 else:
-                    to_set = posterior[f"{module}_{parameter}"]
+                    to_set = posterior[key_to_search]
 
                 input_parameters[f"{module}_{parameter}"] = to_set
 
@@ -149,7 +150,7 @@ class FitResult:
                     input_parameters[f"{module}_{parameter}"], total_shape
                 )
 
-        return input_parameters
+            return input_parameters
 
     def photon_flux(
         self,
@@ -299,7 +300,7 @@ class FitResult:
 
         return value
 
-    def to_chain(self, name: str) -> Chain:
+    def to_chain(self, name: str, parameter_kind="mod") -> Chain:
         """
         Return a ChainConsumer Chain object from the posterior distribution of the parameters_type.
 
@@ -308,9 +309,7 @@ class FitResult:
         """
 
         keys_to_drop = [
-            key
-            for key in self.inference_data.posterior.keys()
-            if (key.startswith("_") or key.startswith("bkg"))
+            key for key in self.inference_data.posterior.keys() if not key.startswith("mod")
         ]
 
         reduced_id = az.extract(
@@ -337,6 +336,8 @@ class FitResult:
                 df_list.append(array.to_pandas())
 
         df = pd.concat(df_list, axis=1)
+
+        df = df.rename(columns=lambda x: x.split("/~/")[-1])
 
         return Chain(samples=df, name=name)
 
@@ -450,7 +451,7 @@ class FitResult:
                 legend_labels = []
 
                 count = az.extract(
-                    self.inference_data, var_names=f"obs_{obs_id}", group="posterior_predictive"
+                    self.inference_data, var_names=f"obs/~/{obs_id}", group="posterior_predictive"
                 ).values.T
 
                 xbins, exposure, integrated_arf = _compute_effective_area(obsconf, x_unit)
@@ -465,7 +466,9 @@ class FitResult:
                     case "photon_flux_density":
                         denominator = (xbins[1] - xbins[0]) * integrated_arf * exposure
 
-                y_samples = (count * u.ct / denominator).to(y_units)
+                y_samples = count * u.ct / denominator
+
+                y_samples = y_samples.to(y_units)
 
                 y_observed, y_observed_low, y_observed_high = _error_bars_for_observed_data(
                     obsconf.folded_counts.data, denominator, y_units
@@ -522,7 +525,10 @@ class FitResult:
                             count.reshape((count.shape[0] * count.shape[1], -1))
                             * u.ct
                             / denominator
-                        ).to(y_units)
+                        )
+
+                        y_samples = y_samples.to(y_units)
+
                         component_plot = _plot_binned_samples_with_error(
                             ax[0],
                             xbins.value,
@@ -545,7 +551,7 @@ class FitResult:
                         if self.background_model is None
                         else az.extract(
                             self.inference_data,
-                            var_names=f"bkg_{obs_id}",
+                            var_names=f"bkg/~/{obs_id}",
                             group="posterior_predictive",
                         ).values.T
                     )
@@ -577,15 +583,15 @@ class FitResult:
                         alpha=0.7,
                     )
 
-                    lowest_y = np.nanmin(lowest_y, np.nanmin(y_observed_bkg))
-                    highest_y = np.nanmax(highest_y, np.nanmax(y_observed_bkg))
+                    # lowest_y = np.nanmin(lowest_y.min, np.nanmin(y_observed_bkg.value).astype(float))
+                    # highest_y = np.nanmax(highest_y.value.astype(float), np.nanmax(y_observed_bkg.value).astype(float))
 
                     legend_plots.append((true_bkg_plot,))
                     legend_labels.append("Observed (bkg)")
                     legend_plots += model_bkg_plot
                     legend_labels.append("Model (bkg)")
 
-                max_residuals = np.nanmax(np.abs(residual_samples))
+                max_residuals = min(3.5, np.nanmax(np.abs(residual_samples)))
 
                 ax[0].loglog()
                 ax[1].set_ylim(-np.nanmax([3.5, max_residuals]), +np.nanmax([3.5, max_residuals]))

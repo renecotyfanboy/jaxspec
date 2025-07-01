@@ -59,8 +59,8 @@ def _plot_poisson_data_with_error(
         y,
         xerr=np.abs(x_bins - np.sqrt(x_bins[0] * x_bins[1])),
         yerr=[
-            y - y_low,
-            y_high - y,
+            np.maximum(y - y_low, 0),
+            np.maximum(y_high - y, 0),
         ],
         color=color,
         linestyle=linestyle,
@@ -149,13 +149,13 @@ def _compute_effective_area(
     mid_bins_arf = obsconf.in_energies.mean(axis=0) * u.keV
     mid_bins_arf = mid_bins_arf.to(x_unit, u.spectral())
     e_grid = np.linspace(*xbins, 10)
-    interpolated_arf = np.interp(e_grid, mid_bins_arf, obsconf.area)
+    interpolated_arf = np.interp(e_grid.value, mid_bins_arf.value, obsconf.area)
     integrated_arf = (
-        trapezoid(interpolated_arf, x=e_grid, axis=0)
+        trapezoid(interpolated_arf, x=e_grid.value, axis=0)
         / (
             np.abs(
                 xbins[1] - xbins[0]
-            )  # Must fold in abs because some units reverse the ordering of the bins
+            ).value  # Must fold in abs because some units reverse the ordering of the bins
         )
         * u.cm**2
     )

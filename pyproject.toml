@@ -21,7 +21,7 @@ dependencies = [
     "jaxopt>=0.8.3,<0.9",
     "tinygp>=0.3.0,<0.4",
     "seaborn>=0.13.1,<0.14",
-    "sparse>=0.15.4,<0.16",
+    "sparse>0.15",
     "optimistix>=0.0.10,<0.0.11",
     "scipy<1.15",
     "mendeleev>=0.15,<0.20",
@@ -30,7 +30,7 @@ dependencies = [
     "interpax>=0.3.5,<0.4",
     "watermark>=2.4.3,<3",
     "catppuccin>=2.3.4,<3",
-    "flax>=0.10.3,<0.11",
+    "flax>0.10.5",
 ]
 
 [project.urls]

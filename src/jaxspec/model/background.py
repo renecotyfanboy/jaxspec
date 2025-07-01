@@ -5,16 +5,15 @@ import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
 
+from flax import nnx
 from jax.scipy.integrate import trapezoid
 from numpyro.distributions import Poisson
 from tinygp import GaussianProcess, kernels
 
-from jaxspec.fit._build_model import build_prior, forward_model
-
 from .abc import SpectralModel
 
 
-class BackgroundModel(ABC):
+class BackgroundModel(ABC, nnx.Module):
     """
     Handles the background modelling in our spectra. This is handled in a separate class for now
     since backgrounds can be phenomenological models fitted directly on the folded spectrum. This is not the case for
@@ -127,6 +126,7 @@ class GaussianProcessBackground(BackgroundModel):
         interp_count_rate = jnp.exp(
             jnp.interp(energy, nodes * (self.e_max - self.e_min) + self.e_min, log_rate)
         )
+
         count_rate = trapezoid(interp_count_rate, energy, axis=0)
 
         # Finally, our observation model is Poisson
@@ -145,6 +145,8 @@ class SpectralModelBackground(BackgroundModel):
         self.sparse = sparse
 
     def numpyro_model(self, observation, name: str = "", observed=True):
+        from jaxspec.fit._build_model import build_prior, forward_model
+
         params = build_prior(self.prior, prefix=f"_bkg_{name}_")
         bkg_model = jax.jit(
             lambda par: forward_model(self.spectral_model, par, observation, sparse=self.sparse)

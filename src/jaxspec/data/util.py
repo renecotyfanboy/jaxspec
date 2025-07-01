@@ -247,10 +247,11 @@ def data_path_finder(
     """
 
     def find_path(file_name: str, directory: str, raise_err: bool = True) -> str | None:
-        if file_name.lower() != "none" and file_name != "":
-            return find_file_or_compressed_in_dir(file_name, directory, raise_err)
-        else:
-            return None
+        if raise_err:
+            if file_name.lower() != "none" and file_name != "":
+                return find_file_or_compressed_in_dir(file_name, directory, raise_err)
+
+        return None
 
     header = fits.getheader(pha_path, "SPECTRUM")
     directory = str(Path(pha_path).parent)
