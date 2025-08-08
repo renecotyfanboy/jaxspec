@@ -42,6 +42,11 @@ V = TypeVar("V")
 T = TypeVar("T")
 
 
+def auto_in_axes(pytree, axis=0):
+    """Return a pytree of 0/None depending on whether the leaf is batched."""
+    return jax.tree.map(lambda x: axis if (hasattr(x, "ndim") and x.ndim > 0) else None, pytree)
+
+
 class FitResult:
     """
     Container for the result of a fit using any ModelFitter class.
@@ -78,6 +83,7 @@ class FitResult:
     def _ppc_folded_branches(self, obs_id):
         obs = self.obsconfs[obs_id]
 
+        # Slice the parameters corresponding to the current ObsID
         if len(next(iter(self.input_parameters.values())).shape) > 2:
             idx = list(self.obsconfs.keys()).index(obs_id)
             obs_parameters = jax.tree.map(lambda x: x[..., idx], self.input_parameters)
@@ -98,6 +104,7 @@ class FitResult:
         flux_func = jax.jit(
             jax.vmap(jax.vmap(lambda p: self.model.photon_flux(p, *energies, split_branches=True)))
         )
+
         convolve_func = jax.jit(
             jax.vmap(jax.vmap(lambda flux: jnp.clip(transfer_matrix @ flux, a_min=1e-6)))
         )
@@ -150,7 +157,7 @@ class FitResult:
                     input_parameters[f"{module}_{parameter}"], total_shape
                 )
 
-            return input_parameters
+        return input_parameters
 
     def photon_flux(
         self,
@@ -657,9 +664,9 @@ class FitResult:
         """
 
         consumer = ChainConsumer()
-        consumer.add_chain(self.to_chain(self.model.to_string()))
+        consumer.add_chain(self.to_chain("Model"))
 
-        return consumer.analysis.get_latex_table(caption="Results of the fit", label="tab:results")
+        return consumer.analysis.get_latex_table(caption="Fit result", label="tab:results")
 
     def plot_corner(
         self,
