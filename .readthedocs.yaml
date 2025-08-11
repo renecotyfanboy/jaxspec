@@ -20,7 +20,7 @@ build:
       - uv pip install -r pyproject.toml
       # Using insiders versions of mkdocs-material & mkdocstrings
       - uv pip uninstall mkdocs-material # mkdocstrings mkdocstrings-python
-      - uv pip install git+https://$GH_TOKEN@github.com/squidfunk/mkdocs-material-insiders.git@9.5.36-insiders-4.53.13
+      # - uv pip install git+https://$GH_TOKEN@github.com/squidfunk/mkdocs-material-insiders.git@9.5.36-insiders-4.53.13
       - uv pip install mkdocstrings mkdocstrings-python
       - uv pip install mkdocs-autorefs
       - uv pip install mkdocs-jupyter # This is bugged, I enforced it manually, let's see if it works
