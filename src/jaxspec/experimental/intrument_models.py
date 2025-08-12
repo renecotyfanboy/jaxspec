@@ -6,7 +6,7 @@ import numpyro.distributions as dist
 from scipy.interpolate import BSpline
 from tinygp import GaussianProcess, kernels
 
-from ..model.instrument import GainModel
+from ..model.instrument import GainModel, ShiftModel
 
 
 def bspline_basis(n_basis: int, degree: int = 3, interval=(0.0, 1.0)):
@@ -112,3 +112,48 @@ class BsplineGain(GainModel):
             return jnp.interp(energy.mean(axis=0), self.egrid, gridded_gain, left=1.0, right=1.0)
 
         return gain
+
+
+class PolynomialGain(GainModel):
+    def __init__(self, prior_distribution):
+        self.prior_distribution = prior_distribution
+        distribution_shape = prior_distribution.shape()
+        self.degree = distribution_shape[0] if len(distribution_shape) > 0 else 0
+
+    def numpyro_model(self, observation_name: str):
+        polynomial_coefficient = numpyro.sample(
+            f"ins/~/gain_{observation_name}", self.prior_distribution
+        )
+
+        if self.degree == 0:
+
+            def gain(energy):
+                return polynomial_coefficient
+
+        else:
+
+            def gain(energy):
+                return jnp.polyval(polynomial_coefficient, energy.mean(axis=0))
+
+        return gain
+
+
+class PolynomialShift(ShiftModel):
+    def __init__(self, prior_distribution):
+        self.prior_distribution = prior_distribution
+        distribution_shape = prior_distribution.shape()
+        self.degree = distribution_shape[0] if len(distribution_shape) > 0 else 0
+
+    def numpyro_model(self, observation_name: str):
+        polynomial_coefficient = numpyro.sample(
+            f"ins/~/shift_{observation_name}", self.prior_distribution
+        )
+
+        if self.degree == 0:
+            # ensure that new_energy = energy + constant
+            polynomial_coefficient = jnp.asarray([1.0, polynomial_coefficient])
+
+        def shift(energy):
+            return jnp.polyval(polynomial_coefficient, energy)
+
+        return shift

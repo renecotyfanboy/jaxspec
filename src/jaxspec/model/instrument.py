@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
-import jax.numpy as jnp
 import numpyro
 
 from flax import nnx
@@ -27,53 +26,21 @@ class ConstantGain(GainModel):
         return gain
 
 
-class PolynomialGain(GainModel):
-    def __init__(self, prior_distribution: Distribution):
-        self.prior_distribution = prior_distribution
-        distribution_shape = prior_distribution.shape()
-        self.degree = distribution_shape[0] if len(distribution_shape) > 0 else 0
-
-    def numpyro_model(self, observation_name: str):
-        polynomial_coefficient = numpyro.sample(
-            f"ins/~/gain_{observation_name}", self.prior_distribution
-        )
-
-        if self.degree == 0:
-
-            def gain(energy):
-                return polynomial_coefficient
-
-        else:
-
-            def gain(energy):
-                return jnp.polyval(polynomial_coefficient, energy.mean(axis=0))
-
-        return gain
-
-
 class ShiftModel(ABC, nnx.Module):
     @abstractmethod
     def numpyro_model(self, observation_name: str):
         pass
 
 
-class PolynomialShift(ShiftModel):
+class ConstantShift(ShiftModel):
     def __init__(self, prior_distribution: Distribution):
         self.prior_distribution = prior_distribution
-        distribution_shape = prior_distribution.shape()
-        self.degree = distribution_shape[0] if len(distribution_shape) > 0 else 0
 
     def numpyro_model(self, observation_name: str):
-        polynomial_coefficient = numpyro.sample(
-            f"ins/~/shift_{observation_name}", self.prior_distribution
-        )
-
-        if self.degree == 0:
-            # ensure that new_energy = energy + constant
-            polynomial_coefficient = jnp.asarray([1.0, polynomial_coefficient])
+        shift = numpyro.sample(f"ins/~/shift_{observation_name}", self.prior_distribution)
 
         def shift(energy):
-            return jnp.polyval(polynomial_coefficient, energy)
+            return energy + shift
 
         return shift
 
