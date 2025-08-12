@@ -7,7 +7,7 @@ requires-python = ">=3.10,<3.13"
 readme = "README.md"
 license = "MIT"
 dependencies = [
-    "jax>=0.5.0,<0.6",
+    "jax>=0.5.0,<0.7",
     "numpy<3.0.0",
     "pandas>=2.2.0,<3",
     "astropy>=6.0.0,<8",
