@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import flax.nnx as nnx
 import jax.numpy as jnp
+import jax.scipy.special as jsp
 import numpy as np
 
 from astropy.table import Table
@@ -72,12 +73,20 @@ class Tbabs(MultiplicativeComponent):
 
     def __init__(self):
         table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-        self.energy = nnx.Variable(np.asarray(table["ENERGY"], dtype=np.float64))
-        self.sigma = nnx.Variable(np.asarray(table["SIGMA"], dtype=np.float64))
+        self._energy = np.asarray(table["ENERGY"], dtype=np.float64)
+        self._sigma = np.asarray(table["SIGMA"], dtype=np.float64)
         self.nh = nnx.Param(1.0)
 
     def factor(self, energy):
-        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
+        sigma = jnp.exp(
+            jnp.interp(
+                jnp.log(energy),
+                jnp.log(self._energy),
+                jnp.log(self._sigma),
+                left="extrapolate",
+                right="extrapolate",
+            )
+        )
 
         return jnp.exp(-self.nh * sigma)
 
@@ -88,7 +97,6 @@ class Phabs(MultiplicativeComponent):
 
     !!! abstract "Parameters"
         * $N_{\text{H}}$ (`nh`) $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$ : Equivalent hydrogen column density
-
 
     """
 
@@ -148,12 +156,19 @@ class Gabs(MultiplicativeComponent):
         self.sigma = nnx.Param(1.0)
         self.E0 = nnx.Param(1.0)
 
-    def factor(self, energy):
-        return jnp.exp(
-            -self.tau
-            / (jnp.sqrt(2 * jnp.pi) * self.sigma)
-            * jnp.exp(-0.5 * ((energy - self.E0) / self.sigma) ** 2)
+    def g(self, E):
+        return (
+            2
+            / (
+                self.sigma
+                * jnp.sqrt(2 * jnp.pi)
+                * (1 - jsp.erf(-self.E0 / (self.sigma * jnp.sqrt(2))))
+            )
+            * jnp.exp(-((E - self.E0) ** 2) / (2 * self.sigma**2))
         )
+
+    def factor(self, energy):
+        return jnp.exp(-self.tau * self.g(energy))
 
 
 class Highecut(MultiplicativeComponent):
@@ -223,13 +238,18 @@ class Tbpcf(MultiplicativeComponent):
 
     def __init__(self):
         table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-        self.energy = nnx.Variable(np.asarray(table["ENERGY"], dtype=np.float64))
-        self.sigma = nnx.Variable(np.asarray(table["SIGMA"], dtype=np.float64))
+        self._energy = nnx.Variable(np.asarray(table["ENERGY"], dtype=np.float64))
+        self._sigma = nnx.Variable(np.asarray(table["SIGMA"], dtype=np.float64))
         self.nh = nnx.Param(1.0)
         self.f = nnx.Param(0.2)
 
     def factor(self, energy):
-        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
+        sigma = jnp.exp(
+            jnp.interp(
+                energy, self._energy, jnp.log(self._sigma), left="extrapolate", right="extrapolate"
+            )
+        )
+
         return self.f * jnp.exp(-self.nh * sigma) + (1.0 - self.f)
 
 

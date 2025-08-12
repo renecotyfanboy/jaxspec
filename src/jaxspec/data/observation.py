@@ -164,7 +164,9 @@ class Observation(xr.Dataset):
         """
         from .util import data_path_finder
 
-        arf_path, rmf_path, bkg_path_default = data_path_finder(pha_path)
+        arf_path, rmf_path, bkg_path_default = data_path_finder(
+            pha_path, require_arf=False, require_rmf=False, require_bkg=False
+        )
         bkg_path = bkg_path_default if bkg_path is None else bkg_path
 
         pha = DataPHA.from_file(pha_path)

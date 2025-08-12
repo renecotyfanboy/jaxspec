@@ -1,5 +1,10 @@
 # Frequently asked questions
 
+## How can I load multiple spectra to fit ?
+
+Simply pass a list or dictionnary of [`ObsConfiguration`][jaxspec.data.ObsConfiguration] objects when building your
+fitter object.
+
 ## Why should I use `jaxspec` over `xspec` or associated ?
 
 We have taken great care to make `jaxspec` as easy to use as possible. It can be installed with `pip install jaxspec`

@@ -87,7 +87,7 @@ theme:
 plugins:
   - search
   - autorefs
-  - typeset
+#  - typeset
   - mkdocs-jupyter:
       include_source: True
       ignore_h1_titles: True
@@ -172,6 +172,7 @@ extra_css:
   - css/material.css
   - css/mkdocstrings.css
   - css/xarray.css
+  - css/extra.css
 
 extra_javascript:
   - javascripts/mathjax.js

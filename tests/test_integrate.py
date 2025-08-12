@@ -1,14 +1,16 @@
 import inspect
+
+from dataclasses import dataclass
+
 import chex
-import pytest
 import jax
 import jax.numpy as jnp
 import numpyro
-from jax.scipy.special import gamma, hyp1f1
-from jaxspec.util.integrate import integrate_interval, integrate_positive
-from dataclasses import dataclass
-from jax.typing import ArrayLike
+import pytest
 
+from jax.scipy.special import gamma, hyp1f1
+from jax.typing import ArrayLike
+from jaxspec.util.integrate import integrate_interval, integrate_positive
 
 numpyro.enable_x64()
 chex.set_n_cpu_devices(n=4)
@@ -53,7 +55,9 @@ def test_integrate_interval(setup: IntervalTestSetup):
     Test integrating over an interval
     """
 
-    assert jnp.isclose(integrate_interval(setup.func)(*setup.interval), setup.result), inspect.getsource(setup.func)
+    assert jnp.isclose(
+        integrate_interval(setup.func)(*setup.interval), setup.result
+    ), inspect.getsource(setup.func)
 
 
 @pytest.mark.parametrize("setup", positives_to_test)
@@ -62,7 +66,9 @@ def test_integrate_positive(setup: PositiveTestSetup):
     Test integrating over the positive real line
     """
 
-    assert jnp.isclose(integrate_positive(setup.func)(), setup.result), inspect.getsource(setup.func)
+    assert jnp.isclose(integrate_positive(setup.func)(), setup.result), inspect.getsource(
+        setup.func
+    )
 
 
 def test_integrate_interval_gradient():
@@ -73,9 +79,11 @@ def test_integrate_interval_gradient():
 
     def hyp1f1_integral(a, b, z):
         def integrand(x, a, b, z):
-            return jnp.exp(z * x) * x ** (a - 1.) * (1. - x) ** (-a + b - 1.)
+            return jnp.exp(z * x) * x ** (a - 1.0) * (1.0 - x) ** (-a + b - 1.0)
 
-        return integrate_interval(integrand)(0., 1., a, b, z) * gamma(b) / (gamma(a) * gamma(b - a))
+        return (
+            integrate_interval(integrand)(0.0, 1.0, a, b, z) * gamma(b) / (gamma(a) * gamma(b - a))
+        )
 
     a = jnp.asarray(1.5)
     b = jnp.asarray(10.0)
