@@ -11,8 +11,7 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 import networkx as nx
-
-from simpleeval import simple_eval
+import numpy as np
 
 from jaxspec.util.typing import PriorDictType
 
@@ -31,14 +30,14 @@ def set_parameters(params: PriorDictType, state: nnx.State) -> nnx.State:
         A spectral model with the newly set parameters.
     """
 
-    state_dict = state.to_pure_dict()  # haiku-like 2 level dictionary
+    state_dict = nnx.to_pure_dict(state)  # haiku-like 2 level dictionary
 
     for key, value in params.items():
         # Split the key to extract the module name and parameter name
         module_name, param_name = key.rsplit("_", 1)
-        state_dict["modules"][module_name][param_name] = value
+        state_dict["components"][module_name][param_name] = value
 
-    state.replace_by_pure_dict(state_dict)
+    nnx.replace_by_pure_dict(state, state_dict)
 
     return state
 
@@ -71,52 +70,16 @@ class Composable(ABC):
 
 
 class SpectralModel(nnx.Module, Composable):
-    # graph: nx.DiGraph = eqx.field(static=True)
-    # modules: dict
+    _graph: nx.DiGraph
 
     def __init__(self, graph: nx.DiGraph):
-        self.graph = graph
-        self.modules = {}
+        self._graph = graph
+        self.components = {}
+        self._energy_grid = np.geomspace(0.1, 50, 1000, dtype=np.float64)
 
-        for node, data in self.graph.nodes(data=True):
+        for node, data in self._graph.nodes(data=True):
             if "component" in data["type"]:
-                self.modules[data["name"]] = data["component"]  # (**data['kwargs'])
-
-    @classmethod
-    def from_string(cls, string: str) -> SpectralModel:
-        """
-        This constructor enable to build a model from a string. The string should be a valid python expression, with
-        the following constraints :
-
-        * The model components should be defined in the jaxspec.model.list module
-        * The model components should be separated by a * or a + (no convolution yet)
-        * The model components should be written with their parameters in parentheses
-
-        Parameters:
-            string : The string to parse
-
-        Examples:
-            An absorbed model with a powerlaw and a blackbody:
-
-            >>> model = SpectralModel.from_string("Tbabs()*(Powerlaw() + Blackbody())")
-        """
-
-        from .list import model_components
-
-        return simple_eval(string, functions=model_components)
-
-    def to_string(self) -> str:
-        """
-        This method return the string representation of the model.
-
-        Examples:
-            Build a model from a string and convert it back to a string:
-
-            >>> model = SpectralModel.from_string("Tbabs()*(Powerlaw() + Blackbody())")
-            >>> model.to_string()
-            "Tbabs()*(Powerlaw() + Blackbody())"
-        """
-        return str(self)
+                self.components[data["name"]] = data["component"]  # (**data['kwargs'])
 
     """
     def __str__(self) -> str:
@@ -153,7 +116,7 @@ class SpectralModel(nnx.Module, Composable):
         """
 
         composed_graph = compose(
-            self.graph, other.graph, operation=operation, operation_func=operation_func
+            self._graph, other._graph, operation=operation, operation_func=operation_func
         )
 
         return SpectralModel(composed_graph)
@@ -161,7 +124,7 @@ class SpectralModel(nnx.Module, Composable):
     @classmethod
     def from_component(cls, component):
         node_id = str(uuid4())
-        graph = nx.DiGraph()
+        _graph = nx.DiGraph()
 
         node_properties = {
             "type": f"{component.type}_component",
@@ -170,26 +133,26 @@ class SpectralModel(nnx.Module, Composable):
             "depth": 0,
         }
 
-        graph.add_node(node_id, **node_properties)
-        graph.add_node("out", type="out", depth=1)
-        graph.add_edge(node_id, "out")
+        _graph.add_node(node_id, **node_properties)
+        _graph.add_node("out", type="out", depth=1)
+        _graph.add_edge(node_id, "out")
 
-        return cls(graph)
+        return cls(_graph)
 
     def _find_multiplicative_components(self, node_id):
         """
         Recursively finds all the multiplicative components connected to the node with the given ID.
         """
-        node = self.graph.nodes[node_id]
+        node = self._graph.nodes[node_id]
         multiplicative_nodes = []
 
         if node.get("type") == "mul_operation":
             # Recursively find all the multiplicative components using the predecessors
-            predecessors = self.graph.pred[node_id]
+            predecessors = self._graph.pred[node_id]
             for node_id in predecessors:
-                if "multiplicative_component" == self.graph.nodes[node_id].get("type"):
+                if "multiplicative_component" == self._graph.nodes[node_id].get("type"):
                     multiplicative_nodes.append(node_id)
-                elif "mul_operation" == self.graph.nodes[node_id].get("type"):
+                elif "mul_operation" == self._graph.nodes[node_id].get("type"):
                     multiplicative_nodes.extend(self._find_multiplicative_components(node_id))
 
         return multiplicative_nodes
@@ -198,8 +161,8 @@ class SpectralModel(nnx.Module, Composable):
     def root_nodes(self) -> list[str]:
         return [
             node_id
-            for node_id, in_degree in self.graph.in_degree(self.graph.nodes)
-            if in_degree == 0 and ("additive" in self.graph.nodes[node_id].get("type"))
+            for node_id, in_degree in self._graph.in_degree(self._graph.nodes)
+            if in_degree == 0 and ("additive" in self._graph.nodes[node_id].get("type"))
         ]
 
     @property
@@ -207,8 +170,8 @@ class SpectralModel(nnx.Module, Composable):
         branches = []
 
         for root_node_id in self.root_nodes:
-            root_node_name = self.graph.nodes[root_node_id].get("name")
-            path = nx.shortest_path(self.graph, source=root_node_id, target="out")
+            root_node_name = self._graph.nodes[root_node_id].get("name")
+            path = nx.shortest_path(self._graph, source=root_node_id, target="out")
             multiplicative_components = []
 
             # Search all multiplicative components connected to this node
@@ -218,10 +181,12 @@ class SpectralModel(nnx.Module, Composable):
                     [node_id for node_id in self._find_multiplicative_components(node_id)]
                 )
 
+            multiplicative_components = set(multiplicative_components)
+
             branch = ""
 
             for multiplicative_node_id in multiplicative_components:
-                multiplicative_node_name = self.graph.nodes[multiplicative_node_id].get("name")
+                multiplicative_node_name = self._graph.nodes[multiplicative_node_id].get("name")
                 branch += f"{multiplicative_node_name}*"
 
             branch += f"{root_node_name}"
@@ -233,12 +198,12 @@ class SpectralModel(nnx.Module, Composable):
         continuum = {}
 
         ## Evaluate the expected contribution for each component
-        for node_id in nx.dag.topological_sort(self.graph):
-            node = self.graph.nodes[node_id]
+        for node_id in nx.dag.topological_sort(self._graph):
+            node = self._graph.nodes[node_id]
 
             if node["type"] == "additive_component":
                 node_name = node["name"]
-                runtime_modules = self.modules[node_name]
+                runtime_modules = self.components[node_name]
 
                 if not energy_flux:
                     continuum[node_name] = runtime_modules._photon_flux(
@@ -252,8 +217,8 @@ class SpectralModel(nnx.Module, Composable):
 
             elif node["type"] == "multiplicative_component":
                 node_name = node["name"]
-                runtime_modules = self.modules[node_name]
-                continuum[node_name] = runtime_modules.factor((e_low + e_high) / 2)
+                runtime_modules = self.components[node_name]
+                continuum[node_name] = runtime_modules._factor(e_low, e_high, n_points=n_points)
 
             else:
                 pass
@@ -264,10 +229,10 @@ class SpectralModel(nnx.Module, Composable):
         branches = {}
 
         for root_node_id in root_nodes:
-            root_node_name = self.graph.nodes[root_node_id].get("name")
+            root_node_name = self._graph.nodes[root_node_id].get("name")
             root_continuum = continuum[root_node_name]
 
-            path = nx.shortest_path(self.graph, source=root_node_id, target="out")
+            path = nx.shortest_path(self._graph, source=root_node_id, target="out")
             multiplicative_components = []
 
             # Search all multiplicative components connected to this node
@@ -279,8 +244,8 @@ class SpectralModel(nnx.Module, Composable):
 
             branch = ""
 
-            for multiplicative_node_id in multiplicative_components:
-                multiplicative_node_name = self.graph.nodes[multiplicative_node_id].get("name")
+            for multiplicative_node_id in set(multiplicative_components):
+                multiplicative_node_name = self._graph.nodes[multiplicative_node_id].get("name")
                 root_continuum *= continuum[multiplicative_node_name]
                 branch += f"{multiplicative_node_name}*"
 
@@ -302,7 +267,7 @@ class SpectralModel(nnx.Module, Composable):
         Returns:
             A string containing the mermaid representation of the model.
         """
-        return export_to_mermaid(self.graph, file)
+        return export_to_mermaid(self._graph, file)
 
     @partial(jax.jit, static_argnums=0, static_argnames=("n_points", "split_branches"))
     def photon_flux(self, params, e_low, e_high, n_points=2, split_branches=False):
@@ -327,12 +292,12 @@ class SpectralModel(nnx.Module, Composable):
             instead.
         """
 
-        graphdef, state = nnx.split(self)
-        state = set_parameters(params, state)
+        graphdef, parameters, tables = nnx.split(self, nnx.Param, ...)
+        parameters = set_parameters(params, parameters)
 
-        return nnx.call((graphdef, state)).turbo_flux(
+        return nnx.merge(graphdef, parameters, tables).turbo_flux(
             e_low, e_high, n_points=n_points, return_branches=split_branches
-        )[0]
+        )
 
     @partial(jax.jit, static_argnums=0, static_argnames="n_points")
     def energy_flux(self, params, e_low, e_high, n_points=2):
@@ -357,12 +322,12 @@ class SpectralModel(nnx.Module, Composable):
             instead.
         """
 
-        graphdef, state = nnx.split(self)
-        state = set_parameters(params, state)
+        graphdef, parameters, tables = nnx.split(self, nnx.Param, ...)
+        parameters = set_parameters(params, parameters)
 
-        return nnx.call((graphdef, state)).turbo_flux(
+        return nnx.merge(graphdef, parameters, tables).turbo_flux(
             e_low, e_high, n_points=n_points, energy_flux=True
-        )[0]
+        )
 
 
 class ModelComponent(nnx.Module, Composable, ABC):
@@ -426,6 +391,13 @@ class AdditiveComponent(ModelComponent):
 
 class MultiplicativeComponent(ModelComponent):
     type = "multiplicative"
+
+    def _factor(self, e_low, e_high, n_points=2):
+        energy = jnp.linspace(e_low, e_high, n_points, axis=-1)
+        factor = self.factor(energy)
+
+        return jsp.integrate.trapezoid(factor * energy, jnp.log(energy), axis=-1) / (e_high - e_low)
+        # return jnp.mean(factor, axis = -1)
 
     def factor(self, energy):
         """

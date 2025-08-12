@@ -1,4 +1,6 @@
-from jaxspec.fit import BayesianModel, NSFitter
+import pytest
+
+from jaxspec.fit import BayesianModel
 
 
 def test_convergence(get_individual_mcmc_results, get_joint_mcmc_result):
@@ -7,6 +9,8 @@ def test_convergence(get_individual_mcmc_results, get_joint_mcmc_result):
 
 
 def test_ns(obs_model_prior):
+    NSFitter = pytest.importorskip("jaxspec.fit.NSFitter")
+
     obsconfs, model, prior = obs_model_prior
 
     obsconf = obsconfs[0]

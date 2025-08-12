@@ -11,13 +11,21 @@ by combining components, and fit it to one or multiple observed spectra using Ba
 
 ## Getting started
 
-<div class="grid">
 
-  <a href="frontpage/installation/" class="card" style="font-size: 1.2em;">🛠️ Installation</a>
-  <a href="examples/fitting_example/" class="card" style="font-size: 1.2em;">🚀 Quickstart</a>
-  <a href="examples/" class="card" style="font-size: 1.2em;">📚 Examples</a>
-  <a href="contribute/" class="card" style="font-size: 1.2em;">🤝 Contribute</a>
+<div class="grid cards" markdown>
 
+-   <a class="card-link" href="frontpage/installation/" target="_blank" rel="noreferrer">
+        <span class="card-title center">🛠️ Installation</span>
+    </a>
+-   <a class="card-link" href="examples/fitting_example/" target="_blank" rel="noreferrer">
+    <span class="card-title center">🚀 Quickstart</span>
+    </a>
+-   <a class="card-link" href="examples/" target="_blank" rel="noreferrer">
+    <span class="card-title center">📚 Examples</span>
+    </a>
+-   <a class="card-link" href="contribute/" target="_blank" rel="noreferrer">
+    <span class="card-title center">🤝 Contribute</span>
+    </a>
 </div>
 
 ## How does it work?
@@ -33,7 +41,7 @@ by combining components, and fit it to one or multiple observed spectra using Ba
 Basically, the use of `JAX` as backend allows our models to be differentiable and computable on accelerators, and `numpyro`
 gives access to appropriate samplers such as the No U-Turn Sampler (NUTS) and Hamiltonian Monte Carlo (HMC).
 
-## Citation 
+## Citation
 
 If you use `jaxspec` in your research, please consider citing the following article
 

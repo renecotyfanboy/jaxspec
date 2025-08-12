@@ -42,6 +42,11 @@ V = TypeVar("V")
 T = TypeVar("T")
 
 
+def auto_in_axes(pytree, axis=0):
+    """Return a pytree of 0/None depending on whether the leaf is batched."""
+    return jax.tree.map(lambda x: axis if (hasattr(x, "ndim") and x.ndim > 0) else None, pytree)
+
+
 class FitResult:
     """
     Container for the result of a fit using any ModelFitter class.
@@ -54,17 +59,17 @@ class FitResult:
         inference_data: az.InferenceData,
         background_model: BackgroundModel = None,
     ):
-        self.model = bayesian_fitter.model
+        self.model = bayesian_fitter.spectral_model
         self.bayesian_fitter = bayesian_fitter
         self.inference_data = inference_data
-        self.obsconfs = bayesian_fitter.observation_container
+        self.obsconfs = bayesian_fitter._observation_container
         self.background_model = background_model
 
         # Add the model used in fit to the metadata
         for group in self.inference_data.groups():
             group_name = group.split("/")[-1]
             metadata = getattr(self.inference_data, group_name).attrs
-            metadata["model"] = str(self.model)
+            # metadata["model"] = str(self.model)
             # TODO : Store metadata about observations used in the fitting process
 
     @property
@@ -78,6 +83,7 @@ class FitResult:
     def _ppc_folded_branches(self, obs_id):
         obs = self.obsconfs[obs_id]
 
+        # Slice the parameters corresponding to the current ObsID
         if len(next(iter(self.input_parameters.values())).shape) > 2:
             idx = list(self.obsconfs.keys()).index(obs_id)
             obs_parameters = jax.tree.map(lambda x: x[..., idx], self.input_parameters)
@@ -85,7 +91,7 @@ class FitResult:
         else:
             obs_parameters = self.input_parameters
 
-        if self.bayesian_fitter.sparse:
+        if self.bayesian_fitter.settings.get("sparse", False):
             transfer_matrix = BCOO.from_scipy_sparse(
                 obs.transfer_matrix.data.to_scipy_sparse().tocsr()
             )
@@ -98,6 +104,7 @@ class FitResult:
         flux_func = jax.jit(
             jax.vmap(jax.vmap(lambda p: self.model.photon_flux(p, *energies, split_branches=True)))
         )
+
         convolve_func = jax.jit(
             jax.vmap(jax.vmap(lambda flux: jnp.clip(transfer_matrix @ flux, a_min=1e-6)))
         )
@@ -124,13 +131,14 @@ class FitResult:
 
         for key, value in input_parameters.items():
             module, parameter = key.rsplit("_", 1)
+            key_to_search = f"mod/~/{module}_{parameter}"
 
-            if f"{module}_{parameter}" in posterior.keys():
+            if key_to_search in posterior.keys():
                 # We add as extra dimension as there might be different values per observation
-                if posterior[f"{module}_{parameter}"].shape == samples_shape:
-                    to_set = posterior[f"{module}_{parameter}"][..., None]
+                if posterior[key_to_search].shape == samples_shape:
+                    to_set = posterior[key_to_search][..., None]
                 else:
-                    to_set = posterior[f"{module}_{parameter}"]
+                    to_set = posterior[key_to_search]
 
                 input_parameters[f"{module}_{parameter}"] = to_set
 
@@ -299,7 +307,7 @@ class FitResult:
 
         return value
 
-    def to_chain(self, name: str) -> Chain:
+    def to_chain(self, name: str, parameter_kind="mod") -> Chain:
         """
         Return a ChainConsumer Chain object from the posterior distribution of the parameters_type.
 
@@ -308,9 +316,7 @@ class FitResult:
         """
 
         keys_to_drop = [
-            key
-            for key in self.inference_data.posterior.keys()
-            if (key.startswith("_") or key.startswith("bkg"))
+            key for key in self.inference_data.posterior.keys() if not key.startswith("mod")
         ]
 
         reduced_id = az.extract(
@@ -337,6 +343,8 @@ class FitResult:
                 df_list.append(array.to_pandas())
 
         df = pd.concat(df_list, axis=1)
+
+        df = df.rename(columns=lambda x: x.split("/~/")[-1])
 
         return Chain(samples=df, name=name)
 
@@ -450,7 +458,7 @@ class FitResult:
                 legend_labels = []
 
                 count = az.extract(
-                    self.inference_data, var_names=f"obs_{obs_id}", group="posterior_predictive"
+                    self.inference_data, var_names=f"obs/~/{obs_id}", group="posterior_predictive"
                 ).values.T
 
                 xbins, exposure, integrated_arf = _compute_effective_area(obsconf, x_unit)
@@ -465,7 +473,9 @@ class FitResult:
                     case "photon_flux_density":
                         denominator = (xbins[1] - xbins[0]) * integrated_arf * exposure
 
-                y_samples = (count * u.ct / denominator).to(y_units)
+                y_samples = count * u.ct / denominator
+
+                y_samples = y_samples.to(y_units)
 
                 y_observed, y_observed_low, y_observed_high = _error_bars_for_observed_data(
                     obsconf.folded_counts.data, denominator, y_units
@@ -491,8 +501,8 @@ class FitResult:
                     alpha=0.7,
                 )
 
-                lowest_y = y_observed.min()
-                highest_y = y_observed.max()
+                lowest_y = np.nanmin(y_observed)
+                highest_y = np.nanmax(y_observed)
 
                 legend_plots.append((true_data_plot,))
                 legend_labels.append("Observed")
@@ -522,7 +532,10 @@ class FitResult:
                             count.reshape((count.shape[0] * count.shape[1], -1))
                             * u.ct
                             / denominator
-                        ).to(y_units)
+                        )
+
+                        y_samples = y_samples.to(y_units)
+
                         component_plot = _plot_binned_samples_with_error(
                             ax[0],
                             xbins.value,
@@ -545,7 +558,7 @@ class FitResult:
                         if self.background_model is None
                         else az.extract(
                             self.inference_data,
-                            var_names=f"bkg_{obs_id}",
+                            var_names=f"bkg/~/{obs_id}",
                             group="posterior_predictive",
                         ).values.T
                     )
@@ -577,18 +590,18 @@ class FitResult:
                         alpha=0.7,
                     )
 
-                    lowest_y = min(lowest_y, y_observed_bkg.min())
-                    highest_y = max(highest_y, y_observed_bkg.max())
+                    # lowest_y = np.nanmin(lowest_y.min, np.nanmin(y_observed_bkg.value).astype(float))
+                    # highest_y = np.nanmax(highest_y.value.astype(float), np.nanmax(y_observed_bkg.value).astype(float))
 
                     legend_plots.append((true_bkg_plot,))
                     legend_labels.append("Observed (bkg)")
                     legend_plots += model_bkg_plot
                     legend_labels.append("Model (bkg)")
 
-                max_residuals = np.max(np.abs(residual_samples))
+                max_residuals = min(3.5, np.nanmax(np.abs(residual_samples)))
 
                 ax[0].loglog()
-                ax[1].set_ylim(-max(3.5, max_residuals), +max(3.5, max_residuals))
+                ax[1].set_ylim(-np.nanmax([3.5, max_residuals]), +np.nanmax([3.5, max_residuals]))
                 ax[0].set_ylabel(f"Folded spectrum\n [{y_units:latex_inline}]")
                 ax[1].set_ylabel("Residuals \n" + r"[$\sigma$]")
 
@@ -635,9 +648,9 @@ class FitResult:
 
                 fig.align_ylabels()
                 plt.subplots_adjust(hspace=0.0)
+                fig.suptitle(f"Posterior predictive - {obs_id}" if title is None else title)
                 fig.tight_layout()
                 figure_list.append(fig)
-                fig.suptitle(f"Posterior predictive - {obs_id}" if title is None else title)
                 # fig.show()
 
         plt.tight_layout()
@@ -651,9 +664,9 @@ class FitResult:
         """
 
         consumer = ChainConsumer()
-        consumer.add_chain(self.to_chain(self.model.to_string()))
+        consumer.add_chain(self.to_chain("Model"))
 
-        return consumer.analysis.get_latex_table(caption="Results of the fit", label="tab:results")
+        return consumer.analysis.get_latex_table(caption="Fit result", label="tab:results")
 
     def plot_corner(
         self,

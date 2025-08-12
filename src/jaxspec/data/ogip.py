@@ -109,7 +109,7 @@ class DataPHA:
             raise ValueError("No QUALITY column found in the PHA file.")
 
         if "BACKSCAL" in header:
-            backscal = header["BACKSCAL"] * np.ones_like(data["CHANNEL"])
+            backscal = header["BACKSCAL"] * np.ones_like(data["CHANNEL"], dtype=float)
         elif "BACKSCAL" in data.colnames:
             backscal = data["BACKSCAL"]
         else:
@@ -138,7 +138,14 @@ class DataPHA:
             "flags": flags,
         }
 
-        return cls(data["CHANNEL"], data["COUNTS"], header["EXPOSURE"], **kwargs)
+        if "COUNTS" in data.colnames:
+            counts = data["COUNTS"]
+        elif "RATE" in data.colnames:
+            counts = data["RATE"] * header["EXPOSURE"]
+        else:
+            raise ValueError("No COUNTS or RATE column found in the PHA file.")
+
+        return cls(data["CHANNEL"], counts, header["EXPOSURE"], **kwargs)
 
 
 class DataARF:

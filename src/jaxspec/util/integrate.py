@@ -9,11 +9,13 @@ It mainly relies on tanh-sinh (or double exponential) quadrature to perform the 
     * [Tanh-sinh quadrature](https://en.wikipedia.org/wiki/Tanh-sinh_quadrature) from Wikipedia
 """
 
+from collections.abc import Callable
+
 import jax
 import jax.numpy as jnp
+
 from jax import Array
 from jax.scipy.integrate import trapezoid
-from typing import Callable
 
 
 def interval_weights(a: float, b: float, n: int) -> tuple[Array, Array, Array]:
@@ -93,9 +95,15 @@ def integrate_interval(integrand: Callable, n: int = 51) -> Callable:
         primal_out = f(a, b, *args)
 
         # Partial derivatives along other parameters
-        jac = trapezoid(jnp.nan_to_num(jnp.asarray(jax.jacfwd(lambda args: integrand(x, *args))(args)) * dx), x=t, axis=-1)
+        jac = trapezoid(
+            jnp.nan_to_num(jnp.asarray(jax.jacfwd(lambda args: integrand(x, *args))(args)) * dx),
+            x=t,
+            axis=-1,
+        )
 
-        tangent_out = -integrand(a, *args) * a_dot + integrand(b, *args) * b_dot + jac @ jnp.asarray(args_dot)
+        tangent_out = (
+            -integrand(a, *args) * a_dot + integrand(b, *args) * b_dot + jac @ jnp.asarray(args_dot)
+        )
         return primal_out, tangent_out
 
     return f
@@ -142,7 +150,11 @@ def integrate_positive(integrand: Callable, n: int = 51) -> Callable:
         primal_out = f(*args)
 
         # Partial derivatives along other parameters
-        jac = trapezoid(jnp.nan_to_num(jnp.asarray(jax.jacfwd(lambda args: integrand(x, *args))(args)) * dx), x=t, axis=-1)
+        jac = trapezoid(
+            jnp.nan_to_num(jnp.asarray(jax.jacfwd(lambda args: integrand(x, *args))(args)) * dx),
+            x=t,
+            axis=-1,
+        )
 
         tangent_out = jac @ jnp.asarray(args_dot)
         return primal_out, tangent_out
