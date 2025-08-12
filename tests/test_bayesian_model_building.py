@@ -138,6 +138,7 @@ def test_run_vi(model, prior, obsconf, expectation):
             num_steps=100,
             num_samples=10,
             optimizer=optim,
+            plot_diagnostics=True,
         )
 
         result.photon_flux(0.7, 1.2, register=True)

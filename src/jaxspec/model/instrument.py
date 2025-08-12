@@ -37,10 +37,10 @@ class ConstantShift(ShiftModel):
         self.prior_distribution = prior_distribution
 
     def numpyro_model(self, observation_name: str):
-        shift = numpyro.sample(f"ins/~/shift_{observation_name}", self.prior_distribution)
+        shift_offset = numpyro.sample(f"ins/~/shift_{observation_name}", self.prior_distribution)
 
         def shift(energy):
-            return energy + shift
+            return energy + shift_offset
 
         return shift
 
