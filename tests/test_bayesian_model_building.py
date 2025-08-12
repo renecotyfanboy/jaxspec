@@ -13,7 +13,7 @@ from conftest import (
 )
 from jaxspec.fit import BayesianModel, MCMCFitter, TiedParameter, VIFitter
 from jaxspec.model.additive import Powerlaw
-from jaxspec.model.instrument import ConstantGain, InstrumentModel
+from jaxspec.model.instrument import ConstantGain, ConstantShift, InstrumentModel
 from jaxspec.model.multiplicative import Tbabs
 from numpyro.optim import optax_to_numpyro
 from optax import adamw
@@ -155,7 +155,11 @@ def test_instrument_model_building(sampler):
         prior_shared_pars,
         dict_of_obsconf,
         background_model=None,
-        instrument_model=InstrumentModel("PN", gain_model=ConstantGain(dist.Uniform(0.8, 1.2))),
+        instrument_model=InstrumentModel(
+            "PN",
+            gain_model=ConstantGain(dist.Uniform(0.8, 1.2)),
+            shift_model=ConstantShift(dist.Uniform(-0.1, +0.1)),
+        ),
     )
 
     result = forward_model.fit(
