@@ -11,8 +11,10 @@ from conftest import (
     single_obsconf,
     spectral_model,
 )
-from jaxspec.fit import BayesianModel, MCMCFitter, VIFitter
+from jaxspec.fit import BayesianModel, MCMCFitter, TiedParameter, VIFitter
+from jaxspec.model.additive import Powerlaw
 from jaxspec.model.instrument import ConstantGain, InstrumentModel
+from jaxspec.model.multiplicative import Tbabs
 from numpyro.optim import optax_to_numpyro
 from optax import adamw
 
@@ -155,6 +157,35 @@ def test_instrument_model_building(sampler):
         background_model=None,
         instrument_model=InstrumentModel("PN", gain_model=ConstantGain(dist.Uniform(0.8, 1.2))),
     )
+
+    result = forward_model.fit(
+        num_chains=4,
+        num_warmup=10,
+        num_samples=10,
+        sampler=sampler,
+        mcmc_kwargs={"progress_bar": False},
+    )
+
+    result.photon_flux(0.7, 1.2, register=True)
+    result.energy_flux(0.7, 1.2, register=True)
+    result.luminosity(0.7, 1.2, redshift=0.01, register=True)
+    [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
+    result.to_chain("test")
+
+
+@pytest.mark.slow
+@mcmc_marker
+def test_tied_parameters(sampler):
+    spectral_model = Tbabs() * (Powerlaw() + Powerlaw())
+    prior = {
+        "powerlaw_1_alpha": dist.Uniform(0, 5),
+        "powerlaw_1_norm": dist.LogUniform(1e-5, 1e-2),
+        "powerlaw_2_alpha": TiedParameter("powerlaw_1_alpha", lambda x: 0.5 * x),
+        "powerlaw_2_norm": dist.LogUniform(1e-5, 1e-2),
+        "tbabs_1_nh": 0.6,
+    }
+
+    forward_model = MCMCFitter(spectral_model, prior, dict_of_obsconf)
 
     result = forward_model.fit(
         num_chains=4,

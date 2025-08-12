@@ -5,26 +5,6 @@ import jax.numpy as jnp
 
 from jaxspec.fit import BayesianModel
 
-'''
-def test_model_building(obs_model_prior):
-    """
-    Check that all parameters are built correctly within the numpyro model.
-    """
-    obs, spectral_model, prior_distributions = obs_model_prior
-
-    def numpyro_model():
-        params = build_prior(prior_distributions, expand_shape=())
-        lower_model = build_numpyro_model_for_single_obs(obs[0], spectral_model, None)
-
-        lower_model(params)
-
-    relations = get_model_relations(numpyro_model)
-
-    assert {
-        key for key in relations["sample_param"].keys() if key not in relations["observed"]
-    } == set(prior_distributions.keys())
-'''
-
 
 def test_likelihood(obs_model_prior):
     obsconf, model, prior = obs_model_prior
