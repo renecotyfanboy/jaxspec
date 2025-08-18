@@ -58,7 +58,7 @@ test = [
 ]
 dev = [
     "pre-commit>=3.5,<5.0",
-    "ruff>=0.2.1,<0.10.0",
+    "ruff>=0.2.1,<0.13.0",
     "jupyterlab>=4.0.7,<5",
     "notebook>=7.0.6,<8",
     "ipywidgets>=8.1.1,<9",
