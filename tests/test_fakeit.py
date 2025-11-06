@@ -63,10 +63,10 @@ def model():
 
 @pytest.fixture
 def sharded_parameters(unidimensional_parameters):
-    from jax.experimental import mesh_utils
-    from jax.sharding import PositionalSharding
+    from jax.sharding import NamedSharding, PartitionSpec
 
-    sharding = PositionalSharding(mesh_utils.create_device_mesh((4,)))
+    mesh = jax.make_mesh((4,), ("batch",))
+    sharding = NamedSharding(mesh, PartitionSpec("batch"))
 
     return jax.device_put(unidimensional_parameters, sharding)
 
