@@ -197,4 +197,6 @@ cython_debug/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+_old/
 # End of https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks

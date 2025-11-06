@@ -122,7 +122,9 @@ class FitResult:
 
         samples_shape = (len(posterior.coords["chain"]), len(posterior.coords["draw"]))
 
-        total_shape = tuple(posterior.sizes[d] for d in posterior.coords)
+        total_shape = tuple(
+            posterior.sizes[d] for d in posterior.coords if d in ["chain", "draw", "sample"]
+        )
 
         posterior = {key: posterior[key].data for key in posterior.data_vars}
 

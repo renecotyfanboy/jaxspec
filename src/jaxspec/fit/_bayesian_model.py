@@ -10,9 +10,8 @@ import matplotlib.pyplot as plt
 import numpyro
 
 from flax import nnx
-from jax.experimental import mesh_utils
 from jax.random import PRNGKey
-from jax.sharding import PositionalSharding
+from jax.sharding import NamedSharding, PartitionSpec
 from numpyro.distributions import Poisson, TransformedDistribution
 from numpyro.infer import Predictive
 from numpyro.infer.inspect import get_model_relations
@@ -244,7 +243,7 @@ class BayesianModel(nnx.Module):
         return log_posterior_prob
 
     @cached_property
-    def _parameter_names(self) -> list[str]:
+    def parameter_names(self) -> list[str]:
         """
         A list of parameter names for the model.
         """
@@ -269,7 +268,7 @@ class BayesianModel(nnx.Module):
         """
         input_params = {}
 
-        for index, key in enumerate(self._parameter_names):
+        for index, key in enumerate(self.parameter_names):
             input_params[key] = theta[index]
 
         return input_params
@@ -279,9 +278,9 @@ class BayesianModel(nnx.Module):
         Convert a dictionary of parameters to an array of parameters.
         """
 
-        theta = jnp.zeros(len(self._parameter_names))
+        theta = jnp.zeros(len(self.parameter_names))
 
-        for index, key in enumerate(self._parameter_names):
+        for index, key in enumerate(self.parameter_names):
             theta = theta.at[index].set(dict_of_params[key])
 
         return theta
@@ -298,7 +297,7 @@ class BayesianModel(nnx.Module):
         @jax.jit
         def prior_sample(key):
             return Predictive(
-                self.numpyro_model, return_sites=self._parameter_names, num_samples=num_samples
+                self.numpyro_model, return_sites=self.parameter_names, num_samples=num_samples
             )(key, observed=False)
 
         return prior_sample(key)
@@ -324,7 +323,8 @@ class BayesianModel(nnx.Module):
         """
         key_prior, key_posterior = jax.random.split(key, 2)
         n_devices = len(jax.local_devices())
-        sharding = PositionalSharding(mesh_utils.create_device_mesh((n_devices,)))
+        mesh = jax.make_mesh((n_devices,), ("batch",))
+        sharding = NamedSharding(mesh, PartitionSpec("batch"))
 
         # Sample from prior and correct if the number of samples is not a multiple of the number of devices
         if num_samples % n_devices != 0:
