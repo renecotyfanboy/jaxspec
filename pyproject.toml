@@ -7,11 +7,11 @@ requires-python = ">=3.10,<3.13"
 readme = "README.md"
 license = "MIT"
 dependencies = [
-    "jax>=0.5.0,<0.6",
+    "jax>=0.5.0,<0.7",
     "numpy<3.0.0",
     "pandas>=2.2.0,<3",
     "astropy>=6.0.0,<8",
-    "numpyro>=0.17.0,<0.19",
+    "numpyro>=0.17.0,<0.20",
     "networkx~=3.1",
     "matplotlib>=3.8.0,<4",
     "arviz>=0.17.1,<0.23.0",
@@ -23,7 +23,7 @@ dependencies = [
     "seaborn>=0.13.1,<0.14",
     "sparse>0.15",
     "optimistix>=0.0.10,<0.0.11",
-    "scipy<1.15",
+    "scipy<1.16",
     "mendeleev>=0.15,<1.2",
     "jaxns>=2.6.7,<3",
     "pooch>=1.8.2,<2",
@@ -58,7 +58,7 @@ test = [
 ]
 dev = [
     "pre-commit>=3.5,<5.0",
-    "ruff>=0.2.1,<0.10.0",
+    "ruff>=0.2.1,<0.15.0",
     "jupyterlab>=4.0.7,<5",
     "notebook>=7.0.6,<8",
     "ipywidgets>=8.1.1,<9",
