@@ -14,9 +14,9 @@ spectral_model_background = Powerlaw() + Blackbodyrad()
 
 prior_background = {
     "powerlaw_1_alpha": dist.Uniform(0, 5),
-    "powerlaw_1_norm": dist.LogUniform(1e-8, 1e-3),
+    "powerlaw_1_norm": dist.LogUniform(1e-7, 1e-3),
     "blackbodyrad_1_kT": dist.Uniform(0, 5),
-    "blackbodyrad_1_norm": dist.LogUniform(1e-6, 1e-1),
+    "blackbodyrad_1_norm": dist.LogUniform(1e-5, 1e-1),
 }
 
 
@@ -36,7 +36,7 @@ def test_background_model(obs_model_prior, bkg_model):
     obs_list, model, prior = obs_model_prior
     forward = MCMCFitter(model, prior, obs_list[0], background_model=bkg_model)
     result = forward.fit(
-        num_chains=4, num_warmup=100, num_samples=100, mcmc_kwargs={"progress_bar": False}
+        num_chains=4, num_warmup=1000, num_samples=1000, mcmc_kwargs={"progress_bar": False}
     )
     result.plot_ppc(title=f"Test {bkg_model.__class__.__name__}")
 

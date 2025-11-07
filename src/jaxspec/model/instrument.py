@@ -8,13 +8,26 @@ from numpyro.distributions import Distribution
 
 
 class GainModel(ABC, nnx.Module):
+    """
+    Generic class for a gain model
+    """
+
     @abstractmethod
     def numpyro_model(self, observation_name: str):
         pass
 
 
 class ConstantGain(GainModel):
+    """
+    A constant gain model
+    """
+
     def __init__(self, prior_distribution: Distribution):
+        """
+        Parameters:
+            prior_distribution: the prior distribution for the gain value.
+        """
+
         self.prior_distribution = prior_distribution
 
     def numpyro_model(self, observation_name: str):
@@ -27,13 +40,25 @@ class ConstantGain(GainModel):
 
 
 class ShiftModel(ABC, nnx.Module):
+    """
+    Generic class for a shift model
+    """
+
     @abstractmethod
     def numpyro_model(self, observation_name: str):
         pass
 
 
 class ConstantShift(ShiftModel):
+    """
+    A constant shift model
+    """
+
     def __init__(self, prior_distribution: Distribution):
+        """
+        Parameters:
+            prior_distribution: the prior distribution for the shift value.
+        """
         self.prior_distribution = prior_distribution
 
     def numpyro_model(self, observation_name: str):
@@ -52,6 +77,15 @@ class InstrumentModel(nnx.Module):
         gain_model: GainModel | None = None,
         shift_model: ShiftModel | None = None,
     ):
+        """
+        Encapsulate an instrument model, build as a combination of a shift and gain model.
+
+        Parameters:
+            reference_observation_name : The observation to use as a reference
+            gain_model : The gain model
+            shift_model : The shift model
+        """
+
         self.reference = reference_observation_name
         self.gain_model = gain_model
         self.shift_model = shift_model

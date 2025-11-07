@@ -18,14 +18,13 @@ nav:
     - Add a background : examples/background.md
     - Good practices for MCMC: examples/work_with_arviz.ipynb
     - Interface with other frameworks : examples/external_samplers.ipynb
-  #- Models:
-  #    - models/index.md
-  #    - APEC: models/apec.md
+    - Cross calibration : examples/calibration.ipynb
   - API Reference:
     - Spectral model base: references/model.md
     - Additive models: references/additive.md
     - Multiplicative models: references/multiplicative.md
     - Background models: references/background.md
+    - Instrument models: references/instrument.md
     - Data containers: references/data.md
     - Fitting: references/fitting.md
     - Result containers: references/results.md

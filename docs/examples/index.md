@@ -54,5 +54,11 @@
 
     Use `jaxspec` likelihood in other packages
 
+-   [__Cross-calibration between instruments__](calibration.ipynb)
+
+    ---
+
+    Add extra gains and shifts to account for the miscalibrations
+
 
 </div>
