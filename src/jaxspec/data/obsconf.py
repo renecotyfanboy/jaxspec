@@ -163,10 +163,8 @@ class ObsConfiguration(xr.Dataset):
 
         if observation.folded_background is not None:
             folded_background = observation.folded_background.data[row_idx]
-            folded_background_unscaled = observation.folded_background_unscaled.data[row_idx]
         else:
             folded_background = np.zeros_like(folded_counts)
-            folded_background_unscaled = np.zeros_like(folded_counts)
 
         data_dict = {
             "transfer_matrix": (
@@ -205,14 +203,6 @@ class ObsConfiguration(xr.Dataset):
                 folded_background,
                 {
                     "description": "Folded background counts after grouping, with the same restrictions as the transfer matrix.",
-                    "unit": "photons",
-                },
-            ),
-            "folded_background_unscaled": (
-                ["folded_channel"],
-                folded_background_unscaled,
-                {
-                    "description": "To be done",
                     "unit": "photons",
                 },
             ),

@@ -135,7 +135,7 @@ class BayesianModel(nnx.Module):
                 with numpyro.plate("obs_plate/~/" + name, len(observation.folded_counts)):
                     numpyro.sample(
                         "obs/~/" + name,
-                        Poisson(obs_countrate + bkg_countrate / observation.folded_backratio.data),
+                        Poisson(obs_countrate + bkg_countrate * observation.folded_backratio.data),
                         obs=observation.folded_counts.data if observed else None,
                     )
 
