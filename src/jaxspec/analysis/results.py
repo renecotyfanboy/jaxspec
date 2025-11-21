@@ -167,6 +167,7 @@ class FitResult:
         e_max: float,
         unit: Unit = u.photon / u.cm**2 / u.s,
         register: bool = False,
+        n_points: int = 100,
     ) -> ArrayLike:
         """
         Compute the unfolded photon flux in a given energy band. The flux is then added to
@@ -177,6 +178,7 @@ class FitResult:
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the photon flux.
             register: Whether to register the flux with the other posterior parameters.
+            n_points: The number of points to use for computing the unfolded spectrum.
 
         !!! warning
             Computation of the folded flux is not implemented yet. Feel free to open an
@@ -188,7 +190,7 @@ class FitResult:
         def vectorized_flux(*pars):
             parameters_pytree = jax.tree.unflatten(pytree_def, pars)
             return self.model.photon_flux(
-                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=100
+                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=n_points
             )[0]
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
@@ -197,7 +199,7 @@ class FitResult:
         value = flux * conversion_factor
 
         if register:
-            self.inference_data.posterior[f"photon_flux_{e_min:.1f}_{e_max:.1f}"] = (
+            self.inference_data.posterior[f"mod/~/photon_flux_{e_min:.1f}_{e_max:.1f}"] = (
                 list(self.inference_data.posterior.coords),
                 value,
             )
@@ -210,6 +212,7 @@ class FitResult:
         e_max: float,
         unit: Unit = u.erg / u.cm**2 / u.s,
         register: bool = False,
+        n_points: int = 100,
     ) -> ArrayLike:
         """
         Compute the unfolded energy flux in a given energy band. The flux is then added to
@@ -220,6 +223,7 @@ class FitResult:
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the energy flux.
             register: Whether to register the flux with the other posterior parameters.
+            n_points: The number of points to use for computing the unfolded spectrum.
 
         !!! warning
             Computation of the folded flux is not implemented yet. Feel free to open an
@@ -231,7 +235,7 @@ class FitResult:
         def vectorized_flux(*pars):
             parameters_pytree = jax.tree.unflatten(pytree_def, pars)
             return self.model.energy_flux(
-                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=100
+                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=n_points
             )[0]
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
@@ -240,7 +244,7 @@ class FitResult:
         value = flux * conversion_factor
 
         if register:
-            self.inference_data.posterior[f"energy_flux_{e_min:.1f}_{e_max:.1f}"] = (
+            self.inference_data.posterior[f"mod/~/energy_flux_{e_min:.1f}_{e_max:.1f}"] = (
                 list(self.inference_data.posterior.coords),
                 value,
             )
@@ -257,6 +261,7 @@ class FitResult:
         cosmology: Cosmology = Planck18,
         unit: Unit = u.erg / u.s,
         register: bool = False,
+        n_points=100,
     ) -> ArrayLike:
         """
         Compute the luminosity of the source specifying its redshift. The luminosity is then added to
@@ -294,7 +299,7 @@ class FitResult:
                 parameters_pytree,
                 jnp.asarray([e_min]) * (1 + redshift),
                 jnp.asarray([e_max]) * (1 + redshift),
-                n_points=100,
+                n_points=n_points,
             )[0]
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
@@ -302,7 +307,7 @@ class FitResult:
         value = (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(unit)
 
         if register:
-            self.inference_data.posterior[f"luminosity_{e_min:.1f}_{e_max:.1f}"] = (
+            self.inference_data.posterior[f"mod/~/luminosity_{e_min:.1f}_{e_max:.1f}"] = (
                 list(self.inference_data.posterior.coords),
                 value,
             )
@@ -315,10 +320,13 @@ class FitResult:
 
         Parameters:
             name: The name of the chain.
+            parameter_kind: The kind of parameters to keep.
         """
 
         keys_to_drop = [
-            key for key in self.inference_data.posterior.keys() if not key.startswith("mod")
+            key
+            for key in self.inference_data.posterior.keys()
+            if not key.startswith(parameter_kind)
         ]
 
         reduced_id = az.extract(
