@@ -195,14 +195,23 @@ class FitResult:
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
         flux = vectorized_flux(*flat_tree)
-        conversion_factor = (u.photon / u.cm**2 / u.s).to(unit)
-        value = flux * conversion_factor
+        conversion_factor = float((u.photon / u.cm**2 / u.s).to(unit))
+        value = np.asarray(flux * conversion_factor)
 
         if register:
+
             self.inference_data.posterior[f"mod/~/photon_flux_{e_min:.1f}_{e_max:.1f}"] = (
                 list(self.inference_data.posterior.coords),
                 value,
+                dims=self.inference_data.posterior.dims,
+                coords={
+                    "chain": self.inference_data.posterior.chain,
+                    "draw": self.inference_data.posterior.draw,
+                },
+                name=f"mod/~/photon_flux_{e_min:.1f}_{e_max:.1f}",
             )
+
+            self.inference_data.posterior[f"mod/~/photon_flux_{e_min:.1f}_{e_max:.1f}"] = data
 
         return value
 
@@ -240,14 +249,23 @@ class FitResult:
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
         flux = vectorized_flux(*flat_tree)
-        conversion_factor = (u.keV / u.cm**2 / u.s).to(unit)
-        value = flux * conversion_factor
+        conversion_factor = float((u.keV / u.cm**2 / u.s).to(unit))
+        value = np.asarray(flux * conversion_factor)
 
         if register:
+
             self.inference_data.posterior[f"mod/~/energy_flux_{e_min:.1f}_{e_max:.1f}"] = (
                 list(self.inference_data.posterior.coords),
                 value,
+                dims=self.inference_data.posterior.dims,
+                coords={
+                    "chain": self.inference_data.posterior.chain,
+                    "draw": self.inference_data.posterior.draw,
+                },
+                name=f"mod/~/energy_flux_{e_min:.1f}_{e_max:.1f}",
             )
+
+            self.inference_data.posterior[f"mod/~/energy_flux_{e_min:.1f}_{e_max:.1f}"] = data
 
         return value
 
@@ -304,13 +322,24 @@ class FitResult:
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
         flux = vectorized_flux(*flat_tree) * (u.keV / u.cm**2 / u.s)
-        value = (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(unit)
+        value = np.asarray(
+            (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(unit)
+        )
 
         if register:
+
             self.inference_data.posterior[f"mod/~/luminosity_{e_min:.1f}_{e_max:.1f}"] = (
                 list(self.inference_data.posterior.coords),
                 value,
+                dims=self.inference_data.posterior.dims,
+                coords={
+                    "chain": self.inference_data.posterior.chain,
+                    "draw": self.inference_data.posterior.draw,
+                },
+                name=f"mod/~/luminosity_{e_min:.1f}_{e_max:.1f}",
             )
+
+            self.inference_data.posterior[f"mod/~/luminosity_{e_min:.1f}_{e_max:.1f}"] = data
 
         return value
 
