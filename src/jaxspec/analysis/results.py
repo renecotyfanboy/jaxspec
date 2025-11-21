@@ -199,7 +199,9 @@ class FitResult:
         value = np.asarray(flux * conversion_factor)
 
         if register:
-            data = xr.DataArray(
+
+            self.inference_data.posterior[f"mod/~/photon_flux_{e_min:.1f}_{e_max:.1f}"] = (
+                list(self.inference_data.posterior.coords),
                 value,
                 dims=self.inference_data.posterior.dims,
                 coords={
@@ -251,7 +253,9 @@ class FitResult:
         value = np.asarray(flux * conversion_factor)
 
         if register:
-            data = xr.DataArray(
+
+            self.inference_data.posterior[f"mod/~/energy_flux_{e_min:.1f}_{e_max:.1f}"] = (
+                list(self.inference_data.posterior.coords),
                 value,
                 dims=self.inference_data.posterior.dims,
                 coords={
@@ -323,7 +327,9 @@ class FitResult:
         )
 
         if register:
-            data = xr.DataArray(
+
+            self.inference_data.posterior[f"mod/~/luminosity_{e_min:.1f}_{e_max:.1f}"] = (
+                list(self.inference_data.posterior.coords),
                 value,
                 dims=self.inference_data.posterior.dims,
                 coords={
