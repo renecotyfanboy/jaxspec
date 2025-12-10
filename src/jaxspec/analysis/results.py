@@ -434,6 +434,7 @@ class FitResult:
         title: str | None = None,
         figsize: tuple[float, float] = (6, 6),
         x_lims: tuple[float, float] | None = None,
+        rescale_background: bool = False,
     ) -> list[plt.Figure]:
         r"""
         Plot the posterior predictive distribution of the model. It also features a residual plot, defined using the
@@ -454,6 +455,7 @@ class FitResult:
             title: The title of the plot.
             figsize: The size of the figure.
             x_lims: The limits of the x-axis.
+            rescale_background: Whether to rescale the background model to the data with backscal ratio.
 
         Returns:
             A list of matplotlib figures for each observation in the model.
@@ -604,10 +606,12 @@ class FitResult:
                         )
                     )
 
+                    rescale_background_factor = obsconf.folded_backratio.data if rescale_background else 1.
+
                     model_bkg_plot = _plot_binned_samples_with_error(
                         ax[0],
                         xbins.value,
-                        y_samples_bkg.value,
+                        y_samples_bkg.value * rescale_background_factor,
                         color=BACKGROUND_COLOR,
                         alpha_envelope=alpha_envelope,
                         n_sigmas=n_sigmas,
@@ -616,9 +620,9 @@ class FitResult:
                     true_bkg_plot = _plot_poisson_data_with_error(
                         ax[0],
                         xbins.value,
-                        y_observed_bkg.value,
-                        y_observed_bkg_low.value,
-                        y_observed_bkg_high.value,
+                        y_observed_bkg.value * rescale_background_factor,
+                        y_observed_bkg_low.value * rescale_background_factor,
+                        y_observed_bkg_high.value * rescale_background_factor,
                         color=BACKGROUND_DATA_COLOR,
                         alpha=0.7,
                     )
