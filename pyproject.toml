@@ -40,7 +40,7 @@ jaxspec-debug-info = "jaxspec.scripts.debug:debug_info"
 docs = [
     "mkdocs>=1.6.1,<2",
     "mkdocs-material>=9.4.6,<10",
-    "mkdocstrings[python]>=0.24,<0.28",
+    "mkdocstrings[python]>=0.24,<1.1",
     "mkdocs-jupyter>=0.25.0,<0.26",
 ]
 test = [
