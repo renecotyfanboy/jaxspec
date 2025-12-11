@@ -26,6 +26,7 @@ dependencies = [
     "watermark>=2.4.3,<3",
     "catppuccin>=2.3.4,<3",
     "flax>0.10.5",
+    "seaborn>=0.13.2",
 ]
 
 [project.urls]
