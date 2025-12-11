@@ -10,6 +10,7 @@ import numpyro
 
 from jax import random
 from jax.random import PRNGKey
+from jax.numpy import concatenate
 from numpyro.infer import AIES, ESS, MCMC, NUTS, SVI, Predictive, Trace_ELBO
 from numpyro.infer.autoguide import AutoMultivariateNormal
 
@@ -52,6 +53,11 @@ class BayesianModelFitter(BayesianModel, ABC):
         )
 
         log_likelihood = numpyro.infer.log_likelihood(numpyro_model, posterior_samples)
+        if len(log_likelihood.keys()) > 1:
+            log_likelihood['full'] = concatenate( [ ll for _,ll in log_likelihood.items()], axis=1 )
+            log_likelihood['obs/~/all'] = concatenate( [ ll for k,ll in log_likelihood.items() if 'obs' in k], axis=1 )
+            if self.background_model is not None:
+                log_likelihood['bkg/~/all'] = concatenate( [ ll for k,ll in log_likelihood.items() if 'bkg' in k], axis=1 )
 
         seeded_model = numpyro.handlers.substitute(
             numpyro.handlers.seed(numpyro_model, keys[3]),
@@ -108,12 +114,10 @@ class BayesianModelFitter(BayesianModel, ABC):
         predictive_parameters = []
 
         for key, value in self._observation_container.items():
+            predictive_parameters.append(f"obs/~/{key}")
             if self.background_model is not None:
-                predictive_parameters.append(f"obs/~/{key}")
                 predictive_parameters.append(f"bkg/~/{key}")
             #                predictive_parameters.append(f"ins/~/{key}")
-            else:
-                predictive_parameters.append(f"obs/~/{key}")
         #                predictive_parameters.append(f"ins/~/{key}")
 
         inference_data.posterior_predictive = inference_data.posterior_predictive[
