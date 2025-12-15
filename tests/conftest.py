@@ -70,6 +70,7 @@ pooch_dataset = pooch.create(
     base_url="https://github.com/HEACIT/curated-test-data/raw/main/",
     path=str(data_directory),
     registry=data_hash,
+    retry_if_failed=10,
 )
 
 for file in data_hash.keys():

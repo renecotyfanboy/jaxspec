@@ -167,6 +167,7 @@ class FitResult:
         e_max: float,
         unit: Unit = u.photon / u.cm**2 / u.s,
         register: bool = False,
+        n_points: int = 100,
     ) -> ArrayLike:
         """
         Compute the unfolded photon flux in a given energy band. The flux is then added to
@@ -177,6 +178,7 @@ class FitResult:
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the photon flux.
             register: Whether to register the flux with the other posterior parameters.
+            n_points: The number of points to use for computing the unfolded spectrum.
 
         !!! warning
             Computation of the folded flux is not implemented yet. Feel free to open an
@@ -188,18 +190,25 @@ class FitResult:
         def vectorized_flux(*pars):
             parameters_pytree = jax.tree.unflatten(pytree_def, pars)
             return self.model.photon_flux(
-                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=100
+                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=n_points
             )[0]
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
         flux = vectorized_flux(*flat_tree)
-        conversion_factor = (u.photon / u.cm**2 / u.s).to(unit)
-        value = flux * conversion_factor
+        conversion_factor = float((u.photon / u.cm**2 / u.s).to(unit))
+        value = np.asarray(flux * conversion_factor)
 
         if register:
-            self.inference_data.posterior[f"photon_flux_{e_min:.1f}_{e_max:.1f}"] = (
-                list(self.inference_data.posterior.coords),
-                value,
+            self.inference_data.posterior[f"mod/~/photon_flux_{e_min:.1f}_{e_max:.1f}"] = (
+                xr.DataArray(
+                    value,
+                    dims=self.inference_data.posterior.dims,
+                    coords={
+                        "chain": self.inference_data.posterior.chain,
+                        "draw": self.inference_data.posterior.draw,
+                    },
+                    name=f"mod/~/photon_flux_{e_min:.1f}_{e_max:.1f}",
+                )
             )
 
         return value
@@ -210,6 +219,7 @@ class FitResult:
         e_max: float,
         unit: Unit = u.erg / u.cm**2 / u.s,
         register: bool = False,
+        n_points: int = 100,
     ) -> ArrayLike:
         """
         Compute the unfolded energy flux in a given energy band. The flux is then added to
@@ -220,6 +230,7 @@ class FitResult:
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the energy flux.
             register: Whether to register the flux with the other posterior parameters.
+            n_points: The number of points to use for computing the unfolded spectrum.
 
         !!! warning
             Computation of the folded flux is not implemented yet. Feel free to open an
@@ -231,18 +242,25 @@ class FitResult:
         def vectorized_flux(*pars):
             parameters_pytree = jax.tree.unflatten(pytree_def, pars)
             return self.model.energy_flux(
-                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=100
+                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=n_points
             )[0]
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
         flux = vectorized_flux(*flat_tree)
-        conversion_factor = (u.keV / u.cm**2 / u.s).to(unit)
-        value = flux * conversion_factor
+        conversion_factor = float((u.keV / u.cm**2 / u.s).to(unit))
+        value = np.asarray(flux * conversion_factor)
 
         if register:
-            self.inference_data.posterior[f"energy_flux_{e_min:.1f}_{e_max:.1f}"] = (
-                list(self.inference_data.posterior.coords),
-                value,
+            self.inference_data.posterior[f"mod/~/energy_flux_{e_min:.1f}_{e_max:.1f}"] = (
+                xr.DataArray(
+                    value,
+                    dims=self.inference_data.posterior.dims,
+                    coords={
+                        "chain": self.inference_data.posterior.chain,
+                        "draw": self.inference_data.posterior.draw,
+                    },
+                    name=f"mod/~/energy_flux_{e_min:.1f}_{e_max:.1f}",
+                )
             )
 
         return value
@@ -257,6 +275,7 @@ class FitResult:
         cosmology: Cosmology = Planck18,
         unit: Unit = u.erg / u.s,
         register: bool = False,
+        n_points=100,
     ) -> ArrayLike:
         """
         Compute the luminosity of the source specifying its redshift. The luminosity is then added to
@@ -294,17 +313,26 @@ class FitResult:
                 parameters_pytree,
                 jnp.asarray([e_min]) * (1 + redshift),
                 jnp.asarray([e_max]) * (1 + redshift),
-                n_points=100,
+                n_points=n_points,
             )[0]
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
         flux = vectorized_flux(*flat_tree) * (u.keV / u.cm**2 / u.s)
-        value = (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(unit)
+        value = np.asarray(
+            (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(unit)
+        )
 
         if register:
-            self.inference_data.posterior[f"luminosity_{e_min:.1f}_{e_max:.1f}"] = (
-                list(self.inference_data.posterior.coords),
-                value,
+            self.inference_data.posterior[f"mod/~/luminosity_{e_min:.1f}_{e_max:.1f}"] = (
+                xr.DataArray(
+                    value,
+                    dims=self.inference_data.posterior.dims,
+                    coords={
+                        "chain": self.inference_data.posterior.chain,
+                        "draw": self.inference_data.posterior.draw,
+                    },
+                    name=f"mod/~/luminosity_{e_min:.1f}_{e_max:.1f}",
+                )
             )
 
         return value
@@ -315,10 +343,13 @@ class FitResult:
 
         Parameters:
             name: The name of the chain.
+            parameter_kind: The kind of parameters to keep.
         """
 
         keys_to_drop = [
-            key for key in self.inference_data.posterior.keys() if not key.startswith("mod")
+            key
+            for key in self.inference_data.posterior.keys()
+            if not key.startswith(parameter_kind)
         ]
 
         reduced_id = az.extract(
@@ -403,6 +434,7 @@ class FitResult:
         title: str | None = None,
         figsize: tuple[float, float] = (6, 6),
         x_lims: tuple[float, float] | None = None,
+        rescale_background: bool = False,
     ) -> list[plt.Figure]:
         r"""
         Plot the posterior predictive distribution of the model. It also features a residual plot, defined using the
@@ -423,6 +455,7 @@ class FitResult:
             title: The title of the plot.
             figsize: The size of the figure.
             x_lims: The limits of the x-axis.
+            rescale_background: Whether to rescale the background model to the data with backscal ratio.
 
         Returns:
             A list of matplotlib figures for each observation in the model.
@@ -573,10 +606,12 @@ class FitResult:
                         )
                     )
 
+                    rescale_background_factor = obsconf.folded_backratio.data if rescale_background else 1.
+
                     model_bkg_plot = _plot_binned_samples_with_error(
                         ax[0],
                         xbins.value,
-                        y_samples_bkg.value,
+                        y_samples_bkg.value * rescale_background_factor,
                         color=BACKGROUND_COLOR,
                         alpha_envelope=alpha_envelope,
                         n_sigmas=n_sigmas,
@@ -585,9 +620,9 @@ class FitResult:
                     true_bkg_plot = _plot_poisson_data_with_error(
                         ax[0],
                         xbins.value,
-                        y_observed_bkg.value,
-                        y_observed_bkg_low.value,
-                        y_observed_bkg_high.value,
+                        y_observed_bkg.value * rescale_background_factor,
+                        y_observed_bkg_low.value * rescale_background_factor,
+                        y_observed_bkg_high.value * rescale_background_factor,
                         color=BACKGROUND_DATA_COLOR,
                         alpha=0.7,
                     )
