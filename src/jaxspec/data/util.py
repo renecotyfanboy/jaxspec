@@ -152,11 +152,11 @@ def forward_model_with_multiple_inputs(
         transfer_matrix = BCOO.from_scipy_sparse(
             obs_configuration.transfer_matrix.data.to_scipy_sparse().tocsr()
         )
+        expected_counts = transfer_matrix @ flux_func(parameters).T
 
     else:
         transfer_matrix = np.asarray(obs_configuration.transfer_matrix.data.todense())
-
-    expected_counts = jnp.matvec(transfer_matrix, flux_func(parameters))
+        expected_counts = jnp.matvec(transfer_matrix, flux_func(parameters))
 
     # The result is clipped at 1e-6 to avoid 0 round-off and diverging likelihoods
     return jnp.clip(expected_counts, a_min=1e-6)
