@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 import numpyro
 
 from jax import random
-from jax.random import PRNGKey
 from jax.numpy import concatenate
+from jax.random import PRNGKey
 from numpyro.infer import AIES, ESS, MCMC, NUTS, SVI, Predictive, Trace_ELBO
 from numpyro.infer.autoguide import AutoMultivariateNormal
 
@@ -54,13 +54,17 @@ class BayesianModelFitter(BayesianModel, ABC):
 
         log_likelihood = numpyro.infer.log_likelihood(numpyro_model, posterior_samples)
         if len(log_likelihood.keys()) > 1:
-            log_likelihood['full'] = concatenate( [ ll for _,ll in log_likelihood.items()], axis=1 )
-            log_likelihood['obs/~/all'] = concatenate( [ ll for k,ll in log_likelihood.items() if 'obs' in k], axis=1 )
+            log_likelihood["full"] = concatenate([ll for _, ll in log_likelihood.items()], axis=1)
+            log_likelihood["obs/~/all"] = concatenate(
+                [ll for k, ll in log_likelihood.items() if "obs" in k], axis=1
+            )
             if self.background_model is not None:
-                log_likelihood['bkg/~/all'] = concatenate( [ ll for k,ll in log_likelihood.items() if 'bkg' in k], axis=1 )
+                log_likelihood["bkg/~/all"] = concatenate(
+                    [ll for k, ll in log_likelihood.items() if "bkg" in k], axis=1
+                )
 
         seeded_model = numpyro.handlers.substitute(
-            numpyro.handlers.seed(numpyro_model, keys[3]),
+            numpyro.handlers.seed(numpyro_model, keys[2]),
             substitute_fn=numpyro.infer.init_to_sample,
         )
 
@@ -251,7 +255,7 @@ class VIFitter(BayesianModelFitter):
 
         svi = SVI(bayesian_model, guide, optimizer, loss=loss)
 
-        keys = random.split(random.PRNGKey(rng_key), 3)
+        keys = random.split(random.PRNGKey(rng_key), 2)
         svi_result = svi.run(keys[0], num_steps)
         params = svi_result.params
 
