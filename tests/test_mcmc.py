@@ -3,9 +3,12 @@ import pytest
 from jaxspec.fit import BayesianModel
 
 
-def test_convergence(get_individual_mcmc_results, get_joint_mcmc_result):
+def test_convergence(get_individual_mcmc_results, get_joint_mcmc_result, get_failed_mcmc_results):
     for result in get_individual_mcmc_results + get_joint_mcmc_result:
         assert result.converged
+
+    for result in get_failed_mcmc_results:
+        assert not result.converged
 
 
 def test_ns(obs_model_prior):

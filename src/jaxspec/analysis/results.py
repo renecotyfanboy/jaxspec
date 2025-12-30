@@ -77,8 +77,9 @@ class FitResult:
         r"""
         Convergence of the chain as computed by the $\hat{R}$ statistic.
         """
+        rhat = az.rhat(self.inference_data)
 
-        return all(az.rhat(self.inference_data) < 1.01)
+        return bool((rhat.to_array() < 1.01).all())
 
     def _ppc_folded_branches(self, obs_id):
         obs = self.obsconfs[obs_id]
@@ -606,7 +607,9 @@ class FitResult:
                         )
                     )
 
-                    rescale_background_factor = obsconf.folded_backratio.data if rescale_background else 1.
+                    rescale_background_factor = (
+                        obsconf.folded_backratio.data if rescale_background else 1.0
+                    )
 
                     model_bkg_plot = _plot_binned_samples_with_error(
                         ax[0],

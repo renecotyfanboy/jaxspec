@@ -93,6 +93,19 @@ def test_fakeits_parallel(obsconfs, model, sharded_parameters):
     chex.assert_type(spectra, int)
 
 
+def test_fakeits_sparsify(obsconfs, model, sharded_parameters):
+    obsconf = obsconfs[0]
+    spectra = fakeit_for_multiple_parameters(
+        obsconf, model, sharded_parameters, apply_stat=False, sparsify_matrix=False
+    )
+    chex.assert_type(spectra, float)
+
+    spectra = fakeit_for_multiple_parameters(
+        obsconf, model, sharded_parameters, apply_stat=False, sparsify_matrix=True
+    )
+    chex.assert_type(spectra, float)
+
+
 def test_fakeits_multiple_observation(obsconfs, model, multidimensional_parameters):
     obsconf = obsconfs[0]
     spectra = fakeit_for_multiple_parameters(
