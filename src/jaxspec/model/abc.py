@@ -372,9 +372,10 @@ class AdditiveComponent(ModelComponent):
         continuum = self.continuum(energy)
         integrated_continuum = self.integrated_continuum(e_low, e_high)
 
-        return jsp.integrate.trapezoid(
-            continuum * energy**2, jnp.log(energy), axis=-1
-        ) + integrated_continuum * (e_high - e_low)
+        return (
+            jsp.integrate.trapezoid(continuum * energy**2, jnp.log(energy), axis=-1)
+            + integrated_continuum * (e_high + e_low) / 2.0
+        )
 
     @partial(jax.jit, static_argnums=0, static_argnames="n_points")
     def photon_flux(self, params, e_low, e_high, n_points=2):

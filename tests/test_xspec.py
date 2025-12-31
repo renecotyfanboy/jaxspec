@@ -1,8 +1,10 @@
 import os
 
+import astropy.units as u
 import numpy as np
 import pytest
 
+from jaxspec.model.additive import Powerlaw
 from jaxspec.util.online_storage import table_manager
 
 xspec = pytest.importorskip("xspec")
@@ -78,3 +80,40 @@ def test_bins(load_xspec_data, load_jaxspec_data):
     assert np.isclose(
         folding.in_energies, xspec_in_energies
     ).all(), f"The unfolded channel energy bins are not the same as XSPEC {file_pha}"
+
+
+def test_flux_computation():
+    xspec.AllData.clear()
+    xspec.AllModels.clear()
+
+    xspec.AllData.dummyrsp(lowE=0.2, highE=1.7, nBins=10_000)
+    m = xspec.Model("powerlaw")
+    m.powerlaw.PhoIndex = 2.0
+    m.powerlaw.norm = 1.0
+
+    xspec.AllModels.calcFlux("0.5 1.5")
+
+    phflux_xspec = m.flux[3]  # ph/cm^2/s
+    eflux_xspec = m.flux[0]  # erg/cm^2/s
+
+    factor = (1 * u.keV).to(u.erg).value
+    phflux_jaxspec = Powerlaw().photon_flux(
+        {"powerlaw_1_norm": 1.0, "powerlaw_1_alpha": 2.0}, e_low=0.5, e_high=1.5, n_points=10_000
+    )
+
+    eflux_jaxspec = (
+        Powerlaw().energy_flux(
+            {"powerlaw_1_norm": 1.0, "powerlaw_1_alpha": 2.0},
+            e_low=0.5,
+            e_high=1.5,
+            n_points=10_000,
+        )
+        * factor
+    )
+
+    assert np.isclose(
+        phflux_xspec, phflux_jaxspec
+    ), f"Mismatch between XSPEC and jaxspec on photon flux, got {phflux_xspec} and {phflux_jaxspec}"
+    assert np.isclose(
+        eflux_xspec, eflux_jaxspec
+    ), f"Mismatch between XSPEC and jaxspec on energy flux, got {eflux_xspec} and {eflux_jaxspec}"
