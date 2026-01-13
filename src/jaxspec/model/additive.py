@@ -166,28 +166,22 @@ class Gauss(AdditiveComponent):
         self.sigma = nnx.Param(1e-2)
         self.norm = nnx.Param(1.0)
 
-    def continuum(self, energy):
-        return (
-            self.norm
-            * jsp.stats.norm.pdf(energy, loc=jnp.asarray(self.El), scale=jnp.asarray(self.sigma))
-            / (1 - jsp.special.erf(-self.El / (self.sigma * jnp.sqrt(2))))
+    def integrated_continuum(self, e_low, e_high):
+        upper = jsp.stats.norm.cdf(
+            e_high,
+            loc=jnp.asarray(self.El),
+            scale=jnp.asarray(self.sigma),
         )
 
-    """
-    def integrated_continuum(self, e_low, e_high):
-        return self.norm * (
-            jsp.stats.norm.cdf(
-                e_high,
-                loc=jnp.asarray(self.El),
-                scale=jnp.asarray(self.sigma),
-            )
-            - jsp.stats.norm.cdf(
-                e_low,
-                loc=jnp.asarray(self.El),
-                scale=jnp.asarray(self.sigma),
-            ) #/  (1 - jsp.special.erf(- self.El / (self.sigma * jnp.sqrt(2))))
+        lower = jsp.stats.norm.cdf(
+            e_low,
+            loc=jnp.asarray(self.El),
+            scale=jnp.asarray(self.sigma),
         )
-    """
+
+        factor = 2 / (1 - jsp.special.erf(-self.El / (self.sigma * jnp.sqrt(2))))
+
+        return self.norm * (upper - lower) * factor
 
 
 class Cutoffpl(AdditiveComponent):
