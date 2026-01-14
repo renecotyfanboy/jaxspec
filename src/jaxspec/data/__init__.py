@@ -6,5 +6,7 @@ from .observation import Observation
 
 u.add_enabled_aliases({"counts": u.count})
 u.add_enabled_aliases({"channel": u.dimensionless_unscaled})
+u.add_enabled_aliases({"ADU": u.dimensionless_unscaled})  # Appears in SIXTE outputs
+
 # Arbitrary units are found in .rsp files , let's hope it is compatible with what we would expect as the rmf x arf
 # u.add_enabled_aliases({"au": u.dimensionless_unscaled})
