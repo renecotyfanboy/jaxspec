@@ -168,7 +168,8 @@ class FitResult:
         e_max: float,
         unit: Unit = u.photon / u.cm**2 / u.s,
         register: bool = False,
-        n_points: int = 100,
+        n_points: int = 5,
+        n_grid: int = 1_000,
     ) -> ArrayLike:
         """
         Compute the unfolded photon flux in a given energy band. The flux is then added to
@@ -179,23 +180,26 @@ class FitResult:
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the photon flux.
             register: Whether to register the flux with the other posterior parameters.
-            n_points: The number of points to use for computing the unfolded spectrum.
+            n_points: The number of points per bin to use for computing the unfolded spectrum.
+            n_grid: The number of grid points to use for computing the unfolded spectrum.
 
         !!! warning
             Computation of the folded flux is not implemented yet. Feel free to open an
             [issue](https://github.com/renecotyfanboy/jaxspec/issues) in the GitHub repository.
         """
 
+        energy_grid = np.linspace(e_min, e_max, n_grid)
+
         @jax.jit
         @jnp.vectorize
         def vectorized_flux(*pars):
             parameters_pytree = jax.tree.unflatten(pytree_def, pars)
             return self.model.photon_flux(
-                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=n_points
-            )[0]
+                parameters_pytree, energy_grid[:-1], energy_grid[1:], n_points=n_points
+            )
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
-        flux = vectorized_flux(*flat_tree)
+        flux = vectorized_flux(*flat_tree).sum(axis=-1)  # Sum over all bins
         conversion_factor = float((u.photon / u.cm**2 / u.s).to(unit))
         value = np.asarray(flux * conversion_factor)
 
@@ -220,7 +224,8 @@ class FitResult:
         e_max: float,
         unit: Unit = u.erg / u.cm**2 / u.s,
         register: bool = False,
-        n_points: int = 100,
+        n_points: int = 5,
+        n_grid: int = 1_000,
     ) -> ArrayLike:
         """
         Compute the unfolded energy flux in a given energy band. The flux is then added to
@@ -231,23 +236,26 @@ class FitResult:
             e_max: The upper bound of the energy band in observer frame.
             unit: The unit of the energy flux.
             register: Whether to register the flux with the other posterior parameters.
-            n_points: The number of points to use for computing the unfolded spectrum.
+            n_points: The number of points per bin to use for computing the unfolded spectrum.
+            n_grid: The number of grid points to use for computing the unfolded spectrum.
 
         !!! warning
             Computation of the folded flux is not implemented yet. Feel free to open an
             [issue](https://github.com/renecotyfanboy/jaxspec/issues) in the GitHub repository.
         """
 
+        energy_grid = np.linspace(e_min, e_max, n_grid)
+
         @jax.jit
         @jnp.vectorize
         def vectorized_flux(*pars):
             parameters_pytree = jax.tree.unflatten(pytree_def, pars)
             return self.model.energy_flux(
-                parameters_pytree, jnp.asarray([e_min]), jnp.asarray([e_max]), n_points=n_points
-            )[0]
+                parameters_pytree, energy_grid[:-1], energy_grid[1:], n_points=n_points
+            )
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
-        flux = vectorized_flux(*flat_tree)
+        flux = vectorized_flux(*flat_tree).sum(axis=-1)  # Sum over all bins
         conversion_factor = float((u.keV / u.cm**2 / u.s).to(unit))
         value = np.asarray(flux * conversion_factor)
 
@@ -276,7 +284,8 @@ class FitResult:
         cosmology: Cosmology = Planck18,
         unit: Unit = u.erg / u.s,
         register: bool = False,
-        n_points=100,
+        n_points: int = 5,
+        n_grid: int = 1_000,
     ) -> ArrayLike:
         """
         Compute the luminosity of the source specifying its redshift. The luminosity is then added to
@@ -290,7 +299,11 @@ class FitResult:
             cosmology: Chosen cosmology.
             unit: The unit of the luminosity.
             register: Whether to register the flux with the other posterior parameters.
+            n_points: The number of points per bin to use for computing the unfolded spectrum.
+            n_grid: The number of grid points to use for computing the unfolded spectrum.
         """
+
+        energy_grid = np.linspace(e_min, e_max, n_grid)
 
         if not observer_frame:
             raise NotImplementedError()
@@ -312,13 +325,13 @@ class FitResult:
             parameters_pytree = jax.tree.unflatten(pytree_def, pars)
             return self.model.energy_flux(
                 parameters_pytree,
-                jnp.asarray([e_min]) * (1 + redshift),
-                jnp.asarray([e_max]) * (1 + redshift),
+                energy_grid[:-1] * (1 + redshift),
+                energy_grid[1:] * (1 + redshift),
                 n_points=n_points,
-            )[0]
+            )
 
         flat_tree, pytree_def = jax.tree.flatten(self.input_parameters)
-        flux = vectorized_flux(*flat_tree) * (u.keV / u.cm**2 / u.s)
+        flux = vectorized_flux(*flat_tree).sum(axis=-1) * (u.keV / u.cm**2 / u.s)
         value = np.asarray(
             (flux * (4 * np.pi * cosmology.luminosity_distance(redshift) ** 2)).to(unit)
         )

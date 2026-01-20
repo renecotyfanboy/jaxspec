@@ -34,8 +34,10 @@ class Powerlaw(AdditiveComponent):
         self.alpha = nnx.Param(1.7)
         self.norm = nnx.Param(1e-4)
 
-    def continuum(self, energy):
-        return self.norm * energy ** (-self.alpha)
+    def integrated_continuum(self, e_low, e_high):
+        return (
+            self.norm / (1 - self.alpha) * (e_high ** (1 - self.alpha) - e_low ** (1 - self.alpha))
+        )
 
 
 class Additiveconstant(AdditiveComponent):
