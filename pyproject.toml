@@ -11,7 +11,7 @@ dependencies = [
     "numpy<3.0.0",
     "pandas>=2.2.0,<3",
     "astropy>=6.0.0,<8",
-    "numpyro>=0.17.0,<0.20",
+    "numpyro>=0.17.0,<0.21",
     "networkx~=3.1",
     "matplotlib>=3.8.0,<4",
     "arviz>=0.17.1,<0.23.0",
