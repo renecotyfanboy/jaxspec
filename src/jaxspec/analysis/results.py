@@ -263,7 +263,7 @@ class FitResult:
             self.inference_data.posterior[f"mod/~/energy_flux_{e_min:.1f}_{e_max:.1f}"] = (
                 xr.DataArray(
                     value,
-                    dims=("chain", "draw"),
+                    dims=self.inference_data.posterior.dims,
                     coords={
                         "chain": self.inference_data.posterior.chain,
                         "draw": self.inference_data.posterior.draw,
