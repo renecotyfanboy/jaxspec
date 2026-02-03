@@ -15,6 +15,7 @@ from numpyro.infer import AIES, ESS, MCMC, NUTS, SVI, Predictive, Trace_ELBO
 from numpyro.infer.autoguide import AutoMultivariateNormal
 
 from ..analysis.results import FitResult
+from ..model.background import SubtractedBackground
 from ._bayesian_model import BayesianModel
 
 
@@ -58,7 +59,11 @@ class BayesianModelFitter(BayesianModel, ABC):
             log_likelihood["obs/~/all"] = concatenate(
                 [ll for k, ll in log_likelihood.items() if "obs" in k], axis=1
             )
-            if self.background_model is not None:
+
+            # Subtracted background is not fitted so there is no likelihood
+            if self.background_model is not None and not isinstance(
+                self.background_model, SubtractedBackground
+            ):
                 log_likelihood["bkg/~/all"] = concatenate(
                     [ll for k, ll in log_likelihood.items() if "bkg" in k], axis=1
                 )
