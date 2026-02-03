@@ -49,7 +49,9 @@ class Expfac(MultiplicativeComponent):
         self.E_c = nnx.Param(1.0)
 
     def factor(self, energy):
-        return jnp.where(energy >= self.E_c, 1.0 + self.A * jnp.exp(-self.f * energy), 1.0)
+        return jnp.where(
+            energy >= self.E_c, 1.0 + self.A * jnp.exp(-self.f * energy), 1.0
+        )
 
 
 class Tbabs(MultiplicativeComponent):
@@ -81,6 +83,49 @@ class Tbabs(MultiplicativeComponent):
         sigma = jnp.exp(
             jnp.interp(
                 jnp.log(energy),
+                jnp.log(self._energy),
+                jnp.log(self._sigma),
+                left="extrapolate",
+                right="extrapolate",
+            )
+        )
+
+        return jnp.exp(-self.nh * sigma)
+
+
+class zTbabs(MultiplicativeComponent):
+    r"""
+    The redshifted Tuebingen-Boulder ISM absorption model. See `Tbabs` for more details.
+    From Xspec manual:
+    This model assumes that 20% of the hydrogen is molecular
+    and that there is NO MATERIAL IN GRAINS.
+
+    $$
+        \mathcal{M}(E) = \exp^{-N_{\text{H}}\sigma(E)}
+    $$
+
+    !!! abstract "Parameters"
+        * $N_{\text{H}}$ (`nh`) $\left[\frac{\text{atoms}~10^{22}}{\text{cm}^2}\right]$ : Equivalent hydrogen column density
+        * $z$ (`z`) $\left[\text{dimensionless}\right]$ : Redshift
+
+
+    !!! note
+        Abundances and cross-sections $\sigma$ can be found in Wilms et al. (2000).
+
+    """
+
+    def __init__(self):
+        table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
+        self._energy = np.asarray(table["ENERGY"], dtype=np.float64)
+        self._sigma = np.asarray(table["SIGMA"], dtype=np.float64)
+        self.nh = nnx.Param(1.0)
+        self.z = nnx.Param(1.0)
+
+    def factor(self, energy):
+        z = jnp.asarray(self.z)
+        sigma = jnp.exp(
+            jnp.interp(
+                jnp.log(energy) + jnp.log1p(z),
                 jnp.log(self._energy),
                 jnp.log(self._sigma),
                 left="extrapolate",
@@ -215,7 +260,9 @@ class Zedge(MultiplicativeComponent):
 
     def factor(self, energy):
         return jnp.where(
-            energy <= self.Ec, 1.0, jnp.exp(-self.D * (energy * (1 + self.z) / self.Ec) ** 3)
+            energy <= self.Ec,
+            1.0,
+            jnp.exp(-self.D * (energy * (1 + self.z) / self.Ec) ** 3),
         )
 
 
@@ -246,7 +293,11 @@ class Tbpcf(MultiplicativeComponent):
     def factor(self, energy):
         sigma = jnp.exp(
             jnp.interp(
-                energy, self._energy, jnp.log(self._sigma), left="extrapolate", right="extrapolate"
+                energy,
+                self._energy,
+                jnp.log(self._sigma),
+                left="extrapolate",
+                right="extrapolate",
             )
         )
 
