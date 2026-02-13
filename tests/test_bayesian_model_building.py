@@ -13,6 +13,7 @@ from conftest import (
 )
 from jaxspec.fit import BayesianModel, MCMCFitter, TiedParameter, VIFitter
 from jaxspec.model.additive import Powerlaw
+from jaxspec.model.background import BackgroundWithError
 from jaxspec.model.instrument import ConstantGain, ConstantShift, InstrumentModel
 from jaxspec.model.multiplicative import Tbabs
 from numpyro.optim import optax_to_numpyro
@@ -110,7 +111,7 @@ def test_mock_obs(model, prior, obsconf, expectation, sparse):
 def test_run_mcmc(model, prior, obsconf, expectation, sampler):
     """Try to generate mock observations from the given combination of observation and priors"""
     with expectation:
-        forward_model = MCMCFitter(model, prior, obsconf, background_model=None)
+        forward_model = MCMCFitter(model, prior, obsconf, background_model=BackgroundWithError())
         result = forward_model.fit(
             num_chains=4,
             num_warmup=10,
@@ -131,7 +132,7 @@ def test_run_mcmc(model, prior, obsconf, expectation, sampler):
 def test_run_vi(model, prior, obsconf, expectation):
     """Try to generate mock observations from the given combination of observation and priors"""
     with expectation:
-        forward_model = VIFitter(model, prior, obsconf, background_model=None)
+        forward_model = VIFitter(model, prior, obsconf, background_model=BackgroundWithError())
         optim = optax_to_numpyro(adamw(3e-4))
 
         result = forward_model.fit(
