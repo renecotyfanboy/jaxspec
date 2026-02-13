@@ -1,6 +1,6 @@
 [project]
 name = "jaxspec"
-version = "0.3.4"
+version = "0.3.5"
 description = "jaxspec is a bayesian spectral fitting library for X-ray astronomy."
 authors = [{ name = "sdupourque", email = "sdupourque@irap.omp.eu" }]
 requires-python = ">=3.10,<3.13"
