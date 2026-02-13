@@ -257,7 +257,7 @@ class FitResult:
         flux = vectorized_flux(*flat_tree).sum(axis=-1)  # Sum over all bins
         conversion_factor = float((u.keV / u.cm**2 / u.s).to(unit))
         value = np.asarray(flux * conversion_factor)
-        # TODO : ADD TESTS WITH BACKGROUND
+
         if register:
             # We handle the case where a parameter is split for multiple observables, hence giving multiple fluxes
             # Unstable, will change in a future release with better handling for split parameters
