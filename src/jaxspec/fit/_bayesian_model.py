@@ -140,7 +140,7 @@ class BayesianModel(nnx.Module):
                     )
 
         self.numpyro_model = numpyro_model
-        self._init_params = self.prior_samples()
+
         # Check the priors are suited for the observations
         split_parameters = [
             (param, shape[-1])
@@ -157,6 +157,10 @@ class BayesianModel(nnx.Module):
                     f"Invalid splitting in the prior distribution. "
                     f"Expected {len(self._observation_container)} but got {proposed_number_of_obs} for {parameter}"
                 )
+
+    @property
+    def _init_params(self):
+        return self.prior_samples()
 
     @cached_property
     def _observation_container(self) -> dict[str, ObsConfiguration]:

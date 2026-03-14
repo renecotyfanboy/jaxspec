@@ -74,7 +74,7 @@ class SpectralModel(nnx.Module, Composable):
 
     def __init__(self, graph: nx.DiGraph):
         self._graph = graph
-        self.components = {}
+        self.components = nnx.Dict({})
         self._energy_grid = np.geomspace(0.1, 50, 1000, dtype=np.float64)
 
         for node, data in self._graph.nodes(data=True):
