@@ -5,7 +5,6 @@ from jaxspec.fit import MCMCFitter
 from jaxspec.model.additive import Blackbodyrad, Powerlaw
 from jaxspec.model.background import (
     BackgroundWithError,
-    GaussianProcessBackground,
     SpectralModelBackground,
     SubtractedBackground,
 )
@@ -23,7 +22,6 @@ prior_background = {
 @pytest.mark.parametrize(
     "bkg_model",
     [
-        pytest.param(GaussianProcessBackground(e_min=0.3, e_max=8, n_nodes=20), id="GP background"),
         pytest.param(SubtractedBackground(), id="Subtracted background"),
         pytest.param(BackgroundWithError(), id="Subtracted background with errs"),
         pytest.param(

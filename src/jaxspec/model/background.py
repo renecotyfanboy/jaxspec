@@ -1,14 +1,11 @@
 from abc import ABC, abstractmethod
 
 import jax
-import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
 
 from flax import nnx
-from jax.scipy.integrate import trapezoid
 from numpyro.distributions import Poisson
-from tinygp import GaussianProcess, kernels
 
 from .abc import SpectralModel
 
@@ -71,77 +68,10 @@ class BackgroundWithError(BackgroundModel):
         return countrate
 
 
-class GaussianProcessBackground(BackgroundModel):
-    """
-    Define a Gaussian Process to model the background. The GP is built using the
-    [`tinygp`](https://tinygp.readthedocs.io/en/stable/guide.html) library.
-    """
-
-    def __init__(
-        self,
-        e_min: float,
-        e_max: float,
-        n_nodes: int = 30,
-        kernel: kernels.Kernel = kernels.Matern52,
-    ):
-        """
-        Build the Gaussian Process background model.
-
-        Parameters:
-            e_min: The lower bound of the energy range.
-            e_max: The upper bound of the energy range.
-            n_nodes: The number of nodes used by the GP, must be lower than the number of channel.
-            kernel: The kernel used by the GP.
-        """
-        self.e_min = e_min
-        self.e_max = e_max
-        self.n_nodes = n_nodes
-        self.kernel = kernel
-
-    def numpyro_model(self, obs, name: str = "", observed=True):
-        energy, observed_counts = obs.out_energies, obs.folded_background.data
-
-        if (observed_counts is not None) and (self.n_nodes >= len(observed_counts)):
-            raise RuntimeError(
-                "More nodes than channels in the observation associated with GaussianProcessBackground."
-            )
-
-        else:
-            observed_counts = jnp.asarray(observed_counts)
-
-        # The parameters of the GP model
-        mean = numpyro.sample(
-            f"bkg/~/_{name}_mean", dist.Normal(jnp.log(jnp.mean(observed_counts)), 2.0)
-        )
-        sigma = numpyro.sample(f"bkg/~/_{name}_sigma", dist.HalfNormal(3.0))
-        rho = numpyro.sample(f"bkg/~/_{name}_rho", dist.HalfNormal(10.0))
-
-        # Set up the kernel and GP objects
-        kernel = sigma**2 * self.kernel(rho)
-        nodes = jnp.linspace(0, 1, self.n_nodes)
-        gp = GaussianProcess(kernel, nodes, diag=1e-5 * jnp.ones_like(nodes), mean=mean)
-
-        log_rate = numpyro.sample(f"bkg/~/_{name}_log_rate_nodes", gp.numpyro_dist())
-
-        interp_count_rate = jnp.exp(
-            jnp.interp(energy, nodes * (self.e_max - self.e_min) + self.e_min, log_rate)
-        )
-
-        count_rate = trapezoid(interp_count_rate, energy, axis=0)
-
-        # Finally, our observation model is Poisson
-        with numpyro.plate("bkg/~/plate_" + name, len(observed_counts)):
-            numpyro.sample(
-                f"bkg/~/{name}", dist.Poisson(count_rate), obs=observed_counts if observed else None
-            )
-
-        return count_rate
-
-
 class SpectralModelBackground(BackgroundModel):
     def __init__(self, spectral_model: "SpectralModel", prior_distributions, sparse=False):
         self.spectral_model = spectral_model
-        self.prior = prior_distributions
+        self.prior = nnx.data(prior_distributions)
         self.sparse = sparse
 
     def numpyro_model(self, observation, name: str = "", observed=True):
