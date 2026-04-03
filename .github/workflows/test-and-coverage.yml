@@ -13,16 +13,12 @@ permissions:
   contents: read
 
 jobs:
-  tests:
-
+  fast-tests:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.12"
+
     - uses: dorny/paths-filter@v3
       id: filter
       with:
@@ -32,18 +28,74 @@ jobs:
           pyproject:
             - 'pyproject.toml'
 
-    - name: Build docker images
+    - name: Set up Python 3.12
       if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
-      run: docker build . -t xspec-tests
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
 
-    - name: Test with pytest
+    - name: Install uv
       if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
-      run: docker run -t -v ./:/shared xspec-tests uv run pytest --cov jaxspec --cov-report xml:/shared/coverage.xml
+      uses: astral-sh/setup-uv@v5
 
-    - name: "Upload coverage to Codecov"
+    - name: Install dependencies
+      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
+      run: uv sync
+
+    - name: Run fast tests
+      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
+      run: uv run pytest -m "not slow" --cov jaxspec --cov-report xml:coverage-fast.xml
+
+    - name: Upload coverage to Codecov
       if: steps.filter.outputs.src == 'true'
       uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
+        files: coverage-fast.xml
+        flags: fast
+        fail_ci_if_error: true
+        verbose: true
+
+  slow-tests:
+    runs-on: ubuntu-latest
+    needs: fast-tests
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        filters: |
+          src:
+            - 'src/**'
+          pyproject:
+            - 'pyproject.toml'
+
+    - name: Set up micromamba with xspec environment
+      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
+      uses: mamba-org/setup-micromamba@v2
+      with:
+        environment-file: environment-xspec.yml
+        cache-environment: true
+        cache-downloads: true
+
+    - name: Install jaxspec and test dependencies
+      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
+      run: pip install -e ".[test]"
+      shell: micromamba-shell {0}
+
+    - name: Run slow tests
+      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
+      run: pytest -m "slow" --cov jaxspec --cov-report xml:coverage-slow.xml
+      shell: micromamba-shell {0}
+
+    - name: Upload coverage to Codecov
+      if: steps.filter.outputs.src == 'true'
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: coverage-slow.xml
+        flags: slow
         fail_ci_if_error: true
         verbose: true

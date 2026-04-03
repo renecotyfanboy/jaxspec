@@ -1,6 +1,9 @@
+import pytest
+
 from jaxspec.fit import MCMCFitter
 
 
+@pytest.mark.slow
 def test_sparsify_matrix_in_model(obs_model_prior):
     obsconfigurations, model, prior = obs_model_prior
 

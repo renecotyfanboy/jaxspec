@@ -1,3 +1,4 @@
+import importlib.util
 import re
 import warnings
 
@@ -357,6 +358,15 @@ class NSFitter(BayesianModelFitter):
         Ensure the prior distributions cover a large enough volume for the
         algorithm to yield proper results.
     """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        try:
+            if importlib.util.find_spec("jaxns") is None:
+                raise ModuleNotFoundError
+        except (ModuleNotFoundError, ValueError):
+            raise ImportError("jaxns is not installed. Please install it with `pip install jaxns`.")
 
     def fit(
         self,

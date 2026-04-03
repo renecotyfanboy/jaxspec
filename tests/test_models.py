@@ -43,6 +43,7 @@ def test_multiplicative_components(test_input):
     assert out.shape == e_low.shape
 
 
+@pytest.mark.slow
 def test_mermaid_representation():
     spectral_model = Tbabs() * (Powerlaw() + Blackbodyrad())
 

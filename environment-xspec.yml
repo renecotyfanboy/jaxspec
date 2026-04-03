@@ -1,0 +1,9 @@
+name: henv
+channels:
+  - https://heasarc.gsfc.nasa.gov/FTP/software/conda/
+  - conda-forge
+dependencies:
+  - python=3.12
+  - xspec
+  - xspec-data
+  - pip

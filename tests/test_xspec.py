@@ -47,6 +47,7 @@ def load_xspec_data(request, monkeypatch):
     return xspec_observation
 
 
+@pytest.mark.slow
 def test_obs_constitantcy(load_xspec_data, load_jaxspec_data):
     file_pha = table_manager.fetch("example_data/NGC7793_ULX4/PN_spectrum_grp20.fits")
     xspec_observation = load_xspec_data
@@ -60,6 +61,7 @@ def test_obs_constitantcy(load_xspec_data, load_jaxspec_data):
     ), f"The number of grouped channel is not the same as XSPEC {file_pha}"
 
 
+@pytest.mark.slow
 def test_bins(load_xspec_data, load_jaxspec_data):
     file_pha = table_manager.fetch("example_data/NGC7793_ULX4/PN_spectrum_grp20.fits")
     xspec_observation = load_xspec_data
@@ -82,6 +84,7 @@ def test_bins(load_xspec_data, load_jaxspec_data):
     ).all(), f"The unfolded channel energy bins are not the same as XSPEC {file_pha}"
 
 
+@pytest.mark.slow
 def test_flux_computation():
     xspec.AllData.clear()
     xspec.AllModels.clear()

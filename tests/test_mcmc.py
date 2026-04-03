@@ -3,6 +3,7 @@ import pytest
 from jaxspec.fit import BayesianModel
 
 
+@pytest.mark.slow
 def test_convergence(get_individual_mcmc_results, get_joint_mcmc_result, get_failed_mcmc_results):
     for result in get_individual_mcmc_results + get_joint_mcmc_result:
         assert result.converged
@@ -11,6 +12,7 @@ def test_convergence(get_individual_mcmc_results, get_joint_mcmc_result, get_fai
         assert not result.converged
 
 
+@pytest.mark.slow
 def test_ns(obs_model_prior):
     NSFitter = pytest.importorskip("jaxspec.fit.NSFitter")
 
@@ -21,6 +23,7 @@ def test_ns(obs_model_prior):
     fitter.fit(num_samples=10000, num_live_points=1000, plot_diagnostics=True)
 
 
+@pytest.mark.slow
 def test_prior_predictive_coverage(obs_model_prior):
     obsconfs, model, prior = obs_model_prior
     BayesianModel(model, prior, obsconfs).prior_predictive_coverage()

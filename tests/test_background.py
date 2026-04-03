@@ -19,6 +19,7 @@ prior_background = {
 }
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "bkg_model",
     [
