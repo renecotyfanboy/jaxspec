@@ -11,7 +11,7 @@ from conftest import (
     single_obsconf,
     spectral_model,
 )
-from jaxspec.fit import BayesianModel, MCMCFitter, TiedParameter, VIFitter
+from jaxspec.fit import BayesianModel, MCMCFitter, NSFitter, TiedParameter, VIFitter
 from jaxspec.model.additive import Powerlaw
 from jaxspec.model.background import BackgroundWithError
 from jaxspec.model.instrument import ConstantGain, ConstantShift, InstrumentModel
@@ -119,6 +119,21 @@ def test_run_mcmc(model, prior, obsconf, expectation, sampler):
             sampler=sampler,
             mcmc_kwargs={"progress_bar": False},
         )
+
+        result.photon_flux(0.7, 1.2, register=True)
+        result.energy_flux(0.7, 1.2, register=True)
+        result.luminosity(0.7, 1.2, redshift=0.01, register=True)
+        [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
+        result.to_chain("test")
+
+
+@pytest.mark.slow
+@data_prior_marker
+def test_run_ns(model, prior, obsconf, expectation):
+    """Try to generate mock observations from the given combination of observation and priors"""
+    with expectation:
+        forward_model = NSFitter(model, prior, obsconf, background_model=BackgroundWithError())
+        result = forward_model.fit()
 
         result.photon_flux(0.7, 1.2, register=True)
         result.energy_flux(0.7, 1.2, register=True)
