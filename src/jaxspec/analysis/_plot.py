@@ -124,6 +124,71 @@ def _plot_binned_samples_with_error(
     return [(median, envelope)]
 
 
+def adaptive_bin_1d(counts, min_counts):
+    """Assign adjacent bins to groups so that each group has at least
+    *min_counts* total counts.
+
+    Parameters:
+        counts (numpy.ndarray): Observed counts per original bin (1-D).
+        min_counts (int): Minimum summed counts required per grouped bin.
+
+    Returns:
+        numpy.ndarray: Integer group id for every original bin.
+    """
+    bin_ids = np.zeros(len(counts), dtype=int)
+    current_bin = 0
+    running_sum = 0
+
+    for i, c in enumerate(counts):
+        running_sum += c
+        bin_ids[i] = current_bin
+        if running_sum >= min_counts:
+            current_bin += 1
+            running_sum = 0
+
+    # Merge the last under-threshold group into its predecessor
+    if running_sum < min_counts and current_bin > 0:
+        bin_ids[bin_ids == current_bin] = current_bin - 1
+
+    return bin_ids
+
+
+def rebin_counts(data, bin_ids):
+    """Sum counts inside each bin group.
+
+    Parameters:
+        data (numpy.ndarray): Count array — either 1-D ``(n_bins,)`` or 2-D
+            ``(n_samples, n_bins)``.
+        bin_ids (numpy.ndarray): Group id for every original bin (length
+            ``n_bins``).
+
+    Returns:
+        numpy.ndarray: Rebinned array with the last axis reduced to the number
+            of groups.
+    """
+    n_groups = bin_ids.max() + 1
+    if data.ndim == 1:
+        return np.bincount(bin_ids, weights=data, minlength=n_groups)
+    agg = bin_ids[None, :] == np.arange(n_groups)[:, None]  # (n_groups, n_bins)
+    return data @ agg.T  # (n_samples, n_groups)
+
+
+def _rebin_xbins(xbins, bin_ids):
+    """Rebin ``(2, n_bins)`` edge arrays to ``(2, n_groups)``.
+
+    For each group the new lower edge is the first lower edge and the new
+    upper edge is the last upper edge of the constituent bins.  Works with
+    both plain numpy arrays and astropy ``Quantity`` objects.
+    """
+    n_groups = bin_ids.max() + 1
+    group_starts = np.searchsorted(bin_ids, np.arange(n_groups))
+    group_ends = np.searchsorted(bin_ids, np.arange(n_groups), side="right") - 1
+    new_lower = xbins[0][group_starts]
+    new_upper = xbins[1][group_ends]
+    # np.vstack preserves astropy Quantity units
+    return np.vstack([new_lower[np.newaxis], new_upper[np.newaxis]])
+
+
 def _compute_effective_area(
     obsconf: ObsConfiguration,
     x_unit: str | u.Unit = "keV",

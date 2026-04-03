@@ -7,11 +7,11 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import numpy as np
 import numpyro
 
 from flax import nnx
 from jax.random import PRNGKey
-from jax.sharding import NamedSharding, PartitionSpec
 from numpyro.distributions import Poisson, TransformedDistribution
 from numpyro.infer import Predictive
 from numpyro.infer.inspect import get_model_relations
@@ -22,6 +22,9 @@ from ..analysis._plot import (
     _error_bars_for_observed_data,
     _plot_binned_samples_with_error,
     _plot_poisson_data_with_error,
+    _rebin_xbins,
+    adaptive_bin_1d,
+    rebin_counts,
 )
 from ..data import ObsConfiguration
 from ..model.abc import SpectralModel
@@ -321,24 +324,38 @@ class BayesianModel(nnx.Module):
         self,
         key: PRNGKey = PRNGKey(0),
         num_samples: int = 1000,
+        min_counts: int | None = None,
+        grouping: int | None = None,
     ):
         """
         Check if the prior distribution include the observed data.
+
+        Parameters:
+            key: Random key for sampling.
+            num_samples: Number of prior predictive samples.
+            min_counts: Minimum number of observed counts per grouped bin.
+                Adjacent bins are merged until the threshold is reached.
+                Mutually exclusive with *grouping*.
+            grouping: Number of consecutive bins to merge into each group.
+                Mutually exclusive with *min_counts*.
         """
+        if min_counts is not None and grouping is not None:
+            raise ValueError("min_counts and grouping are mutually exclusive")
+
         key_prior, key_posterior = jax.random.split(key, 2)
-        n_devices = len(jax.local_devices())
-        mesh = jax.make_mesh((n_devices,), ("batch",))
-        sharding = NamedSharding(mesh, PartitionSpec("batch"))
+        # n_devices = len(jax.local_devices())
+        # mesh = jax.make_mesh((n_devices,), ("batch",))
+        # sharding = NamedSharding(mesh, PartitionSpec("batch"))
 
         # Sample from prior and correct if the number of samples is not a multiple of the number of devices
-        if num_samples % n_devices != 0:
-            num_samples = num_samples + n_devices - (num_samples % n_devices)
+        # if num_samples % n_devices != 0:
+        #    num_samples = num_samples + n_devices - (num_samples % n_devices)
 
         prior_params = self.prior_samples(key=key_prior, num_samples=num_samples)
 
         # Split the parameters on every device
-        sharded_parameters = jax.device_put(prior_params, sharding)
-        posterior_observations = self.mock_observations(sharded_parameters, key=key_posterior)
+        # sharded_parameters = jax.device_put(prior_params, sharding)
+        posterior_observations = self.mock_observations(prior_params, key=key_posterior)
 
         for key, value in self._observation_container.items():
             fig, ax = plt.subplots(
@@ -348,31 +365,43 @@ class BayesianModel(nnx.Module):
             legend_plots = []
             legend_labels = []
 
+            observed = value.folded_counts.values
+            counts = np.asarray(posterior_observations["obs/~/" + key])
+            out_energies = value.out_energies
+
+            # --- Adaptive rebinning ---
+            if min_counts is not None:
+                bin_ids = adaptive_bin_1d(observed, min_counts)
+            elif grouping is not None:
+                n_bins = len(observed)
+                bin_ids = np.arange(n_bins) // grouping
+            else:
+                bin_ids = None
+
+            if bin_ids is not None:
+                observed = rebin_counts(observed, bin_ids)
+                counts = rebin_counts(counts, bin_ids)
+                out_energies = _rebin_xbins(out_energies, bin_ids)
+
             y_observed, y_observed_low, y_observed_high = _error_bars_for_observed_data(
-                value.folded_counts.values, 1.0, "ct"
+                observed, 1.0, "ct"
             )
 
             true_data_plot = _plot_poisson_data_with_error(
                 ax[0],
-                value.out_energies,
+                out_energies,
                 y_observed.value,
                 y_observed_low.value,
                 y_observed_high.value,
                 alpha=0.7,
             )
 
-            prior_plot = _plot_binned_samples_with_error(
-                ax[0], value.out_energies, posterior_observations["obs/~/" + key], n_sigmas=3
-            )
+            prior_plot = _plot_binned_samples_with_error(ax[0], out_energies, counts, n_sigmas=3)
 
             legend_plots.append((true_data_plot,))
             legend_labels.append("Observed")
             legend_plots += prior_plot
             legend_labels.append("Prior Predictive")
-
-            # rank = np.vstack((posterior_observations["obs_" + key], value.folded_counts.values)).argsort(axis=0)[-1] / (num_samples) * 100
-            counts = posterior_observations["obs/~/" + key]
-            observed = value.folded_counts.values
 
             num_samples = counts.shape[0]
 
@@ -381,10 +410,10 @@ class BayesianModel(nnx.Module):
 
             rank = (less_than_obs + 0.5 * equal_to_obs) / num_samples * 100
 
-            ax[1].stairs(rank, edges=[*list(value.out_energies[0]), value.out_energies[1][-1]])
+            ax[1].stairs(rank, edges=[*list(out_energies[0]), out_energies[1][-1]])
 
             ax[1].plot(
-                (value.out_energies.min(), value.out_energies.max()),
+                (out_energies.min(), out_energies.max()),
                 (50, 50),
                 color="black",
                 linestyle="--",
@@ -394,7 +423,7 @@ class BayesianModel(nnx.Module):
             ax[0].set_ylabel("Counts")
             ax[1].set_ylabel("Rank (%)")
             ax[1].set_ylim(0, 100)
-            ax[0].set_xlim(value.out_energies.min(), value.out_energies.max())
+            ax[0].set_xlim(out_energies.min(), out_energies.max())
             ax[0].loglog()
             ax[0].legend(legend_plots, legend_labels)
             plt.suptitle(f"Prior Predictive coverage for {key}")

@@ -31,6 +31,9 @@ from ._plot import (
     _error_bars_for_observed_data,
     _plot_binned_samples_with_error,
     _plot_poisson_data_with_error,
+    _rebin_xbins,
+    adaptive_bin_1d,
+    rebin_counts,
 )
 
 if TYPE_CHECKING:
@@ -446,6 +449,8 @@ class FitResult:
         figsize: tuple[float, float] = (6, 6),
         x_lims: tuple[float, float] | None = None,
         rescale_background: bool = False,
+        min_counts: int | None = None,
+        grouping: int | None = None,
     ) -> list[plt.Figure]:
         r"""
         Plot the posterior predictive distribution of the model. It also features a residual plot, defined using the
@@ -467,10 +472,15 @@ class FitResult:
             figsize: The size of the figure.
             x_lims: The limits of the x-axis.
             rescale_background: Whether to rescale the background model to the data with backscal ratio.
+            min_counts: Minimum number of observed counts per grouped bin. Adjacent bins are merged until the threshold is reached. Mutually exclusive with *grouping*.
+            grouping: Number of consecutive bins to merge into each group. Mutually exclusive with *min_counts*.
 
         Returns:
             A list of matplotlib figures for each observation in the model.
         """
+
+        if min_counts is not None and grouping is not None:
+            raise ValueError("min_counts and grouping are mutually exclusive")
 
         obsconf_container = self.obsconfs
         figure_list = []
@@ -508,6 +518,24 @@ class FitResult:
                 ).values.T
 
                 xbins, exposure, integrated_arf = _compute_effective_area(obsconf, x_unit)
+                observed_counts = obsconf.folded_counts.data
+
+                # --- Adaptive rebinning ---
+                if min_counts is not None:
+                    bin_ids = adaptive_bin_1d(observed_counts, min_counts)
+                elif grouping is not None:
+                    n_bins = len(observed_counts)
+                    bin_ids = np.arange(n_bins) // grouping
+                else:
+                    bin_ids = None
+
+                if bin_ids is not None:
+                    count = rebin_counts(count, bin_ids)
+                    observed_counts = rebin_counts(observed_counts, bin_ids)
+                    xbins = _rebin_xbins(xbins, bin_ids)
+                    integrated_arf = (
+                        rebin_counts(integrated_arf.value, bin_ids) * integrated_arf.unit
+                    )
 
                 match y_type:
                     case "counts":
@@ -524,7 +552,7 @@ class FitResult:
                 y_samples = y_samples.to(y_units)
 
                 y_observed, y_observed_low, y_observed_high = _error_bars_for_observed_data(
-                    obsconf.folded_counts.data, denominator, y_units
+                    observed_counts, denominator, y_units
                 )
 
                 # Use the helper function to plot the data and posterior predictive
@@ -556,7 +584,7 @@ class FitResult:
                 legend_labels.append("Model")
 
                 # Plot the residuals
-                residual_samples = (obsconf.folded_counts.data - count) / np.diff(
+                residual_samples = (observed_counts - count) / np.diff(
                     np.percentile(count, [16, 84], axis=0), axis=0
                 )
 
@@ -570,15 +598,16 @@ class FitResult:
                 )
 
                 if plot_components:
-                    for (component_name, count), color in zip(
+                    for (component_name, comp_count), color in zip(
                         self._ppc_folded_branches(obs_id).items(), COLOR_CYCLE
                     ):
                         # _ppc_folded_branches returns (n_chains, n_draws, n_bins) shaped arrays so we must flatten it
-                        y_samples = (
-                            count.reshape((count.shape[0] * count.shape[1], -1))
-                            * u.ct
-                            / denominator
+                        comp_flat = comp_count.reshape(
+                            (comp_count.shape[0] * comp_count.shape[1], -1)
                         )
+                        if bin_ids is not None:
+                            comp_flat = rebin_counts(comp_flat, bin_ids)
+                        y_samples = comp_flat * u.ct / denominator
 
                         y_samples = y_samples.to(y_units)
 
@@ -609,16 +638,26 @@ class FitResult:
                         ).values.T
                     )
 
+                    bkg_observed = obsconf.folded_background.data
+
+                    if bin_ids is not None:
+                        bkg_count = rebin_counts(bkg_count, bin_ids)
+                        bkg_observed = rebin_counts(bkg_observed, bin_ids)
+                        rescale_background_factor = (
+                            rebin_counts(obsconf.folded_backratio.data, bin_ids)
+                            / np.bincount(bin_ids)
+                            if rescale_background
+                            else 1.0
+                        )
+                    else:
+                        rescale_background_factor = (
+                            obsconf.folded_backratio.data if rescale_background else 1.0
+                        )
+
                     y_samples_bkg = (bkg_count * u.ct / denominator).to(y_units)
 
                     y_observed_bkg, y_observed_bkg_low, y_observed_bkg_high = (
-                        _error_bars_for_observed_data(
-                            obsconf.folded_background.data, denominator, y_units
-                        )
-                    )
-
-                    rescale_background_factor = (
-                        obsconf.folded_backratio.data if rescale_background else 1.0
+                        _error_bars_for_observed_data(bkg_observed, denominator, y_units)
                     )
 
                     model_bkg_plot = _plot_binned_samples_with_error(
