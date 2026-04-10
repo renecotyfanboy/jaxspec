@@ -7,12 +7,16 @@
 # website: http://jupyter.org/
 
 main.py
-doc_notebooks/
+_doc_notebooks/
 
 .ipynb_checkpoints
 tests/data/
 *.ipynb
 poetry.lock
+uv.lock
+
+# Matplotlib user config cache (when MPLCONFIGDIR points here)
+.mplconfig/
 # IPython
 profile_default/
 ipython_config.py
@@ -198,5 +202,6 @@ cython_debug/
 ehthumbs.db
 Thumbs.db
 
-_old/
+_*/
+Library/
 # End of https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks
