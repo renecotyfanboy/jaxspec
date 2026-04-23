@@ -20,7 +20,7 @@ def test_plot_rebin(get_result_list, rebin):
         result.plot_ppc(plot_components=True, plot_background=False, **{rebin: 10})
 
     else:
-        with pytest.raises(ValueError):
+        with pytest.raises(TypeError):
             result.plot_ppc(plot_components=True, plot_background=False, rebin=10, min_counts=10)
 
 
