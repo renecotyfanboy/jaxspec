@@ -5,5 +5,4 @@ channels:
 dependencies:
   - python=3.12
   - xspec
-  - xspec-data
   - pip
