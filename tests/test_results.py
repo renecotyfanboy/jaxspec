@@ -65,8 +65,7 @@ def test_plot_corner(get_result_list):
 @pytest.mark.slow
 def test_to_chain(get_result_list):
     for name, result in zip(*get_result_list):
-        for parameter_kind in ["mod", "ins", "bkg"]:
-            result.to_chain(name, parameter_kind=parameter_kind)
+        result.to_chain(name)
 
 
 @pytest.mark.slow

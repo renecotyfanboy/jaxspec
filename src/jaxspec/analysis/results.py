@@ -312,30 +312,23 @@ class FitResult:
 
         return value
 
-    def to_chain(self, name: str, parameter_kind="mod") -> Chain:
+    def to_chain(self, name: str) -> Chain:
         """
         Return a ChainConsumer Chain object from the posterior distribution of the parameters_type.
 
         Parameters:
             name: The name of the chain.
-            parameter_kind: The kind of parameters to keep.
         """
 
+        # TODO : we should be able to get parameter from instrument model or background model
         fm = self.bayesian_fitter.forward_model
-        match parameter_kind:
-            case "mod":
-                sub_model = fm.spectrum
-            case "bkg":
-                sub_model = fm.background_model
-            case "ins":
-                sub_model = fm.instrument_model
-            case _:
-                raise ValueError(f"Unknown parameter kind: {parameter_kind!r}")
 
         keys_to_drop = [
             key
             for key in self.inference_data.posterior.keys()
-            if not str(key).startswith(sub_model.prior_prefix)
+            if not (
+                str(key).startswith(fm.spectrum.prior_prefix) or str(key).startswith("derived.")
+            )
         ]
 
         reduced_id = az.extract(
