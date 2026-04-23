@@ -33,11 +33,11 @@ rng = default_rng(42)
 num_params = 10000
 
 parameters = {
-    "tbabs_1_nh": rng.uniform(0.1, 0.4, size=num_params),
-    "powerlaw_1_alpha": rng.uniform(1, 3, size=num_params),
-    "powerlaw_1_norm": rng.exponential(10 ** (-0.5), size=num_params),
-    "blackbodyrad_1_kT": rng.uniform(0.1, 3.0, size=num_params),
-    "blackbodyrad_1_norm": rng.exponential(10 ** (-3), size=num_params)
+    "tbabs_1.nh": rng.uniform(0.1, 0.4, size=num_params),
+    "powerlaw_1.alpha": rng.uniform(1, 3, size=num_params),
+    "powerlaw_1.norm": rng.exponential(10 ** (-0.5), size=num_params),
+    "blackbodyrad_1.kT": rng.uniform(0.1, 3.0, size=num_params),
+    "blackbodyrad_1.norm": rng.exponential(10 ** (-3), size=num_params)
 }
 ```
 

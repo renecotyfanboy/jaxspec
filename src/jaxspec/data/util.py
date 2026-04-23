@@ -136,11 +136,29 @@ def forward_model_with_multiple_inputs(
     obs_configuration: "ObsConfiguration",
     sparse=False,
 ):
+    """Evaluate a spectral model for a batch of parameter sets.
+
+    Uses ``jax.vmap`` over the parameter dimensions and folds the resulting
+    photon flux through the observation's transfer matrix to produce expected
+    counts.
+
+    Parameters:
+        model: The spectral model.
+        parameters: A dict mapping dotted-path parameter names (e.g.
+            ``"powerlaw_1.alpha"``) to arrays whose shape encodes
+            the batch dimensions.
+        obs_configuration: The observation configuration providing the energy
+            grid and transfer matrix.
+        sparse: Whether to use a sparse BCOO transfer matrix.
+
+    Returns:
+        Expected counts with shape ``(*batch_dims, n_channels)``.
+    """
     energies = np.asarray(obs_configuration.in_energies)
     parameter_dims = next(iter(parameters.values())).shape
 
     def flux_func(p):
-        return model.photon_flux(p, *energies)
+        return model.photon_flux(*energies, params=p)
 
     for _ in parameter_dims:
         flux_func = jax.vmap(flux_func)
@@ -170,39 +188,40 @@ def fakeit_for_multiple_parameters(
     apply_stat: bool = True,
     sparsify_matrix: bool = False,
 ):
-    """
-    Convenience function to simulate multiple spectra from a given model and a set of parameters.
-    This is supposed to be somewhat optimized and can handle multiple parameters at once without blowing
-    up the memory. The parameters should be passed as a dictionary with the parameter name as the key and
-    the parameter values as the values, the value can be a scalar or a nd-array.
+    """Simulate multiple spectra from a spectral model and a batch of parameters.
 
-    # Example:
+    Handles batched parameter arrays efficiently via ``jax.vmap`` and optionally
+    applies Poisson noise.
 
-    ``` python
-    from jaxspec.data.util import fakeit_for_multiple_parameters
-    from numpy.random import default_rng
+    Example:
+        from jaxspec.data.util import fakeit_for_multiple_parameters
+        from numpy.random import default_rng
 
-    rng = default_rng(42)
-    size = (10, 30)
+        rng = default_rng(42)
+        size = (10, 30)
 
-    parameters = {
-        "tbabs_1_nh": rng.uniform(0.1, 0.4, size=size),
-        "powerlaw_1_alpha": rng.uniform(1, 3, size=size),
-        "powerlaw_1_norm": rng.exponential(10 ** (-0.5), size=size),
-        "blackbodyrad_1_kT": rng.uniform(0.1, 3.0, size=size),
-        "blackbodyrad_1_norm": rng.exponential(10 ** (-3), size=size)
-    }
+        parameters = {
+            "tbabs_1.nh": rng.uniform(0.1, 0.4, size=size),
+            "powerlaw_1.alpha": rng.uniform(1, 3, size=size),
+            "powerlaw_1.norm": rng.exponential(10 ** (-0.5), size=size),
+            "blackbodyrad_1.kT": rng.uniform(0.1, 3.0, size=size),
+            "blackbodyrad_1.norm": rng.exponential(10 ** (-3), size=size),
+        }
 
-    spectra = fakeit_for_multiple_parameters(obsconf, model, parameters)
-    ```
+        spectra = fakeit_for_multiple_parameters(obsconf, model, parameters)
 
     Parameters:
-        obsconfs: The observational setup(s).
-        model: The model to use.
-        parameters: The parameters of the model.
-        rng_key: The random number generator seed.
-        apply_stat: Whether to apply Poisson statistic on the folded spectra or not.
-        sparsify_matrix: Whether to sparsify the matrix or not.
+        obsconfs: One or more observation configurations.
+        model: The spectral model to evaluate.
+        parameters: Dict mapping dotted-path parameter names to arrays whose
+            shape encodes the batch dimensions.
+        rng_key: Random number generator seed for Poisson sampling.
+        apply_stat: Whether to apply Poisson noise to the folded spectra.
+        sparsify_matrix: Whether to use sparse transfer matrices.
+
+    Returns:
+        A single array (one obs) or a list of arrays (multiple obs), each with
+        shape ``(*batch_dims, n_channels)``.
     """
 
     obsconf_list = [obsconfs] if isinstance(obsconfs, ObsConfiguration) else obsconfs

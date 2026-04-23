@@ -1,130 +1,132 @@
-from abc import ABC, abstractmethod
+from __future__ import annotations
 
-import jax
-import numpyro
+from abc import abstractmethod
+from typing import TYPE_CHECKING
+
+import jax.numpy as jnp
 import numpyro.distributions as dist
 
 from flax import nnx
-from numpyro.distributions import Poisson
 
-from .abc import SpectralModel
+from ._parametrizable import ParametrizableMixin
+
+if TYPE_CHECKING:
+    from ..data import ObsConfiguration
 
 
-class BackgroundModel(ABC, nnx.Module):
+class BackgroundModel(ParametrizableMixin, nnx.Module):
+    """Base class for background models.
+
+    A background model predicts a count rate in the *background* space and
+    carries enough information to be Poisson-fitted against an observation's
+    ``folded_background``. The orchestrator
+    (:class:`~jaxspec.fit.BayesianModel`) scales the predicted rate by
+    ``folded_backratio`` before adding it to the source-space likelihood.
+
+    Subclasses must implement :meth:`__call__` (the deterministic forward
+    prediction) and declare their parameters via the unified prior dict under
+    the ``"background."`` prefix.
     """
-    Handles the background modelling in our spectra. This is handled in a separate class for now
-    since backgrounds can be phenomenological models fitted directly on the folded spectrum. This is not the case for
-    the source model, which is fitted on the unfolded spectrum. This might be changed later.
-    """
+
+    prior_prefix: str = "background."
+
+    #: Whether the background contributes a Poisson likelihood term on the
+    #: observed background spectrum. ``False`` means the background is treated
+    #: as a fixed deterministic quantity (e.g. :class:`SubtractedBackground`).
+    is_stochastic: bool = True
 
     @abstractmethod
-    def numpyro_model(self, observation, name: str = "", observed=True):
+    def __call__(self, observation: ObsConfiguration, *, name: str, params: dict | None = None):
+        """Return the predicted background rate in background space (no backratio).
+
+        Parameters:
+            observation: The observation configuration for this pointing.
+            name: The observation name (used to namespace parameter keys).
+            params: Optional parameter dict keyed by full dotted-path site
+                names (e.g. ``"background.countrate"``). Values are scalar
+                (pre-sliced for this observation by the orchestrator).
         """
-        Build the model for the background.
-        """
-        pass
 
 
 class SubtractedBackground(BackgroundModel):
     """
-    Define a model where the observed background is simply subtracted from the observed.
+    Return the observed background unchanged.
 
     !!! danger
-
-        This is not a good way to model the background, as it does not account for the fact that the measured
-        background is a Poisson realisation of the true background's countrate. This is why we prefer a
-        [`ConjugateBackground`][jaxspec.model.background.ConjugateBackground].
-
+        This is not a good way to model the background, as it does not account for the
+        fact that the measured background is a Poisson realization of the true
+        background's countrate. Prefer :class:`BackgroundWithError`.
     """
 
-    def numpyro_model(self, observation, name: str = "", observed=True):
-        _, observed_counts = observation.out_energies, observation.folded_background.data
-        numpyro.deterministic(f"bkg/~/{name}", observed_counts)
+    is_stochastic: bool = False
 
-        return observed_counts
+    def __call__(self, observation, *, name: str, params: dict | None = None):
+        return jnp.asarray(observation.folded_background.data)
 
 
 class BackgroundWithError(BackgroundModel):
+    """Fit an independent countrate per background bin using a Gamma prior.
+
+    For each bin, the default prior is ``Gamma(observed_counts + 1, rate=1)``,
+    which is conjugate to the Poisson likelihood and peaks near the observed
+    value. This default can be overridden by providing a ``"background.countrate"``
+    key in the unified prior dict.
     """
-    Define a model where the observed background is subtracted from the observed accounting for its intrinsic spread. It
-    fits a countrate for each background bin assuming a Poisson distribution.
-    """
 
-    def numpyro_model(self, obs, name: str = "", observed=True):
-        # We can't use the build_prior_function method here because the parameter size varies
-        # with the current observation. It must be instantiated in place.
-        # Gamma in numpyro is parameterized by concentration and rate (alpha/beta)
+    def default_prior(self, observations: dict) -> dict:
+        """Construct per-observation Gamma priors from observed background counts."""
+        from ..fit._parameter import PerObs
 
-        _, observed_counts = obs.out_energies, obs.folded_background.data
-        alpha = observed_counts + 1
-        beta = 1
-        countrate = numpyro.sample(f"bkg/~/_{name}_countrate", dist.Gamma(alpha, rate=beta))
-
-        with numpyro.plate(f"bkg/~/{name}_plate", len(observed_counts)):
-            numpyro.sample(
-                f"bkg/~/{name}", dist.Poisson(countrate), obs=observed_counts if observed else None
+        return {
+            "background.countrate": PerObs(
+                {
+                    name: dist.Gamma(jnp.asarray(obs.folded_background.data) + 1.0, rate=1.0)
+                    for name, obs in observations.items()
+                }
             )
+        }
 
-        return countrate
+    def __call__(self, observation, *, name: str, params: dict | None = None):
+        key = "background.countrate"
+        if params is not None and key in params:
+            return params[key]
+        return observation.folded_background.data
 
 
 class SpectralModelBackground(BackgroundModel):
-    def __init__(self, spectral_model: "SpectralModel", prior_distributions, sparse=False):
-        self.spectral_model = spectral_model
-        self.prior = nnx.data(prior_distributions)
-        self.sparse = sparse
+    """Model the background as a spectral model folded through the instrument response.
 
-    def numpyro_model(self, observation, name: str = "", observed=True):
-        from jaxspec.fit._build_model import build_prior, forward_model
+    The inner ``spectral_model`` is evaluated against the observation's
+    ``folded_background`` spectrum, using the same transfer matrix and energy
+    grid as the source. Prior keys use dotted paths relative to the inner
+    spectral model (e.g. ``"background.powerlaw_1.alpha"``), provided in the
+    unified prior dict.
 
-        params = build_prior(self.prior, prefix=f"_bkg_{name}_")
-        bkg_model = jax.jit(
-            lambda par: forward_model(self.spectral_model, par, observation, sparse=self.sparse)
-        )
-        bkg_countrate = bkg_model(params)
-
-        with numpyro.plate("bkg/~/plate_" + name, len(observation.folded_background)):
-            numpyro.sample(
-                "bkg/~/" + name,
-                Poisson(bkg_countrate),
-                obs=observation.folded_background.data if observed else None,
-            )
-
-        return bkg_countrate
-
-
-'''
-class ConjugateBackground(BackgroundModel):
-    r"""
-    This class fit an expected rate $\\lambda$ in each bin of the background spectrum. Assuming a Gamma prior
-    distribution, we can analytically derive the posterior as a Negative binomial distribution.
-
-    $$ p(\\lambda_{\text{Bkg}}) \\sim \\Gamma \\left( \alpha, \beta \right) \\implies
-    p\\left(\\lambda_{\text{Bkg}} | \text{Counts}_{\text{Bkg}}\right) \\sim \text{NB}\\left(\alpha, \frac{\beta}{\beta +1}
-    \right) $$
-
-    !!! info
-        Here, $\alpha$ and $\beta$ are set to $\alpha = \text{Counts}_{\text{Bkg}} + 1$ and $\beta = 1$. Doing so,
-        the prior distribution is such that $\\mathbb{E}[\\lambda_{\text{Bkg}}] = \text{Counts}_{\text{Bkg}} +1$ and
-        $\text{Var}[\\lambda_{\text{Bkg}}] = \text{Counts}_{\text{Bkg}}+1$. The +1 is to avoid numerical issues when the
-        counts are 0, and add a small scatter even if the measured background is effectively null.
-
-    ??? abstract "References"
-
-        - https://en.wikipedia.org/wiki/Conjugate_prior
-        - https://www.acsu.buffalo.edu/~adamcunn/probability/gamma.html
-        - https://bayesiancomputationbook.com/markdown/chp_01.html?highlight=conjugate#conjugate-priors
-        - https://vioshyvo.github.io/Bayesian_inference/conjugate-distributions.html
-
+    Parameters:
+        spectral_model: The spectral model describing the background shape.
+        sparse: Whether to use sparse transfer matrices for the background
+            convolution.
     """
 
-    def numpyro_model(self, energy, observed_counts, name: str = "bkg", observed=True):
-        # Gamma in numpyro is parameterized by concentration and rate (alpha/beta)
-        # alpha = observed_counts + 1
-        # beta = 1
+    def __init__(
+        self,
+        spectral_model,
+        sparse: bool = False,
+    ):
+        self.spectral_model = spectral_model
+        self.sparse = sparse
 
-        with numpyro.plate(f"{name}_plate", len(observed_counts)):
-            countrate = numpyro.sample(f"{name}", dist.Gamma(2 * observed_counts + 1, 2), obs=None)
+    def __call__(self, observation, *, name: str, params: dict | None = None):
+        import numpy as np
 
-        return countrate
-'''
+        from jax.experimental.sparse import BCOO
+
+        energies = np.asarray(observation.in_energies)
+        if self.sparse:
+            transfer_matrix = BCOO.from_scipy_sparse(
+                observation.transfer_matrix.data.to_scipy_sparse().tocsr()
+            )
+        else:
+            transfer_matrix = np.asarray(observation.transfer_matrix.data.todense())
+        flux = self.spectral_model.photon_flux(*energies, params=params)
+        return jnp.clip(transfer_matrix @ flux, min=1e-6)

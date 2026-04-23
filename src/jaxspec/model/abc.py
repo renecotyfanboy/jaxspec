@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 
 from abc import ABC
-from functools import partial
+from functools import cached_property, partial
 from uuid import uuid4
 
 import flax.nnx as nnx
@@ -11,38 +11,72 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 import networkx as nx
-import numpy as np
-
-from jaxspec.util.typing import PriorDictType
 
 from ._graph_util import compose, export_to_mermaid
+from ._parametrizable import ParametrizableMixin
 
 
-def set_parameters(params: PriorDictType, state: nnx.State) -> nnx.State:
+def _apply_pure_updates(state_dict: dict, updates: dict) -> dict:
+    """Apply dotted-path ``updates`` into a pure-dict view of an ``nnx.State``.
+
+    A leading routing prefix (e.g. ``"spectrum."``, ``"background."``) is
+    dropped when its first segment is not a key in ``state_dict``, so callers
+    can pass unified prior keys without stripping the prefix. Updates that
+    route to a different model (i.e. whose post-strip path is still unknown)
+    are silently skipped, so mixed-prefix dicts from ``FitResult.input_parameters``
+    can be passed directly without filtering.
     """
-    Set the parameters of a spectral model using `nnx'` routines.
+    for path, value in updates.items():
+        parts = path.split(".")
+        if parts and parts[0] not in state_dict:
+            parts = parts[1:]
+            if not parts or parts[0] not in state_dict:
+                continue
+        if not parts:
+            continue
+        cursor = state_dict
+        for name in parts[:-1]:
+            cursor = cursor[name]
+        cursor[parts[-1]] = value
+    return state_dict
 
-    Parameters:
-        params: Dictionary of parameters to set.
-        model: Spectral model.
 
-    Returns:
-        A spectral model with the newly set parameters.
+class HideUnderscoreMixin:
+    """Hide underscore-prefixed attributes from ``nnx.display`` and ``repr``.
+
+    Flax NNX shows any attribute classified as pytree data even when its name
+    starts with ``_`` (only *static* underscore attributes are hidden by
+    default). For jaxspec models we want the ``_name`` convention to mean
+    "implementation detail, don't show" regardless of whether the value is an
+    array / :class:`nnx.Variable`.
+
+    Place this mixin **before** :class:`nnx.Module` in the MRO.
     """
 
-    state_dict = nnx.to_pure_dict(state)  # haiku-like 2 level dictionary
+    def __treescope_repr__(self, path, subtree_renderer):
+        import treescope
 
-    for key, value in params.items():
-        # Split the key to extract the module name and parameter name
-        module_name, param_name = key.rsplit("_", 1)
-        state_dict["components"][module_name][param_name] = value
+        from flax.nnx import visualization
 
-    nnx.replace_by_pure_dict(state, state_dict)
+        children = {n: v for n, v in vars(self).items() if not n.startswith("_")}
+        return visualization.render_object_constructor(
+            object_type=type(self),
+            attributes=children,
+            path=path,
+            subtree_renderer=subtree_renderer,
+            color=treescope.formatting_util.color_from_string(type(self).__qualname__),
+        )
 
-    return state
+    def __nnx_repr__(self):
+        from flax.nnx import reprlib
+
+        yield reprlib.Object(type=type(self))
+        for name, value in vars(self).items():
+            if not name.startswith("_"):
+                yield reprlib.Attr(name, value)
 
 
-class Composable(ABC):
+class ComposableMixin:
     """
     Defines the set of operations between model components and spectral models
     """
@@ -69,47 +103,20 @@ class Composable(ABC):
         return model_1.compose(model_2, operation="mul", operation_func=operator.mul)
 
 
-class SpectralModel(nnx.Module, Composable):
+class SpectralModel(ParametrizableMixin, HideUnderscoreMixin, ComposableMixin, nnx.Module):
     _graph: nx.DiGraph
+    prior_prefix: str = "spectrum."
 
     def __init__(self, graph: nx.DiGraph):
         self._graph = graph
-        self.components = nnx.Dict({})
-        self._energy_grid = np.geomspace(0.1, 50, 1000, dtype=np.float64)
 
         for node, data in self._graph.nodes(data=True):
             if "component" in data["type"]:
-                self.components[data["name"]] = data["component"]  # (**data['kwargs'])
-
-    """
-    def __str__(self) -> str:
-        def build_expression(node_id):
-            node = self.graph.nodes[node_id]
-            if node["type"] == "component":
-                string = node["component"].__name__
-
-                if node["kwargs"]:
-                    kwargs = ", ".join([f"{k}={v}" for k, v in node["kwargs"].items()])
-                    string += f"({kwargs})"
-                else:
-                    string += "()"
-                return string
-
-            elif node["type"] == "operation":
-                predecessors = list(self.graph.predecessors(node_id))
-                operands = [build_expression(pred) for pred in predecessors]
-                operation = node["operation_label"]
-                return f"({f' {operation} '.join(operands)})"
-            elif node["type"] == "out":
-                predecessors = list(self.graph.predecessors(node_id))
-                return build_expression(predecessors[0])
-
-        return "This must be changed"  # build_expression("out")[1:-1]
-    """
+                setattr(self, data["name"], data["component"])
 
     def compose(self, other, operation=None, operation_func=None):
         """
-        This function operate a composition between the operation graph of two models
+        This function operates a composition between the operation graph of two models
         1) It fuses the two graphs using which joins at the 'out' nodes and change components name to unique identifiers
         2) It relabels the 'out' node with a unique identifier and labels it with the operation
         3) It links the operation to a new 'out' node
@@ -165,34 +172,32 @@ class SpectralModel(nnx.Module, Composable):
             if in_degree == 0 and ("additive" in self._graph.nodes[node_id].get("type"))
         ]
 
-    @property
-    def branches(self) -> list[str]:
-        branches = []
+    def _iter_branches(self):
+        """Yield ``(branch_name, mult_node_ids, root_node_name)`` for every additive root.
 
+        ``mult_node_ids`` is the deduplicated list of multiplicative-component
+        node ids along the path from the additive root to ``out``, in the same
+        ``list(set(...))`` order used historically to build branch names and
+        multiply absorption factors in :meth:`turbo_flux`.
+        """
         for root_node_id in self.root_nodes:
             root_node_name = self._graph.nodes[root_node_id].get("name")
             path = nx.shortest_path(self._graph, source=root_node_id, target="out")
-            multiplicative_components = []
 
-            # Search all multiplicative components connected to this node
-            # and apply them at mean energy
+            mult_ids: list[str] = []
             for node_id in path[::-1]:
-                multiplicative_components.extend(
-                    [node_id for node_id in self._find_multiplicative_components(node_id)]
-                )
+                mult_ids.extend(self._find_multiplicative_components(node_id))
+            mult_ids = list(set(mult_ids))
 
-            multiplicative_components = set(multiplicative_components)
+            branch = (
+                "".join(f"{self._graph.nodes[mid].get('name')}*" for mid in mult_ids)
+                + root_node_name
+            )
+            yield branch, mult_ids, root_node_name
 
-            branch = ""
-
-            for multiplicative_node_id in multiplicative_components:
-                multiplicative_node_name = self._graph.nodes[multiplicative_node_id].get("name")
-                branch += f"{multiplicative_node_name}*"
-
-            branch += f"{root_node_name}"
-            branches.append(branch)
-
-        return branches
+    @cached_property
+    def branches(self) -> list[str]:
+        return [branch for branch, _, _ in self._iter_branches()]
 
     def turbo_flux(self, e_low, e_high, energy_flux=False, n_points=2, return_branches=False):
         continuum = {}
@@ -203,7 +208,7 @@ class SpectralModel(nnx.Module, Composable):
 
             if node["type"] == "additive_component":
                 node_name = node["name"]
-                runtime_modules = self.components[node_name]
+                runtime_modules = getattr(self, node_name)
 
                 if not energy_flux:
                     continuum[node_name] = runtime_modules._photon_flux(
@@ -217,40 +222,19 @@ class SpectralModel(nnx.Module, Composable):
 
             elif node["type"] == "multiplicative_component":
                 node_name = node["name"]
-                runtime_modules = self.components[node_name]
+                runtime_modules = getattr(self, node_name)
                 continuum[node_name] = runtime_modules._factor(e_low, e_high, n_points=n_points)
 
             else:
                 pass
 
         ## Propagate the absorption for each branch
-        root_nodes = self.root_nodes
-
         branches = {}
-
-        for root_node_id in root_nodes:
-            root_node_name = self._graph.nodes[root_node_id].get("name")
-            root_continuum = continuum[root_node_name]
-
-            path = nx.shortest_path(self._graph, source=root_node_id, target="out")
-            multiplicative_components = []
-
-            # Search all multiplicative components connected to this node
-            # and apply them at mean energy
-            for node_id in path[::-1]:
-                multiplicative_components.extend(
-                    [node_id for node_id in self._find_multiplicative_components(node_id)]
-                )
-
-            branch = ""
-
-            for multiplicative_node_id in set(multiplicative_components):
-                multiplicative_node_name = self._graph.nodes[multiplicative_node_id].get("name")
-                root_continuum *= continuum[multiplicative_node_name]
-                branch += f"{multiplicative_node_name}*"
-
-            branch += f"{root_node_name}"
-            branches[branch] = root_continuum
+        for branch_name, mult_ids, root_node_name in self._iter_branches():
+            flux = continuum[root_node_name]
+            for mid in mult_ids:
+                flux = flux * continuum[self._graph.nodes[mid].get("name")]
+            branches[branch_name] = flux
 
         if return_branches:
             return branches
@@ -269,8 +253,27 @@ class SpectralModel(nnx.Module, Composable):
         """
         return export_to_mermaid(self._graph, file)
 
+    def _with_params(self, params: dict | None) -> SpectralModel:
+        """Return a copy of ``self`` with ``params`` applied as dotted-path
+        overrides. Returns ``self`` unchanged when ``params`` is ``None``."""
+        if params is None:
+            return self
+        graphdef, param_state, other = nnx.split(self, nnx.Param, ...)
+        pure = nnx.to_pure_dict(param_state)
+        pure = _apply_pure_updates(pure, params)
+        nnx.replace_by_pure_dict(param_state, pure)
+        return nnx.merge(graphdef, param_state, other)
+
     @partial(jax.jit, static_argnums=0, static_argnames=("n_points", "split_branches"))
-    def photon_flux(self, params, e_low, e_high, n_points=2, split_branches=False):
+    def photon_flux(
+        self,
+        e_low,
+        e_high,
+        *,
+        params: dict | None = None,
+        n_points: int = 2,
+        split_branches: bool = False,
+    ):
         r"""
         Compute the expected counts between $E_\min$ and $E_\max$ by integrating the model.
 
@@ -283,24 +286,13 @@ class SpectralModel(nnx.Module, Composable):
             e_low : The lower bound of the energy bins.
             e_high : The upper bound of the energy bins.
             n_points : The number of points used to integrate the model in each bin.
-
-        !!! info
-            This method is internally used in the inference process and should not be used directly. See
-            [`photon_flux`][jaxspec.analysis.results.FitResult.photon_flux] to compute
-            the photon flux associated with a set of fitted parameters in a
-            [`FitResult`][jaxspec.analysis.results.FitResult]
-            instead.
         """
-
-        graphdef, parameters, tables = nnx.split(self, nnx.Param, ...)
-        parameters = set_parameters(params, parameters)
-
-        return nnx.merge(graphdef, parameters, tables).turbo_flux(
+        return self._with_params(params).turbo_flux(
             e_low, e_high, n_points=n_points, return_branches=split_branches
         )
 
     @partial(jax.jit, static_argnums=0, static_argnames="n_points")
-    def energy_flux(self, params, e_low, e_high, n_points=2):
+    def energy_flux(self, e_low, e_high, *, params: dict | None = None, n_points: int = 2):
         r"""
         Compute the expected energy flux between $E_\min$ and $E_\max$ by integrating the model.
 
@@ -313,24 +305,59 @@ class SpectralModel(nnx.Module, Composable):
             e_low : The lower bound of the energy bins.
             e_high : The upper bound of the energy bins.
             n_points : The number of points used to integrate the model in each bin.
-
-        !!! info
-            This method is internally used in the inference process and should not be used directly. See
-            [`energy_flux`](/references/results/#jaxspec.analysis.results.FitResult.energy_flux) to compute
-            the energy flux associated with a set of fitted parameters in a
-            [`FitResult`](/references/results/#jaxspec.analysis.results.FitResult)
-            instead.
         """
-
-        graphdef, parameters, tables = nnx.split(self, nnx.Param, ...)
-        parameters = set_parameters(params, parameters)
-
-        return nnx.merge(graphdef, parameters, tables).turbo_flux(
+        return self._with_params(params).turbo_flux(
             e_low, e_high, n_points=n_points, energy_flux=True
         )
 
+    def integrated_flux(
+        self,
+        e_min: float,
+        e_max: float,
+        *,
+        params: dict | None = None,
+        energy: bool = False,
+        n_points: int = 5,
+        n_grid: int = 1_000,
+    ):
+        r"""
+        Integrate the photon (default) or energy flux of the model over
+        $[E_\min, E_\max]$ and return the scalar result.
 
-class ModelComponent(nnx.Module, Composable, ABC):
+        Supports batched parameters: every value in ``params`` may carry
+        arbitrary leading axes (e.g. ``(n_chains, n_draws, n_obs)``). The
+        result has the same leading shape.
+
+        Parameters:
+            e_min : Lower bound of the energy band.
+            e_max : Upper bound of the energy band.
+            params : Dotted-path parameter dict. If ``None``, uses whatever
+                state is currently on the module.
+            energy : If ``True``, integrate the energy flux (keV/cm²/s);
+                otherwise the photon flux (photons/cm²/s).
+            n_points : Quadrature points per energy bin.
+            n_grid : Number of grid points across $[E_\min, E_\max]$.
+        """
+        energy_grid = jnp.linspace(e_min, e_max, n_grid)
+        e_low = energy_grid[:-1]
+        e_high = energy_grid[1:]
+        flux_fn = self.energy_flux if energy else self.photon_flux
+
+        if params is None:
+            return flux_fn(e_low, e_high, n_points=n_points).sum(axis=-1)
+
+        flat_tree, pytree_def = jax.tree.flatten(params)
+
+        @jax.jit
+        @jnp.vectorize
+        def vectorized_flux(*pars):
+            parameters_pytree = jax.tree.unflatten(pytree_def, pars)
+            return flux_fn(e_low, e_high, params=parameters_pytree, n_points=n_points)
+
+        return vectorized_flux(*flat_tree).sum(axis=-1)
+
+
+class ModelComponent(HideUnderscoreMixin, nnx.Module, ComposableMixin, ABC):
     """
     Abstract class for model components
     """
@@ -378,15 +405,15 @@ class AdditiveComponent(ModelComponent):
         )
 
     @partial(jax.jit, static_argnums=0, static_argnames="n_points")
-    def photon_flux(self, params, e_low, e_high, n_points=2):
+    def photon_flux(self, e_low, e_high, *, params: dict | None = None, n_points: int = 2):
         return SpectralModel.from_component(self).photon_flux(
-            params, e_low, e_high, n_points=n_points
+            e_low, e_high, params=params, n_points=n_points
         )
 
     @partial(jax.jit, static_argnums=0, static_argnames="n_points")
-    def energy_flux(self, params, e_low, e_high, n_points=2):
+    def energy_flux(self, e_low, e_high, *, params: dict | None = None, n_points: int = 2):
         return SpectralModel.from_component(self).energy_flux(
-            params, e_low, e_high, n_points=n_points
+            e_low, e_high, params=params, n_points=n_points
         )
 
 

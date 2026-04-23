@@ -1,115 +1,121 @@
-from abc import ABC, abstractmethod
+from __future__ import annotations
+
+from abc import abstractmethod
 from collections.abc import Callable
 
-import numpyro
+import jax.numpy as jnp
 
 from flax import nnx
-from numpyro.distributions import Distribution
+from jax.typing import ArrayLike
+
+from ._parametrizable import ParametrizableMixin, _select_observation_value
 
 
-class GainModel(ABC, nnx.Module):
-    """
-    Generic class for a gain model
-    """
+class GainModel(nnx.Module):
+    """Generic gain model."""
 
     @abstractmethod
-    def numpyro_model(self, observation_name: str):
-        pass
+    def __call__(self, observation_name: str, *, params: dict | None = None) -> Callable: ...
 
 
 class ConstantGain(GainModel):
+    """A constant gain model.
+
+    The gain factor prior is provided via the unified prior dict under the
+    key ``"instrument.gain.factor"``, which may be a ``Distribution`` or a
+    :class:`~jaxspec.fit.PerObs` wrapper.
     """
-    A constant gain model
-    """
 
-    def __init__(self, prior_distribution: Distribution):
-        """
-        Parameters:
-            prior_distribution: the prior distribution for the gain value.
-        """
-
-        self.prior_distribution = prior_distribution
-
-    def numpyro_model(self, observation_name: str):
-        factor = numpyro.sample(f"ins/~/gain_{observation_name}", self.prior_distribution)
-
-        def gain(energy):
-            return factor
-
-        return gain
+    def __call__(self, observation_name: str, *, params: dict | None = None) -> Callable:
+        key = f"instrument.gain.factor.{observation_name}"
+        factor = params.get(key, jnp.asarray(1.0)) if params else jnp.asarray(1.0)
+        return lambda energy: factor
 
 
-class ShiftModel(ABC, nnx.Module):
-    """
-    Generic class for a shift model
-    """
+class ShiftModel(nnx.Module):
+    """Generic shift model."""
 
     @abstractmethod
-    def numpyro_model(self, observation_name: str):
-        pass
+    def __call__(self, observation_name: str, *, params: dict | None = None) -> Callable: ...
 
 
 class ConstantShift(ShiftModel):
+    """A constant shift model.
+
+    The shift offset prior is provided via the unified prior dict under the
+    key ``"instrument.shift.offset"``, which may be a ``Distribution`` or a
+    :class:`~jaxspec.fit.PerObs` wrapper.
     """
-    A constant shift model
+
+    def __call__(self, observation_name: str, *, params: dict | None = None) -> Callable:
+        key = f"instrument.shift.offset.{observation_name}"
+        offset = params.get(key, jnp.asarray(0.0)) if params else jnp.asarray(0.0)
+        return lambda energy: energy + offset
+
+
+class InstrumentModel(ParametrizableMixin, nnx.Module):
+    """Encapsulate an instrument model, built as a combination of a shift and gain model.
+
+    Parameters:
+        reference_observation_name: The observation to use as a reference.
+        gain_model: The gain model.
+        shift_model: The shift model.
     """
 
-    def __init__(self, prior_distribution: Distribution):
-        """
-        Parameters:
-            prior_distribution: the prior distribution for the shift value.
-        """
-        self.prior_distribution = prior_distribution
+    prior_prefix: str = "instrument."
 
-    def numpyro_model(self, observation_name: str):
-        shift_offset = numpyro.sample(f"ins/~/shift_{observation_name}", self.prior_distribution)
-
-        def shift(energy):
-            return energy + shift_offset
-
-        return shift
-
-
-class InstrumentModel(nnx.Module):
     def __init__(
         self,
         reference_observation_name: str,
         gain_model: GainModel | None = None,
         shift_model: ShiftModel | None = None,
     ):
-        """
-        Encapsulate an instrument model, build as a combination of a shift and gain model.
-
-        Parameters:
-            reference_observation_name : The observation to use as a reference
-            gain_model : The gain model
-            shift_model : The shift model
-        """
-
         self.reference = reference_observation_name
         self.gain_model = gain_model
         self.shift_model = shift_model
 
-    def get_gain_and_shift_model(
-        self, observation_name: str
-    ) -> tuple[Callable | None, Callable | None]:
+    def _default_skip_observation(self) -> str | None:
+        return self.reference
+
+    def __call__(
+        self,
+        observation_names: list[str],
+        *,
+        params: dict | None = None,
+    ) -> dict[str, tuple[Callable | None, Callable | None]]:
+        """Return per-observation ``(gain_fn, shift_fn)`` tuples.
+
+        Parameters:
+            observation_names: All observation names (including the reference).
+            params: Flat dict of sampled instrument params, with per-obs values
+                keyed as ``instrument.{param}.{obs_name}`` (from
+                :meth:`register_priors`).
+
+        Returns:
+            ``{obs_name: (gain_fn | None, shift_fn | None)}`` for every
+            observation. The reference observation gets ``(None, None)``.
         """
-        Return the gain and shift models for the given observation. It should be called within a numpyro model.
-        """
+        # Unstack (n_non_ref,) arrays into per-obs keys for subcomponents
+        non_ref = [n for n in observation_names if n != self.reference]
+        unstacked: dict[str, ArrayLike] = {}
+        if params is not None:
+            n_non_ref = len(non_ref)
+            for key, value in params.items():
+                for i, obs_name in enumerate(non_ref):
+                    unstacked[f"{key}.{obs_name}"] = _select_observation_value(
+                        value, i, obs_name, n_non_ref
+                    )
 
-        if observation_name == self.reference:
-            return None, None
-
-        else:
-            gain = (
-                self.gain_model.numpyro_model(observation_name)
-                if self.gain_model is not None
-                else None
+        out: dict[str, tuple[Callable | None, Callable | None]] = {}
+        for name in observation_names:
+            if name == self.reference:
+                out[name] = (None, None)
+                continue
+            gain_fn = (
+                self.gain_model(name, params=unstacked) if self.gain_model is not None else None
             )
-            shift = (
-                self.shift_model.numpyro_model(observation_name)
-                if self.shift_model is not None
-                else None
+            shift_fn = (
+                self.shift_model(name, params=unstacked) if self.shift_model is not None else None
             )
-
-            return gain, shift
+            out[name] = (gain_fn, shift_fn)
+        return out

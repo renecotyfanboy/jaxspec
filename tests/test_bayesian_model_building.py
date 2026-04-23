@@ -1,5 +1,7 @@
 from contextlib import nullcontext as does_not_raise
 
+import arviz as az
+import numpy as np
 import numpyro.distributions as dist
 import pytest
 
@@ -11,9 +13,9 @@ from conftest import (
     single_obsconf,
     spectral_model,
 )
-from jaxspec.fit import BayesianModel, MCMCFitter, NSFitter, TiedParameter, VIFitter
+from jaxspec.fit import BayesianModel, MCMCFitter, NSFitter, PerObs, TiedParameter, VIFitter
 from jaxspec.model.additive import Powerlaw
-from jaxspec.model.background import BackgroundWithError
+from jaxspec.model.background import BackgroundWithError, SpectralModelBackground
 from jaxspec.model.instrument import ConstantGain, ConstantShift, InstrumentModel
 from jaxspec.model.multiplicative import Tbabs
 from numpyro.optim import optax_to_numpyro
@@ -42,7 +44,7 @@ data_prior_marker = pytest.mark.parametrize(
             spectral_model,
             prior_split_pars,
             single_obsconf,
-            pytest.raises(ValueError),
+            does_not_raise(),
             id="single observation-split parameters",
         ),
         pytest.param(
@@ -105,6 +107,22 @@ def test_mock_obs(model, prior, obsconf, expectation, sparse):
         bayesian_model.mock_observations(bayesian_model.prior_samples())
 
 
+@pytest.mark.fast
+def test_prior_samples_with_ragged_background_default_prior():
+    fitter = MCMCFitter(
+        spectral_model,
+        prior_shared_pars,
+        list_of_obsconf,
+        background_model=BackgroundWithError(),
+    )
+    prior_samples = fitter.prior_samples(num_samples=1)
+
+    for i, obsconf in enumerate(list_of_obsconf):
+        site_name = f"background.countrate.data_{i}"
+        assert site_name in prior_samples
+        assert prior_samples[site_name].shape == (1, len(obsconf.folded_background))
+
+
 @pytest.mark.slow
 @mcmc_marker
 @data_prior_marker
@@ -123,6 +141,7 @@ def test_run_mcmc(model, prior, obsconf, expectation, sampler):
         result.photon_flux(0.7, 1.2, register=True)
         result.energy_flux(0.7, 1.2, register=True)
         result.luminosity(0.7, 1.2, redshift=0.01, register=True)
+        result.c_stat
         [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
         result.to_chain("test")
 
@@ -132,12 +151,31 @@ def test_run_mcmc(model, prior, obsconf, expectation, sampler):
 def test_run_ns(model, prior, obsconf, expectation):
     """Try to generate mock observations from the given combination of observation and priors"""
     with expectation:
-        forward_model = NSFitter(model, prior, obsconf, background_model=BackgroundWithError())
-        result = forward_model.fit()
+        bkg_spectral_model = Tbabs() * Powerlaw()
+        prior_with_backgrounds = {
+            **prior,
+            "background.powerlaw_1.alpha": dist.Uniform(0, 5),
+            "background.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
+            "background.tbabs_1.nh": dist.Uniform(0, 1),
+        }
+        forward_model = NSFitter(
+            model,
+            prior_with_backgrounds,
+            obsconf,
+            background_model=SpectralModelBackground(bkg_spectral_model),
+        )
+        # Aggressive stopping criterion: keep this on par with the MCMC/VI tests.
+        result = forward_model.fit(
+            num_samples=10,
+            num_live_points=50,
+            termination_kwargs={"max_samples": 200},
+            verbose=False,
+        )
 
         result.photon_flux(0.7, 1.2, register=True)
         result.energy_flux(0.7, 1.2, register=True)
         result.luminosity(0.7, 1.2, redshift=0.01, register=True)
+        result.c_stat
         [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
         result.to_chain("test")
 
@@ -160,22 +198,63 @@ def test_run_vi(model, prior, obsconf, expectation):
         result.photon_flux(0.7, 1.2, register=True)
         result.energy_flux(0.7, 1.2, register=True)
         result.luminosity(0.7, 1.2, redshift=0.01, register=True)
+        result.c_stat
         [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
         result.to_chain("test")
+
+
+@pytest.mark.fast
+def test_nested_per_obs_raises_at_build_time():
+    prior = {
+        **prior_shared_pars,
+        "spectrum.powerlaw_1.norm": PerObs(PerObs(dist.LogUniform(1e-5, 1e-2))),
+    }
+
+    with pytest.raises(TypeError, match="PerObs inside PerObs"):
+        BayesianModel(spectral_model, prior, list_of_obsconf)
+
+
+@pytest.mark.fast
+def test_tied_parameter_inside_per_obs_raises_at_build_time():
+    prior = {
+        **prior_shared_pars,
+        "spectrum.powerlaw_1.norm": PerObs(
+            TiedParameter("spectrum.blackbodyrad_1.norm", lambda x: 0.5 * x)
+        ),
+    }
+
+    with pytest.raises(TypeError, match="TiedParameter inside PerObs"):
+        BayesianModel(spectral_model, prior, list_of_obsconf)
+
+
+@pytest.mark.fast
+def test_missing_per_obs_entries_raise_at_build_time():
+    prior = {
+        **prior_shared_pars,
+        "spectrum.powerlaw_1.norm": PerObs({"data_0": dist.LogUniform(1e-5, 1e-2)}),
+    }
+
+    with pytest.raises(ValueError, match="missing observations"):
+        BayesianModel(spectral_model, prior, list_of_obsconf)
 
 
 @pytest.mark.slow
 @mcmc_marker
 def test_instrument_model_building(sampler):
+    prior_with_instruments = {
+        **prior_shared_pars,
+        "instrument.gain.factor": dist.Uniform(0.8, 1.2),
+        "instrument.shift.offset": dist.Uniform(-0.1, +0.1),
+    }
     forward_model = MCMCFitter(
         spectral_model,
-        prior_shared_pars,
+        prior_with_instruments,
         dict_of_obsconf,
         background_model=None,
         instrument_model=InstrumentModel(
             "PN",
-            gain_model=ConstantGain(dist.Uniform(0.8, 1.2)),
-            shift_model=ConstantShift(dist.Uniform(-0.1, +0.1)),
+            gain_model=ConstantGain(),
+            shift_model=ConstantShift(),
         ),
     )
 
@@ -199,11 +278,11 @@ def test_instrument_model_building(sampler):
 def test_tied_parameters(sampler):
     spectral_model = Tbabs() * (Powerlaw() + Powerlaw())
     prior = {
-        "powerlaw_1_alpha": dist.Uniform(0, 5),
-        "powerlaw_1_norm": dist.LogUniform(1e-5, 1e-2),
-        "powerlaw_2_alpha": TiedParameter("powerlaw_1_alpha", lambda x: 0.5 * x),
-        "powerlaw_2_norm": dist.LogUniform(1e-5, 1e-2),
-        "tbabs_1_nh": 0.6,
+        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+        "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
+        "spectrum.powerlaw_2.alpha": TiedParameter("spectrum.powerlaw_1.alpha", lambda x: 0.5 * x),
+        "spectrum.powerlaw_2.norm": dist.LogUniform(1e-5, 1e-2),
+        "spectrum.tbabs_1.nh": 0.6,
     }
 
     forward_model = MCMCFitter(spectral_model, prior, dict_of_obsconf)
@@ -221,3 +300,79 @@ def test_tied_parameters(sampler):
     result.luminosity(0.7, 1.2, redshift=0.01, register=True)
     [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
     result.to_chain("test")
+
+
+@pytest.mark.fast
+def test_invalid_fixed_prior_raises_at_build_time():
+    prior = {
+        **prior_shared_pars,
+        "spectrum.powerlaw_1.alpha": object(),
+    }
+
+    with pytest.raises(TypeError, match="Invalid fixed prior value"):
+        BayesianModel(spectral_model, prior, list_of_obsconf)
+
+
+@pytest.mark.fast
+def test_extract_posterior_samples_stacks_matching_per_obs_shapes():
+    observation_names = list(dict_of_obsconf)
+    alpha = np.arange(6, dtype=float).reshape(2, 3)
+    norms = {
+        f"spectrum.powerlaw_1.norm.{obs_name}": np.full((2, 3), i + 1.0)
+        for i, obs_name in enumerate(observation_names)
+    }
+    prior = {
+        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+        "spectrum.powerlaw_1.norm": PerObs(dist.LogUniform(1e-5, 1e-2)),
+        "spectrum.blackbodyrad_1.kT": 1.5,
+        "spectrum.blackbodyrad_1.norm": 2.5,
+        "spectrum.tbabs_1.nh": 0.6,
+    }
+    inference_data = az.from_dict(
+        posterior={
+            "spectrum.powerlaw_1.alpha": alpha,
+            **norms,
+        }
+    )
+
+    extracted = spectral_model.extract_posterior_samples(
+        inference_data,
+        prior,
+        observation_names,
+    )
+
+    np.testing.assert_allclose(
+        extracted["spectrum.powerlaw_1.alpha"],
+        np.broadcast_to(alpha[..., None], (*alpha.shape, len(observation_names))),
+    )
+    np.testing.assert_allclose(
+        extracted["spectrum.powerlaw_1.norm"],
+        np.stack(
+            [norms[f"spectrum.powerlaw_1.norm.{obs_name}"] for obs_name in observation_names],
+            axis=-1,
+        ),
+    )
+
+
+@pytest.mark.fast
+def test_extract_posterior_samples_keeps_ragged_per_obs_values_as_dict():
+    observation_names = list(dict_of_obsconf)
+    prior = {
+        "background.countrate": PerObs(
+            {
+                observation_names[0]: np.array([1.0, 2.0]),
+                observation_names[1]: np.array([3.0]),
+                observation_names[2]: np.array([4.0, 5.0, 6.0]),
+            }
+        )
+    }
+    inference_data = az.from_dict(posterior={"dummy": np.zeros((1, 1))})
+
+    extracted = BackgroundWithError().extract_posterior_samples(
+        inference_data,
+        prior,
+        observation_names,
+    )
+
+    assert isinstance(extracted["background.countrate"], dict)
+    assert list(extracted["background.countrate"]) == observation_names

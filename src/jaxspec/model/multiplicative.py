@@ -49,9 +49,7 @@ class Expfac(MultiplicativeComponent):
         self.E_c = nnx.Param(1.0)
 
     def factor(self, energy):
-        return jnp.where(
-            energy >= self.E_c, 1.0 + self.A * jnp.exp(-self.f * energy), 1.0
-        )
+        return jnp.where(energy >= self.E_c, 1.0 + self.A * jnp.exp(-self.f * energy), 1.0)
 
 
 class Tbabs(MultiplicativeComponent):

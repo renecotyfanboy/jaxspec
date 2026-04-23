@@ -33,7 +33,7 @@ def bspline_basis(n_basis: int, degree: int = 3, interval=(0.0, 1.0)):
     a, b = interval
     p = degree
     if n_basis < p + 1:
-        raise ValueError(f"Need at least {p+1} basis functions (got {n_basis}).")
+        raise ValueError(f"Need at least {p + 1} basis functions (got {n_basis}).")
 
     # How many *internal* knots (not counting the duplicated endpoints)?
     n_internal = n_basis - p - 1  # open-uniform formula

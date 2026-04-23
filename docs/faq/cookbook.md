@@ -15,24 +15,18 @@ import numpyro.distributions as dist
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from jaxspec.data.util import load_example_obsconf
-from jaxspec.fit import MCMCFitter
+from jaxspec.fit import MCMCFitter, PerObs
 from jaxspec.model.additive import Powerlaw, Blackbodyrad
 from jaxspec.model.multiplicative import Tbabs
 
 spectral_model = Tbabs() * (Powerlaw() + Blackbodyrad())
 
 prior = {
-    'powerlaw_1': {
-        'alpha': dist.Uniform(0. * jnp.ones((3,)), 5 * jnp.ones((3,))),
-        'norm': dist.LogUniform(1e-6, 1e-3)
-    },
-    'blackbodyrad_1': {
-        'kT': dist.Uniform(0.3, 3),
-        'norm': dist.LogUniform(1e-2, 1e3)
-    },
-    'tbabs_1': {
-        'N_H': 0.2
-    }
+    "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+    "spectrum.powerlaw_1.norm": PerObs(dist.LogUniform(1e-6, 1e-3)),
+    "spectrum.blackbodyrad_1.kT": dist.Uniform(0.3, 3),
+    "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e3),
+    "spectrum.tbabs_1.nh": 0.2,
 }
 
 ulx_observations = load_example_obsconf()
@@ -56,17 +50,13 @@ spectral_model = Tbabs() * Blackbodyrad()
 energies = jnp.geomspace(1, 50, 100)
 
 params = {
-    'blackbodyrad_1': {
-        'kT': 1.,
-        'norm': 1.
-    },
-    'tbabs': {
-        'nH': 1.
-    }
+    "blackbodyrad_1.kT": 1.0,
+    "blackbodyrad_1.norm": 1.0,
+    "tbabs_1.nh": 1.0,
 }
 
-photon_flux = spectral_model.photon_flux(params, energies[:-1], energies[1:], n_points=30)
-energy_flux = spectral_model.energy_flux(params, energies[:-1], energies[1:], n_points=30)
+photon_flux = spectral_model.photon_flux(energies[:-1], energies[1:], params=params, n_points=30)
+energy_flux = spectral_model.energy_flux(energies[:-1], energies[1:], params=params, n_points=30)
 ```
 
 ## Compute model photon flux, energy flux and luminosity

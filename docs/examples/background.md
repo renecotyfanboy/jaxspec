@@ -43,11 +43,16 @@ from jaxspec.model.background import SpectralModelBackground
 
 spectral_model_background = Powerlaw()
 background_prior = {
-    "powerlaw_1_alpha": dist.Uniform(0, 5),
-    "powerlaw_1_norm": dist.LogUniform(1e-8, 1e-3),
+    "background.powerlaw_1.alpha": dist.Uniform(0, 5),
+    "background.powerlaw_1.norm": dist.LogUniform(1e-8, 1e-3),
 }
 
-forward = MCMCFitter(model, prior, obs, background_model=SpectralModelBackground(spectral_model_background, background_prior))
+forward = MCMCFitter(
+    model,
+    {**prior, **background_prior},
+    obs,
+    background_model=SpectralModelBackground(spectral_model_background),
+)
 result_bkg_spectral = forward.fit(num_chains=16, num_warmup=1000, num_samples=5000, mcmc_kwargs={"progress_bar": True})
 
 result_bkg_spectral.plot_ppc()

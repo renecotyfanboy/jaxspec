@@ -12,10 +12,10 @@ def test_plot_ppc(get_result_list):
 
 
 @pytest.mark.slow
-def test_plot_scales(get_result_list):
+@pytest.mark.parametrize("scale", ["linear", "semilogx", "semilogy", "loglog"])
+def test_plot_scales(get_result_list, scale):
     name, result = next(zip(*get_result_list))
-    for case in ["linear", "semilogx", "semilogy", "loglog"]:
-        result.plot_ppc(plot_components=True, plot_background=False, scale=case)
+    result.plot_ppc(plot_components=True, plot_background=False, scale=scale)
 
 
 @pytest.mark.slow
@@ -25,17 +25,17 @@ def test_plot_ppc_components(get_result_list):
 
 
 @pytest.mark.slow
-def test_plot_ppc_units(get_result_list):
+@pytest.mark.parametrize("x_unit", ["angstrom", "keV", "Hz", "nm"])
+def test_plot_ppc_units(get_result_list, x_unit):
     for name, result in zip(*get_result_list):
-        for x_unit in ["angstrom", "keV", "Hz", "nm"]:
-            result.plot_ppc(x_unit=x_unit)
+        result.plot_ppc(x_unit=x_unit)
 
 
 @pytest.mark.slow
-def test_plot_ppc_dtypes(get_result_list):
+@pytest.mark.parametrize("y_type", ["counts", "countrate", "photon_flux", "photon_flux_density"])
+def test_plot_ppc_dtypes(get_result_list, y_type):
     for name, result in zip(*get_result_list):
-        for y_type in ["counts", "countrate", "photon_flux", "photon_flux_density"]:
-            result.plot_ppc(y_type=y_type)
+        result.plot_ppc(y_type=y_type)
 
 
 @pytest.mark.slow
@@ -63,7 +63,7 @@ def test_posterior_photon_flux(get_joint_mcmc_result):
     result = get_joint_mcmc_result[0]
     e_min, e_max = 0.7, 1.2
     result.photon_flux(e_min, e_max, register=True)
-    assert f"mod/~/photon_flux_{e_min:.1f}_{e_max:.1f}" in list(
+    assert f"derived.photon_flux_{e_min:.1f}_{e_max:.1f}" in list(
         result.inference_data.posterior.keys()
     )
 
@@ -73,7 +73,7 @@ def test_posterior_energy_flux(get_joint_mcmc_result):
     result = get_joint_mcmc_result[0]
     e_min, e_max = 0.7, 1.2
     result.energy_flux(e_min, e_max, register=True)
-    assert f"mod/~/energy_flux_{e_min:.1f}_{e_max:.1f}" in list(
+    assert f"derived.energy_flux_{e_min:.1f}_{e_max:.1f}" in list(
         result.inference_data.posterior.keys()
     )
 
@@ -91,6 +91,6 @@ def test_posterior_luminosity(get_joint_mcmc_result):
 
     result.luminosity(e_min, e_max, redshift=0.1, register=True)
 
-    assert f"mod/~/luminosity_{e_min:.1f}_{e_max:.1f}" in list(
+    assert f"derived.luminosity_{e_min:.1f}_{e_max:.1f}" in list(
         result.inference_data.posterior.keys()
     )

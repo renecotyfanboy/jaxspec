@@ -67,11 +67,11 @@ import numpyro.distributions as dist
 from jaxspec.fit import MCMCFitter
 
 prior = {
-    "powerlaw_1_alpha": dist.Uniform(0, 5),
-    "powerlaw_1_norm": dist.LogUniform(1e-5, 1e-2),
-    "blackbodyrad_1_kT": dist.Uniform(0, 5),
-    "blackbodyrad_1_norm": dist.LogUniform(1e-2, 1e2),
-    "tbabs_1_nh": dist.Uniform(0, 1)
+    "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+    "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
+    "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
+    "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
+    "spectrum.tbabs_1.nh": dist.Uniform(0, 1)
 }
 
 forward = MCMCFitter(spectral_model , prior , obs)

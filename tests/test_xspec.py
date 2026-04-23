@@ -100,18 +100,16 @@ def test_flux_computation():
     eflux_xspec = m.flux[0]  # erg/cm^2/s
 
     factor = (1 * u.keV).to(u.erg).value
+    pl_params = {
+        "powerlaw_1.norm": 1.0,
+        "powerlaw_1.alpha": 2.0,
+    }
     phflux_jaxspec = Powerlaw().photon_flux(
-        {"powerlaw_1_norm": 1.0, "powerlaw_1_alpha": 2.0}, e_low=0.5, e_high=1.5, n_points=10_000
+        e_low=0.5, e_high=1.5, params=pl_params, n_points=10_000
     )
 
     eflux_jaxspec = (
-        Powerlaw().energy_flux(
-            {"powerlaw_1_norm": 1.0, "powerlaw_1_alpha": 2.0},
-            e_low=0.5,
-            e_high=1.5,
-            n_points=10_000,
-        )
-        * factor
+        Powerlaw().energy_flux(e_low=0.5, e_high=1.5, params=pl_params, n_points=10_000) * factor
     )
 
     assert np.isclose(

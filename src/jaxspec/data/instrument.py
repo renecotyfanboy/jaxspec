@@ -1,7 +1,7 @@
 import os
-import sparse
 
 import numpy as np
+import sparse
 import xarray as xr
 
 from matplotlib import colors
@@ -93,7 +93,7 @@ class Instrument(xr.Dataset):
 
         else:
             specresp = rmf.matrix.sum(axis=0)
-            rmf.sparse_matrix = sparse.COO( rmf.matrix / specresp )
+            rmf.sparse_matrix = sparse.COO(rmf.matrix / specresp)
 
         return cls.from_matrix(
             rmf.sparse_matrix, specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max

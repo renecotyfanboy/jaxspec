@@ -8,7 +8,6 @@ import os
 
 from pathlib import Path
 
-import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
 import pooch
@@ -17,7 +16,7 @@ import yaml
 
 from jax import config
 from jaxspec.data.util import load_example_obsconf
-from jaxspec.fit import MCMCFitter
+from jaxspec.fit import MCMCFitter, PerObs
 from jaxspec.model.additive import Blackbodyrad, Powerlaw
 from jaxspec.model.multiplicative import Tbabs
 
@@ -26,27 +25,27 @@ numpyro.set_platform("cpu")
 numpyro.set_host_device_count(4)
 
 prior_shared_pars = {
-    "powerlaw_1_alpha": dist.Uniform(0, 5),
-    "powerlaw_1_norm": dist.LogUniform(1e-5, 1e-2),
-    "blackbodyrad_1_kT": dist.Uniform(0, 5),
-    "blackbodyrad_1_norm": dist.LogUniform(1e-2, 1e2),
-    "tbabs_1_nh": dist.Uniform(0, 1),
+    "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+    "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
+    "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
+    "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
+    "spectrum.tbabs_1.nh": dist.Uniform(0, 1),
 }
 
 prior_split_pars = {
-    "powerlaw_1_alpha": dist.Uniform(0, 5),
-    "powerlaw_1_norm": dist.LogUniform(1e-5 * jnp.ones(3), 1e-2 * jnp.ones(3)),
-    "blackbodyrad_1_kT": dist.Uniform(0, 5),
-    "blackbodyrad_1_norm": dist.LogUniform(1e-2, 1e2),
-    "tbabs_1_nh": dist.Uniform(0, 1),
+    "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+    "spectrum.powerlaw_1.norm": PerObs(dist.LogUniform(1e-5, 1e-2)),
+    "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
+    "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
+    "spectrum.tbabs_1.nh": dist.Uniform(0, 1),
 }
 
 prior = {
-    "powerlaw_1_alpha": dist.Uniform(0, 5),
-    "powerlaw_1_norm": dist.LogUniform(1e-5, 1e-2),
-    "blackbodyrad_1_kT": dist.Uniform(0, 5),
-    "blackbodyrad_1_norm": dist.LogUniform(1e-2, 1e2),
-    "tbabs_1_nh": dist.Uniform(0, 1),
+    "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+    "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
+    "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
+    "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
+    "spectrum.tbabs_1.nh": dist.Uniform(0, 1),
 }
 
 single_obsconf = load_example_obsconf("NGC7793_ULX4_PN")
@@ -143,20 +142,3 @@ def get_result_list(get_individual_mcmc_results, get_joint_mcmc_result):
 
 
 spectral_model = Tbabs() * (Powerlaw() + Blackbodyrad())
-
-
-@pytest.fixture(scope="session")
-def prior_with_free_pars_on_obs():
-    """
-    Prior distribution with a free normalisation for each observation
-    """
-
-    return
-
-
-@pytest.fixture(scope="session")
-@pytest.mark.parametrize("obsconf, model, prior", ["NGC7793_ULX4_ALL"])
-def fitting_setup_multiple_obs_and_free_pars(obsconf, model, prior):
-    model = Tbabs() * (Powerlaw() + Blackbodyrad())
-
-    return obsconfs, model, prior
