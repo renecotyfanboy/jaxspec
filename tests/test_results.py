@@ -12,6 +12,19 @@ def test_plot_ppc(get_result_list):
 
 
 @pytest.mark.slow
+@pytest.mark.parametrize("rebin", ["min_counts", "grouping", "both"])
+def test_plot_rebin(get_result_list, rebin):
+    name, result = next(zip(*get_result_list))
+
+    if rebin != "both":
+        result.plot_ppc(plot_components=True, plot_background=False, **{rebin: 10})
+
+    else:
+        with pytest.raises(ValueError):
+            result.plot_ppc(plot_components=True, plot_background=False, rebin=10, min_counts=10)
+
+
+@pytest.mark.slow
 @pytest.mark.parametrize("scale", ["linear", "semilogx", "semilogy", "loglog"])
 def test_plot_scales(get_result_list, scale):
     name, result = next(zip(*get_result_list))
@@ -25,10 +38,15 @@ def test_plot_ppc_components(get_result_list):
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("x_unit", ["angstrom", "keV", "Hz", "nm"])
+@pytest.mark.parametrize("x_unit", ["angstrom", "keV", "Hz", "nm", "attoGauss"])
 def test_plot_ppc_units(get_result_list, x_unit):
     for name, result in zip(*get_result_list):
-        result.plot_ppc(x_unit=x_unit)
+        if x_unit == "attoGauss":
+            with pytest.raises(ValueError):
+                result.plot_ppc(x_unit=x_unit)
+
+        else:
+            result.plot_ppc(x_unit=x_unit)
 
 
 @pytest.mark.slow
@@ -42,6 +60,13 @@ def test_plot_ppc_dtypes(get_result_list, y_type):
 def test_plot_corner(get_result_list):
     for name, result in zip(*get_result_list):
         result.plot_corner()
+
+
+@pytest.mark.slow
+def test_to_chain(get_result_list):
+    for name, result in zip(*get_result_list):
+        for parameter_kind in ["mod", "ins", "bkg"]:
+            result.to_chain(name, parameter_kind=parameter_kind)
 
 
 @pytest.mark.slow

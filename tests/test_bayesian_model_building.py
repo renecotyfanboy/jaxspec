@@ -175,7 +175,7 @@ def test_run_ns(model, prior, obsconf, expectation):
         result.photon_flux(0.7, 1.2, register=True)
         result.energy_flux(0.7, 1.2, register=True)
         result.luminosity(0.7, 1.2, redshift=0.01, register=True)
-        result.c_stat
+        result.c_stat()
         [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
         result.to_chain("test")
 
