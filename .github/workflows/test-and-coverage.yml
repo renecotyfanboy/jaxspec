@@ -62,6 +62,10 @@ jobs:
           pyproject:
             - 'pyproject.toml'
 
+    - name: Install uv
+      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
+      uses: astral-sh/setup-uv@v5
+
     - name: Set up micromamba with xspec environment
       if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
       uses: mamba-org/setup-micromamba@v2
@@ -72,12 +76,16 @@ jobs:
 
     - name: Install jaxspec and test dependencies
       if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
-      run: pip install -e ".[test]"
+      run: |
+        export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+        uv sync --group test
       shell: micromamba-shell {0}
 
     - name: Run full test suite
       if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
-      run: pytest --cov jaxspec --cov-report xml:coverage-full.xml
+      run: |
+        export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+        uv run pytest --cov jaxspec --cov-report xml:coverage-full.xml
       shell: micromamba-shell {0}
 
     - name: Upload coverage to Codecov
