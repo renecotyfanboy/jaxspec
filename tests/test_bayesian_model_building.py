@@ -15,7 +15,10 @@ from conftest import (
 )
 from jaxspec.fit import BayesianModel, MCMCFitter, NSFitter, PerObs, TiedParameter, VIFitter
 from jaxspec.model.additive import Powerlaw
-from jaxspec.model.background import BackgroundWithError, SpectralModelBackground
+from jaxspec.model.background import (
+    BackgroundWithError,
+    SpectralModelBackground,
+)
 from jaxspec.model.instrument import ConstantGain, ConstantShift, InstrumentModel
 from jaxspec.model.multiplicative import Tbabs
 from numpyro.optim import optax_to_numpyro
@@ -311,6 +314,42 @@ def test_invalid_fixed_prior_raises_at_build_time():
 
     with pytest.raises(TypeError, match="Invalid fixed prior value"):
         BayesianModel(spectral_model, prior, list_of_obsconf)
+
+
+@pytest.mark.fast
+def test_invalid_per_obs_fixed_prior_raises_at_build_time():
+    class NotCastableAsArray:
+        def __array__(self, dtype=None):
+            raise TypeError("cannot convert to array")
+
+    prior = {
+        **prior_shared_pars,
+        "spectrum.powerlaw_1.norm": PerObs(NotCastableAsArray()),
+    }
+
+    with pytest.raises(TypeError, match="Invalid fixed prior value"):
+        BayesianModel(spectral_model, prior, list_of_obsconf)
+
+
+@pytest.mark.fast
+def test_background_model_without_background_raises_on_sampling():
+    obsconf_without_background = single_obsconf.copy(deep=True)
+    del obsconf_without_background["folded_background"]
+    prior = {
+        **prior_shared_pars,
+        "background.powerlaw_1.alpha": dist.Uniform(0, 5),
+        "background.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
+    }
+
+    bayesian_model = BayesianModel(
+        spectral_model,
+        prior,
+        obsconf_without_background,
+        background_model=SpectralModelBackground(Powerlaw()),
+    )
+
+    with pytest.raises(ValueError, match="Trying to fit a background model but no background"):
+        bayesian_model.prior_samples(num_samples=1)
 
 
 @pytest.mark.fast

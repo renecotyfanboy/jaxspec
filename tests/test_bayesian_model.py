@@ -3,14 +3,24 @@ import operator
 import jax
 import jax.numpy as jnp
 
+from conftest import prior_shared_pars, single_obsconf, spectral_model
 from jaxspec.fit import BayesianModel
 
 
-def test_likelihood(obs_model_prior):
-    obsconf, model, prior = obs_model_prior
-    bayesian_model = BayesianModel(model, prior, obsconf)
+def _example_parameter_dict() -> dict[str, float]:
+    return {
+        "spectrum.powerlaw_1.alpha": 1.7,
+        "spectrum.powerlaw_1.norm": 3e-4,
+        "spectrum.blackbodyrad_1.kT": 0.7,
+        "spectrum.blackbodyrad_1.norm": 10.0,
+        "spectrum.tbabs_1.nh": 0.2,
+    }
 
-    parameter_array = jnp.asarray([[0.7, 0.2, 2, 3e-4]])
+
+def test_likelihood():
+    bayesian_model = BayesianModel(spectral_model, prior_shared_pars, single_obsconf)
+
+    parameter_array = bayesian_model.dict_to_array(_example_parameter_dict())
     parameters = bayesian_model.array_to_dict(parameter_array)
 
     total_likelihood = bayesian_model.log_likelihood(parameters)
@@ -20,3 +30,42 @@ def test_likelihood(obs_model_prior):
     )
 
     assert jnp.isclose(total_likelihood_from_splitted, total_likelihood)
+
+
+def test_external_sampler_style_interfaces():
+    bayesian_model = BayesianModel(spectral_model, prior_shared_pars, single_obsconf)
+
+    assert bayesian_model.forward_model.parameter_names == sorted(prior_shared_pars)
+
+    theta = bayesian_model.dict_to_array(_example_parameter_dict())
+    parameters = bayesian_model.array_to_dict(theta)
+
+    assert set(parameters) == set(bayesian_model.parameter_names)
+    assert jnp.allclose(bayesian_model.dict_to_array(parameters), theta)
+
+    @jax.jit
+    def log_likelihood_from_array(theta):
+        return bayesian_model.log_likelihood(bayesian_model.array_to_dict(theta))
+
+    @jax.jit
+    def log_likelihood_per_obs_from_array(theta):
+        return bayesian_model.log_likelihood_per_obs(bayesian_model.array_to_dict(theta))
+
+    @jax.jit
+    def log_posterior_from_array(theta):
+        return bayesian_model.log_posterior_prob(bayesian_model.array_to_dict(theta))
+
+    total_likelihood = log_likelihood_from_array(theta)
+    splitted_likelihood = log_likelihood_per_obs_from_array(theta)
+    total_likelihood_from_splitted = jax.tree.reduce(
+        operator.add, jax.tree.map(jnp.sum, splitted_likelihood)
+    )
+
+    assert jnp.isclose(total_likelihood_from_splitted, total_likelihood)
+    assert jnp.isfinite(log_posterior_from_array(theta))
+
+    batched_log_posterior = jax.vmap(log_posterior_from_array)(
+        jnp.stack([theta, theta * jnp.asarray([1.0, 1.1, 1.0, 0.9, 1.0])])
+    )
+
+    assert batched_log_posterior.shape == (2,)
