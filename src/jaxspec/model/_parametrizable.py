@@ -299,32 +299,8 @@ def _extract_posterior_leaf(
 
 
 def _stack_observation_leaves(leaves: list[tuple[str, ArrayLike]]):
-    if not leaves:
-        return {}
-
     arrays = [leaf for _, leaf in leaves]
     if all(array.shape == arrays[0].shape for array in arrays[1:]):
         return jnp.stack(arrays, axis=-1)
 
     return {obs_name: leaf for obs_name, leaf in leaves}
-
-
-def _select_observation_value(
-    value: ArrayLike | dict[str, ArrayLike] | list[ArrayLike] | tuple[ArrayLike, ...],
-    observation_index: int,
-    observation_name: str,
-    n_obs: int,
-):
-    """Return the leaf for one observation while preserving shared values.
-
-    Accepts the canonical ``{obs_name: leaf}`` dict produced by
-    :meth:`ParametrizableMixin.register_priors`, plus the legacy array / sequence forms that
-    callable priors may still return.
-    """
-    if isinstance(value, dict) and observation_name in value:
-        return value[observation_name]
-    if isinstance(value, list | tuple) and len(value) == n_obs:
-        return value[observation_index]
-    if getattr(value, "ndim", 0) >= 1 and value.shape[0] == n_obs:
-        return value[observation_index]
-    return value

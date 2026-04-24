@@ -8,7 +8,7 @@ import jax.numpy as jnp
 from flax import nnx
 from jax.typing import ArrayLike
 
-from ._parametrizable import ParametrizableMixin, _select_observation_value
+from ._parametrizable import ParametrizableMixin
 
 
 class GainModel(nnx.Module):
@@ -99,12 +99,9 @@ class InstrumentModel(ParametrizableMixin, nnx.Module):
         non_ref = [n for n in observation_names if n != self.reference]
         unstacked: dict[str, ArrayLike] = {}
         if params is not None:
-            n_non_ref = len(non_ref)
             for key, value in params.items():
-                for i, obs_name in enumerate(non_ref):
-                    unstacked[f"{key}.{obs_name}"] = _select_observation_value(
-                        value, i, obs_name, n_non_ref
-                    )
+                for obs_name in non_ref:
+                    unstacked[f"{key}.{obs_name}"] = value[obs_name]
 
         out: dict[str, tuple[Callable | None, Callable | None]] = {}
         for name in observation_names:

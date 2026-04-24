@@ -13,7 +13,6 @@ from jax.experimental.sparse import BCOO
 from jax.typing import ArrayLike
 
 from ..data import ObsConfiguration
-from ..model._parametrizable import _select_observation_value
 from ..model.abc import HideUnderscoreMixin, SpectralModel
 
 if TYPE_CHECKING:
@@ -170,18 +169,12 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
             ``{obs_name: expected_source_counts}`` dict.
         """
         counts: dict[str, ArrayLike] = {}
-        n_obs = len(self.observations)
         n_points = self.settings["n_points"]
         gain_shift = self._build_gain_shift(instrument_params)
 
-        for i, (name, obs) in enumerate(self.observations.items()):
+        for name, obs in self.observations.items():
             params_i = (
-                {
-                    key: _select_observation_value(value, i, name, n_obs)
-                    for key, value in params.items()
-                }
-                if params is not None
-                else None
+                {key: value[name] for key, value in params.items()} if params is not None else None
             )
             spectral_model = self.spectrum._with_params(params_i)
             gain, shift = gain_shift[name]
@@ -222,19 +215,15 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
         """
         source_counts = self(params=source_params, instrument_params=instrument_params)
 
-        n_obs = len(self.observations)
         out: dict[str, dict[str, ArrayLike]] = {}
-        for i, (name, obs) in enumerate(self.observations.items()):
+        for name, obs in self.observations.items():
             source = source_counts[name]
             if self.background_model is None:
                 bkg_rate: ArrayLike = jnp.asarray(0.0)
                 bkg_in_obs: ArrayLike = jnp.asarray(0.0)
             else:
                 if background_params is not None:
-                    bkg_params_i = {
-                        key: _select_observation_value(value, i, name, n_obs)
-                        for key, value in background_params.items()
-                    }
+                    bkg_params_i = {key: value[name] for key, value in background_params.items()}
                 else:
                     bkg_params_i = None
                 bkg_rate = self.background_model(obs, name=name, params=bkg_params_i)

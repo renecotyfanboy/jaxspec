@@ -1,7 +1,9 @@
 from contextlib import nullcontext as does_not_raise
 
 import arviz as az
+import jax.numpy as jnp
 import numpy as np
+import numpyro
 import numpyro.distributions as dist
 import pytest
 
@@ -415,3 +417,141 @@ def test_extract_posterior_samples_keeps_ragged_per_obs_values_as_dict():
 
     assert isinstance(extracted["background.countrate"], dict)
     assert list(extracted["background.countrate"]) == observation_names
+
+
+@pytest.mark.fast
+def test_register_priors_fixed_shared_value():
+    observation_names = list(dict_of_obsconf)
+    prior = {
+        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+        "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
+        "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
+        "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
+        "spectrum.tbabs_1.nh": 0.6,
+    }
+
+    with numpyro.handlers.seed(rng_seed=0):
+        result = spectral_model.register_priors(prior, observation_names)
+
+    assert set(result["spectrum.tbabs_1.nh"]) == set(observation_names)
+    for obs_name in observation_names:
+        np.testing.assert_allclose(result["spectrum.tbabs_1.nh"][obs_name], 0.6)
+
+
+@pytest.mark.fast
+def test_register_priors_fixed_per_obs_value():
+    observation_names = list(dict_of_obsconf)
+    per_obs_values = {obs: float(i + 1) for i, obs in enumerate(observation_names)}
+    prior = {
+        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+        "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
+        "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
+        "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
+        "spectrum.tbabs_1.nh": PerObs(per_obs_values),
+    }
+
+    with numpyro.handlers.seed(rng_seed=0):
+        result = spectral_model.register_priors(prior, observation_names)
+
+    for obs_name, expected in per_obs_values.items():
+        np.testing.assert_allclose(result["spectrum.tbabs_1.nh"][obs_name], expected)
+
+
+@pytest.mark.fast
+def test_register_priors_tied_parameter():
+    observation_names = list(dict_of_obsconf)
+    prior = {
+        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+        "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
+        "spectrum.blackbodyrad_1.kT": TiedParameter("spectrum.powerlaw_1.alpha", lambda x: 2.0 * x),
+        "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
+        "spectrum.tbabs_1.nh": dist.Uniform(0, 1),
+    }
+
+    with numpyro.handlers.seed(rng_seed=0):
+        result = spectral_model.register_priors(prior, observation_names)
+
+    for obs_name in observation_names:
+        np.testing.assert_allclose(
+            result["spectrum.blackbodyrad_1.kT"][obs_name],
+            2.0 * result["spectrum.powerlaw_1.alpha"][obs_name],
+        )
+
+
+@pytest.mark.fast
+def test_register_priors_tied_parameter_unknown_source():
+    observation_names = list(dict_of_obsconf)
+    prior = {
+        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+        "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
+        "spectrum.blackbodyrad_1.kT": TiedParameter("spectrum.does_not_exist", lambda x: x),
+        "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
+        "spectrum.tbabs_1.nh": dist.Uniform(0, 1),
+    }
+
+    with numpyro.handlers.seed(rng_seed=0):
+        with pytest.raises(ValueError, match="unknown source"):
+            spectral_model.register_priors(prior, observation_names)
+
+
+@pytest.mark.fast
+def test_extract_posterior_samples_tied_parameter_shared_source():
+    observation_names = list(dict_of_obsconf)
+    alpha = np.arange(6, dtype=float).reshape(2, 3)
+    prior = {
+        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+        "spectrum.powerlaw_1.norm": 1e-3,
+        "spectrum.blackbodyrad_1.kT": TiedParameter("spectrum.powerlaw_1.alpha", lambda x: 2.0 * x),
+        "spectrum.blackbodyrad_1.norm": 1.0,
+        "spectrum.tbabs_1.nh": 0.6,
+    }
+    inference_data = az.from_dict(posterior={"spectrum.powerlaw_1.alpha": alpha})
+
+    extracted = spectral_model.extract_posterior_samples(inference_data, prior, observation_names)
+
+    assert not isinstance(extracted["spectrum.blackbodyrad_1.kT"], dict)
+    np.testing.assert_allclose(
+        extracted["spectrum.blackbodyrad_1.kT"],
+        2.0 * extracted["spectrum.powerlaw_1.alpha"],
+    )
+
+
+@pytest.mark.fast
+def test_extract_posterior_samples_tied_parameter_ragged_source():
+    observation_names = list(dict_of_obsconf)
+    ragged_values = {
+        observation_names[0]: np.array([1.0, 2.0]),
+        observation_names[1]: np.array([3.0]),
+        observation_names[2]: np.array([4.0, 5.0, 6.0]),
+    }
+    prior = {
+        "background.countrate": PerObs(ragged_values),
+        "background.derived": TiedParameter("background.countrate", lambda x: 10.0 * x),
+    }
+    inference_data = az.from_dict(posterior={"dummy": np.zeros((1, 1))})
+
+    extracted = BackgroundWithError().extract_posterior_samples(
+        inference_data, prior, observation_names
+    )
+
+    assert isinstance(extracted["background.derived"], dict)
+    for obs_name, source_value in ragged_values.items():
+        source_leaf = extracted["background.countrate"][obs_name]
+        np.testing.assert_allclose(extracted["background.derived"][obs_name], 10.0 * source_leaf)
+        np.testing.assert_allclose(jnp.squeeze(source_leaf), jnp.asarray(source_value))
+
+
+@pytest.mark.fast
+def test_extract_posterior_samples_tied_parameter_unknown_source():
+    observation_names = list(dict_of_obsconf)
+    prior = {
+        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+        "spectrum.blackbodyrad_1.kT": TiedParameter("spectrum.does_not_exist", lambda x: x),
+        "spectrum.powerlaw_1.norm": 1e-3,
+        "spectrum.blackbodyrad_1.norm": 1.0,
+        "spectrum.tbabs_1.nh": 0.6,
+    }
+    inference_data = az.from_dict(posterior={"spectrum.powerlaw_1.alpha": np.zeros((2, 3))})
+
+    with pytest.raises(ValueError, match="unknown source"):
+        spectral_model.extract_posterior_samples(inference_data, prior, observation_names)
