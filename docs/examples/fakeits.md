@@ -141,14 +141,15 @@ and distributed to all the devices.
 
 ``` python
 import jax
-from jax.experimental import mesh_utils
-from jax.sharding import PositionalSharding
+from jax.sharding import NamedSharding, PartitionSpec as P
+
+n_devices = jax.device_count()
 
 # Create a Sharding object to distribute a value across devices:
-sharding = PositionalSharding(mesh_utils.create_device_mesh((n_devices,)))
+mesh = jax.make_mesh((n_devices,), ('x',))
+sharding = NamedSharding(mesh, P('x'))
 
 # Split the parameters on every device
-
 sharded_parameters = jax.device_put(parameters, sharding)
 ```
 
