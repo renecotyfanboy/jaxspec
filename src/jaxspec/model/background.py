@@ -87,10 +87,12 @@ class BackgroundWithError(BackgroundModel):
         }
 
     def __call__(self, observation, *, name: str, params: dict | None = None):
-        key = "background.countrate"
-        if params is not None and key in params:
-            return params[key]
-        return observation.folded_background.data
+        params: dict = params or {}
+        countrate = params.get("background.countrate")
+
+        if countrate is None:
+            raise ValueError("No countrate prior provided for BackgroundWithError")
+        return countrate
 
 
 class SpectralModelBackground(BackgroundModel):

@@ -33,8 +33,8 @@ class MCMCFitter(BayesianModelFitter):
         num_samples: int = 1000,
         sampler: Literal["nuts", "aies", "ess"] = "nuts",
         use_transformed_model: bool = True,
-        kernel_kwargs: dict = {},
-        mcmc_kwargs: dict = {},
+        kernel_kwargs: dict | None = None,
+        mcmc_kwargs: dict | None = None,
     ) -> FitResult:
         """
         Fit the model to the data using a MCMC sampler from numpyro.
@@ -52,6 +52,9 @@ class MCMCFitter(BayesianModelFitter):
         Returns:
             A [`FitResult`][jaxspec.analysis.results.FitResult] instance containing the results of the fit.
         """
+
+        kernel_kwargs: dict = kernel_kwargs or {}
+        mcmc_kwargs: dict = mcmc_kwargs or {}
 
         numpyro_model = (
             self.transformed_numpyro_model if use_transformed_model else self.numpyro_model

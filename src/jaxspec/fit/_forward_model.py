@@ -36,7 +36,7 @@ def _normalise_observations(
 def _build_transfer_matrix(obs: ObsConfiguration, sparse: bool = False):
     if sparse:
         return BCOO.from_scipy_sparse(obs.transfer_matrix.data.to_scipy_sparse().tocsr())
-    return np.asarray(obs.transfer_matrix.data.todense())
+    return jnp.asarray(obs.transfer_matrix.data.todense())
 
 
 class ForwardModel(HideUnderscoreMixin, nnx.Module):
