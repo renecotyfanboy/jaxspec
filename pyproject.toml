@@ -9,7 +9,7 @@ license = "MIT"
 dependencies = [
     "jax<0.10",
     "numpy<3.0.0",
-    "pandas>=2.2.0,<3",
+    "pandas>=2.2.0,<4",
     "astropy>=6.0.0,<8",
     "numpyro>=0.17.0,<0.21",
     "networkx~=3.1",
