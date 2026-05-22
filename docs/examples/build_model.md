@@ -85,13 +85,11 @@ import jax.numpy as jnp
 import flax.nnx as nnx
 from jaxspec.model.abc import AdditiveComponent
 
-
 class MyComponent(AdditiveComponent):
     def __init__(self):
         self.K = nnx.Param(0.5)
         self.E0 = nnx.Param(1.0)
         self.E1 = nnx.Param(1.0)
-
     def continuum(self, energy):
         return self.K * jnp.sin(energy / self.E0) * jnp.exp(-energy / self.E1)
 ```
@@ -143,13 +141,11 @@ $$
 The same logic applies, you must inherit from the [`MultiplicativeComponent`][jaxspec.model.multiplicative.MultiplicativeComponent] and implement the [`factor`][jaxspec.model.abc.MultiplicativeComponent.factor] method.
 
 ```python
-
 from jaxspec.model.abc import MultiplicativeComponent
 
 class MyFactor(MultiplicativeComponent):
     def __init__(self):
         self.E0 = nnx.Param(1.0)
-
     def factor(self, energy):
         return jnp.abs(jnp.cos(energy / self.E0))
 ```

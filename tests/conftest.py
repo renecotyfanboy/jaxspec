@@ -16,7 +16,7 @@ import yaml
 
 from jax import config
 from jaxspec.data.util import load_example_obsconf
-from jaxspec.fit import MCMCFitter, PerObs
+from jaxspec.fit import MCMCFitter
 from jaxspec.model.additive import Blackbodyrad, Powerlaw
 from jaxspec.model.multiplicative import Tbabs
 
@@ -34,7 +34,7 @@ prior_shared_pars = {
 
 prior_split_pars = {
     "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-    "spectrum.powerlaw_1.norm": PerObs(dist.LogUniform(1e-5, 1e-2)),
+    "spectrum.powerlaw_1.norm[*]": dist.LogUniform(1e-5, 1e-2),
     "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
     "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
     "spectrum.tbabs_1.nh": dist.Uniform(0, 1),

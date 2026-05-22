@@ -19,6 +19,7 @@ nav:
     - Good practices for MCMC: examples/work_with_arviz.ipynb
     - Interface with other frameworks : examples/external_samplers.ipynb
     - Cross calibration : examples/calibration.ipynb
+    - Flexible prior setting : examples/flexible_priors.md
   - API Reference:
     - Spectral model base: references/model.md
     - Additive models: references/additive.md

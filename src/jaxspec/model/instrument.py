@@ -1,118 +1,139 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from collections.abc import Callable
 
+import jax
 import jax.numpy as jnp
+import numpy as np
 
 from flax import nnx
 from jax.typing import ArrayLike
 
-from ._parametrizable import ParametrizableMixin
-
 
 class GainModel(nnx.Module):
-    """Generic gain model."""
+    """Generic gain model. ``__call__(energies)`` returns the per-energy gain factor."""
 
     @abstractmethod
-    def __call__(self, observation_name: str, *, params: dict | None = None) -> Callable: ...
+    def __call__(self, energies: ArrayLike) -> ArrayLike: ...
 
 
 class ConstantGain(GainModel):
-    """A constant gain model.
+    """A scalar gain factor, independent of energy.
 
-    The gain factor prior is provided via the unified prior dict under the
-    key ``"instrument.gain.factor"``, which may be a ``Distribution`` or a
-    :class:`~jaxspec.fit.PerObs` wrapper.
+    The factor lives as :attr:`factor` (an ``nnx.Param``). Its prior is provided
+    via the unified prior dict under the key ``"instrument.gain.factor"``
+    (shared across instrumented obs) or ``"instrument.gain.factor[*]"`` /
+    ``"instrument.gain.factor[obs_name]"`` (per-obs).
     """
 
-    def __call__(self, observation_name: str, *, params: dict | None = None) -> Callable:
-        key = f"instrument.gain.factor.{observation_name}"
-        factor = params.get(key, jnp.asarray(1.0)) if params else jnp.asarray(1.0)
-        return lambda energy: factor
+    def __init__(self):
+        self.factor = nnx.Param(jnp.asarray(1.0))
+
+    def __call__(self, energies: ArrayLike) -> ArrayLike:
+        return self.factor[...]
 
 
 class ShiftModel(nnx.Module):
-    """Generic shift model."""
+    """Generic shift model. ``__call__(energies)`` returns shifted energies."""
 
     @abstractmethod
-    def __call__(self, observation_name: str, *, params: dict | None = None) -> Callable: ...
+    def __call__(self, energies: ArrayLike) -> ArrayLike: ...
 
 
 class ConstantShift(ShiftModel):
-    """A constant shift model.
+    """An additive energy shift, constant across the spectrum.
 
-    The shift offset prior is provided via the unified prior dict under the
-    key ``"instrument.shift.offset"``, which may be a ``Distribution`` or a
-    :class:`~jaxspec.fit.PerObs` wrapper.
+    The offset lives as :attr:`offset` (an ``nnx.Param``). Its prior is provided
+    via the unified prior dict under the key ``"instrument.shift.offset"``
+    (shared) or ``"instrument.shift.offset[*]"`` / ``"instrument.shift.offset[obs_name]"``
+    (per-obs).
     """
 
-    def __call__(self, observation_name: str, *, params: dict | None = None) -> Callable:
-        key = f"instrument.shift.offset.{observation_name}"
-        offset = params.get(key, jnp.asarray(0.0)) if params else jnp.asarray(0.0)
-        return lambda energy: energy + offset
+    def __init__(self):
+        self.offset = nnx.Param(jnp.asarray(0.0))
+
+    def __call__(self, energies: ArrayLike) -> ArrayLike:
+        return energies + self.offset[...]
 
 
-class InstrumentModel(ParametrizableMixin, nnx.Module):
-    """Encapsulate an instrument model, built as a combination of a shift and gain model.
+class InstrumentModel(nnx.Module):
+    """Per-observation instrument response.
+
+    Pass as a dict to :class:`~jaxspec.fit.BayesianModel`::
+
+        BayesianModel(
+            spectral_model, prior, observations,
+            instrument_model={
+                "PN": None, # explicit reference
+                "MOS1": InstrumentModel(gain=ConstantGain(), shift=ConstantShift()),
+                "MOS2": InstrumentModel(gain=ConstantGain(), shift=ConstantShift()),
+            },
+        )
+
+    ``None`` entries (or simply omitting an observation) apply the identity
+    fold (``transfer_matrix @ flux``) — useful for the reference instrument.
 
     Parameters:
-        reference_observation_name: The observation to use as a reference.
-        gain_model: The gain model.
-        shift_model: The shift model.
+        gain: Optional :class:`GainModel` (e.g. :class:`ConstantGain`). When
+            ``None``, no flux scaling is applied.
+        shift: Optional :class:`ShiftModel` (e.g. :class:`ConstantShift`). When
+            ``None``, the input energies pass through unchanged.
     """
 
-    prior_prefix: str = "instrument."
+    #: When ``True``, :class:`~jaxspec.fit._forward_model.ForwardModel` builds
+    #: the un-merged response components (``redistribution``, ``grouping``,
+    #: ``area``, ``exposure``) into the per-observation cache passed to
+    #: :meth:`fold`. Subclasses set this to ``True`` when their math needs the
+    #: components separately (e.g. pileup, RMF calibration).
+    requires_components = False
 
-    def __init__(
+    def __init__(self, gain: GainModel | None = None, shift: ShiftModel | None = None):
+        self.gain = gain
+        self.shift = shift
+
+    def _apply_shift(self, energies: ArrayLike) -> ArrayLike:
+        """Apply :attr:`shift` to ``energies`` and clip away non-positive values."""
+        if self.shift is None:
+            return energies
+        return jnp.clip(self.shift(energies), min=1e-6)
+
+    def _apply_gain(self, flux, energies: ArrayLike):
+        """Multiply ``flux`` (or each branch in a pytree) by :attr:`gain`'s factor."""
+        if self.gain is None:
+            return flux
+        factor = jnp.clip(self.gain(energies), min=0.0)
+        return jax.tree.map(lambda f: f * factor, flux)
+
+    def fold(
         self,
-        reference_observation_name: str,
-        gain_model: GainModel | None = None,
-        shift_model: ShiftModel | None = None,
-    ):
-        self.reference = reference_observation_name
-        self.gain_model = gain_model
-        self.shift_model = shift_model
-
-    def _default_skip_observation(self) -> str | None:
-        return self.reference
-
-    def __call__(
-        self,
-        observation_names: list[str],
+        observation,
+        cache: dict,
+        spectral_model,
         *,
-        params: dict | None = None,
-    ) -> dict[str, tuple[Callable | None, Callable | None]]:
-        """Return per-observation ``(gain_fn, shift_fn)`` tuples.
+        n_points: int = 2,
+        split_branches: bool = False,
+    ):
+        """Return expected counts in folded space (or a per-branch pytree).
 
         Parameters:
-            observation_names: All observation names (including the reference).
-            params: Flat dict of sampled instrument params, with per-obs values
-                keyed as ``instrument.{param}.{obs_name}`` (from
-                :meth:`register_priors`).
-
-        Returns:
-            ``{obs_name: (gain_fn | None, shift_fn | None)}`` for every
-            observation. The reference observation gets ``(None, None)``.
+            observation: The :class:`~jaxspec.data.ObsConfiguration` for this
+                pointing (used for energy-grid metadata).
+            cache: Per-observation JAX-typed views built by
+                :class:`~jaxspec.fit._forward_model.ForwardModel`. Always
+                contains ``"transfer_matrix"``; also contains
+                ``"redistribution"``, ``"grouping"``, ``"area"``, ``"exposure"``
+                when :attr:`requires_components` is ``True``.
+            spectral_model: The per-obs spectral model replica (already
+                parameter-bound).
+            n_points: Quadrature points per energy bin for flux integration.
+            split_branches: If ``True``, return a pytree with one folded counts
+                array per additive branch of the spectral model.
         """
-        # Unstack (n_non_ref,) arrays into per-obs keys for subcomponents
-        non_ref = [n for n in observation_names if n != self.reference]
-        unstacked: dict[str, ArrayLike] = {}
-        if params is not None:
-            for key, value in params.items():
-                for obs_name in non_ref:
-                    unstacked[f"{key}.{obs_name}"] = value[obs_name]
+        energies = self._apply_shift(np.asarray(observation.in_energies))
 
-        out: dict[str, tuple[Callable | None, Callable | None]] = {}
-        for name in observation_names:
-            if name == self.reference:
-                out[name] = (None, None)
-                continue
-            gain_fn = (
-                self.gain_model(name, params=unstacked) if self.gain_model is not None else None
-            )
-            shift_fn = (
-                self.shift_model(name, params=unstacked) if self.shift_model is not None else None
-            )
-            out[name] = (gain_fn, shift_fn)
-        return out
+        flux = spectral_model.flux_func(
+            *energies, n_points=n_points, return_branches=split_branches
+        )
+        flux = self._apply_gain(flux, energies)
+
+        return jax.tree.map(lambda f: jnp.clip(cache["transfer_matrix"] @ f, min=1e-6), flux)

@@ -13,32 +13,6 @@ import jax.scipy as jsp
 import networkx as nx
 
 from ._graph_util import compose, export_to_mermaid
-from ._parametrizable import ParametrizableMixin
-
-
-def _apply_pure_updates(state_dict: dict, updates: dict) -> dict:
-    """Apply dotted-path ``updates`` into a pure-dict view of an ``nnx.State``.
-
-    A leading routing prefix (e.g. ``"spectrum."``, ``"background."``) is
-    dropped when its first segment is not a key in ``state_dict``, so callers
-    can pass unified prior keys without stripping the prefix. Updates that
-    route to a different model (i.e. whose post-strip path is still unknown)
-    are silently skipped, so mixed-prefix dicts from ``FitResult.input_parameters``
-    can be passed directly without filtering.
-    """
-    for path, value in updates.items():
-        parts = path.split(".")
-        if parts and parts[0] not in state_dict:
-            parts = parts[1:]
-            if not parts or parts[0] not in state_dict:
-                continue
-        if not parts:
-            continue
-        cursor = state_dict
-        for name in parts[:-1]:
-            cursor = cursor[name]
-        cursor[parts[-1]] = value
-    return state_dict
 
 
 class HideUnderscoreMixin:
@@ -103,9 +77,8 @@ class ComposableMixin:
         return model_1.compose(model_2, operation="mul", operation_func=operator.mul)
 
 
-class SpectralModel(ParametrizableMixin, HideUnderscoreMixin, ComposableMixin, nnx.Module):
+class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
     _graph: nx.DiGraph
-    prior_prefix: str = "spectrum."
 
     def __init__(self, graph: nx.DiGraph):
         self._graph = graph
@@ -178,7 +151,7 @@ class SpectralModel(ParametrizableMixin, HideUnderscoreMixin, ComposableMixin, n
         ``mult_node_ids`` is the deduplicated list of multiplicative-component
         node ids along the path from the additive root to ``out``, in the same
         ``list(set(...))`` order used historically to build branch names and
-        multiply absorption factors in :meth:`turbo_flux`.
+        multiply absorption factors in :meth:`flux_func`.
         """
         for root_node_id in self.root_nodes:
             root_node_name = self._graph.nodes[root_node_id].get("name")
@@ -199,7 +172,7 @@ class SpectralModel(ParametrizableMixin, HideUnderscoreMixin, ComposableMixin, n
     def branches(self) -> list[str]:
         return [branch for branch, _, _ in self._iter_branches()]
 
-    def turbo_flux(self, e_low, e_high, energy_flux=False, n_points=2, return_branches=False):
+    def flux_func(self, e_low, e_high, energy_flux=False, n_points=2, return_branches=False):
         continuum = {}
 
         ## Evaluate the expected contribution for each component
@@ -255,12 +228,28 @@ class SpectralModel(ParametrizableMixin, HideUnderscoreMixin, ComposableMixin, n
 
     def _with_params(self, params: dict | None) -> SpectralModel:
         """Return a copy of ``self`` with ``params`` applied as dotted-path
-        overrides. Returns ``self`` unchanged when ``params`` is ``None``."""
+        overrides. Returns ``self`` unchanged when ``params`` is ``None``.
+
+        A leading routing prefix (e.g. ``"spectrum."``) is dropped when its
+        first segment isn't a key in the param tree, and updates that still
+        don't route to a known leaf after stripping are silently skipped.
+        That lets callers pass unified prior dicts (e.g.
+        ``FitResult.input_parameters``) without filtering by prefix.
+        """
         if params is None:
             return self
         graphdef, param_state, other = nnx.split(self, nnx.Param, ...)
         pure = nnx.to_pure_dict(param_state)
-        pure = _apply_pure_updates(pure, params)
+        for path, value in params.items():
+            parts = path.split(".")
+            if parts and parts[0] not in pure:
+                parts = parts[1:]
+                if not parts or parts[0] not in pure:
+                    continue
+            cursor = pure
+            for name in parts[:-1]:
+                cursor = cursor[name]
+            cursor[parts[-1]] = value
         nnx.replace_by_pure_dict(param_state, pure)
         return nnx.merge(graphdef, param_state, other)
 
@@ -287,7 +276,7 @@ class SpectralModel(ParametrizableMixin, HideUnderscoreMixin, ComposableMixin, n
             e_high : The upper bound of the energy bins.
             n_points : The number of points used to integrate the model in each bin.
         """
-        return self._with_params(params).turbo_flux(
+        return self._with_params(params).flux_func(
             e_low, e_high, n_points=n_points, return_branches=split_branches
         )
 
@@ -306,7 +295,7 @@ class SpectralModel(ParametrizableMixin, HideUnderscoreMixin, ComposableMixin, n
             e_high : The upper bound of the energy bins.
             n_points : The number of points used to integrate the model in each bin.
         """
-        return self._with_params(params).turbo_flux(
+        return self._with_params(params).flux_func(
             e_low, e_high, n_points=n_points, energy_flux=True
         )
 
@@ -423,9 +412,12 @@ class MultiplicativeComponent(ModelComponent):
     def _factor(self, e_low, e_high, n_points=2):
         energy = jnp.linspace(e_low, e_high, n_points, axis=-1)
         factor = self.factor(energy)
-
-        return jsp.integrate.trapezoid(factor * energy, jnp.log(energy), axis=-1) / (e_high - e_low)
-        # return jnp.mean(factor, axis = -1)
+        bin_width = e_high - e_low
+        # Guard against collapsed bins (can happen when an InstrumentModel
+        # shift pushes both endpoints below the _apply_shift clip floor):
+        safe_width = jnp.where(bin_width > 0, bin_width, 1.0)
+        avg = jsp.integrate.trapezoid(factor * energy, jnp.log(energy), axis=-1) / safe_width
+        return jnp.where(bin_width > 0, avg, 0.0)
 
     def factor(self, energy):
         """

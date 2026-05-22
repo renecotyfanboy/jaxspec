@@ -60,5 +60,11 @@
 
     Add extra gains and shifts to account for the miscalibrations
 
+-   [__Flexible prior setting__](flexible_priors.md)
+
+    ---
+
+    Per-observation scoping, tied parameters, joint priors, and callable priors.
+
 
 </div>

@@ -15,15 +15,17 @@ import numpyro.distributions as dist
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from jaxspec.data.util import load_example_obsconf
-from jaxspec.fit import MCMCFitter, PerObs
+from jaxspec.fit import MCMCFitter
 from jaxspec.model.additive import Powerlaw, Blackbodyrad
 from jaxspec.model.multiplicative import Tbabs
 
 spectral_model = Tbabs() * (Powerlaw() + Blackbodyrad())
 
+# The `[*]` suffix on a key gives that parameter an independent draw per
+# observation; see [Flexible prior setting](../examples/flexible_priors.md).
 prior = {
     "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-    "spectrum.powerlaw_1.norm": PerObs(dist.LogUniform(1e-6, 1e-3)),
+    "spectrum.powerlaw_1.norm[*]": dist.LogUniform(1e-6, 1e-3),
     "spectrum.blackbodyrad_1.kT": dist.Uniform(0.3, 3),
     "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e3),
     "spectrum.tbabs_1.nh": 0.2,

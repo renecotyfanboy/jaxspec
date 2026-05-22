@@ -19,7 +19,7 @@ def test_additive_components(test_input):
         * MultiplicativeConstant()
         * (Additiveconstant() + additive_components[test_input]())
     )
-    out = spectral_model.turbo_flux(e_low, e_high)
+    out = spectral_model.flux_func(e_low, e_high)
     assert out.shape == e_low.shape
 
 
@@ -34,7 +34,7 @@ def test_multiplicative_components(test_input):
         * multiplicative_components[test_input]()
         * (Additiveconstant() + Additiveconstant())
     )
-    out = spectral_model.turbo_flux(e_low, e_high)
+    out = spectral_model.flux_func(e_low, e_high)
     assert out.shape == e_low.shape
 
 

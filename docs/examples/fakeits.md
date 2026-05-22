@@ -57,12 +57,7 @@ import matplotlib.pyplot as plt
 plt.figure(figsize=(5,4))
 
 for i in range(10):
-
-    plt.step(
-        obsconf.out_energies[0],
-        spectra[i, :],
-        where="post"
-    )
+    plt.step(obsconf.out_energies[0], spectra[i, :], where="post")
 
 plt.xlabel("Energy [keV]")
 plt.ylabel("Counts")

@@ -390,21 +390,21 @@ class NSatmos(AdditiveComponent):
 
         tab_flux = np.asarray(tab_flux, dtype=float)
 
-        self.tab_temperature = nnx.Variable(tab_temperature)
-        self.tab_gravity = nnx.Variable(tab_gravity)
-        self.tab_mucrit = nnx.Variable(tab_mucrit)
-        self.tab_energy = nnx.Variable(tab_energy)
-        self.tab_flux = nnx.Variable(tab_flux)
+        self._tab_temperature = tab_temperature
+        self._tab_gravity = tab_gravity
+        self._tab_mucrit = tab_mucrit
+        self._tab_energy = tab_energy
+        self._tab_flux = tab_flux
 
     def interp_flux_func(self, temperature_log, gravity_log, mu):
         return interpax.interp3d(
             10.0**temperature_log,
             10.0**gravity_log,
             mu,
-            10.0**self.tab_temperature,
-            10.0**self.tab_gravity,
-            self.tab_mucrit,
-            self.tab_flux,
+            10.0**self._tab_temperature,
+            10.0**self._tab_gravity,
+            self._tab_mucrit,
+            self._tab_flux,
             method="linear",
         )
 
@@ -446,7 +446,7 @@ class NSatmos(AdditiveComponent):
         # Rescale the photon energies and fluxes back to the correct local temperature
         Tfactor = 10.0 ** (temp_log - 6.0)
         fluxshift = 3.0 * (temp_log - 6.0)
-        E = self.tab_energy * Tfactor
+        E = self._tab_energy * Tfactor
         flux += fluxshift
 
         # Rescale applying redshift

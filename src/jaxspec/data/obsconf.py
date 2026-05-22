@@ -1,10 +1,21 @@
+import jax.numpy as jnp
 import numpy as np
 import scipy
 import sparse
 import xarray as xr
 
+from jax.experimental.sparse import BCOO
+
 from .instrument import Instrument
 from .observation import Observation
+
+
+def to_jax_matrix(scoo, *, sparse: bool):
+    """Convert a `sparse.COO` matrix (as stored on :class:`ObsConfiguration`)
+    to a JAX-typed dense array or a JAX BCOO sparse array."""
+    if sparse:
+        return BCOO.from_scipy_sparse(scoo.to_scipy_sparse().tocsr())
+    return jnp.asarray(scoo.todense())
 
 
 class ObsConfiguration(xr.Dataset):
@@ -14,6 +25,10 @@ class ObsConfiguration(xr.Dataset):
 
     transfer_matrix: xr.DataArray
     """The transfer matrix"""
+    redistribution: xr.DataArray
+    """The redistribution matrix (RMF), trimmed to the same energy range as the transfer matrix"""
+    grouping: xr.DataArray
+    """The grouping matrix, trimmed to the same channel range as the transfer matrix"""
     area: xr.DataArray
     """The effective area of the instrument"""
     exposure: xr.DataArray
@@ -24,11 +39,13 @@ class ObsConfiguration(xr.Dataset):
     """The background counts, after grouping"""
 
     __slots__ = (
-        "transfer_matrix",
         "area",
         "exposure",
-        "folded_counts",
         "folded_background",
+        "folded_counts",
+        "grouping",
+        "redistribution",
+        "transfer_matrix",
     )
 
     @property
@@ -151,8 +168,16 @@ class ObsConfiguration(xr.Dataset):
         row_idx = (e_min > low_energy) & (e_max < high_energy) & (grouping.sum(axis=1) > 0)
         col_idx = (e_min_unfolded > 0) & (redistribution.sum(axis=0) > 0)
 
-        # Apply this reduction to all the relevant arrays
+        # Apply this reduction to all the relevant arrays.
+        # Element-wise ops above may have down-converted to coo_array; re-coerce
+        # to csr for slicing.
         transfer_matrix = sparse.COO.from_scipy_sparse(transfer_matrix[row_idx][:, col_idx])
+        redistribution_trimmed = sparse.COO.from_scipy_sparse(
+            scipy.sparse.csr_array(redistribution)[:, col_idx]
+        )
+        grouping_trimmed = sparse.COO.from_scipy_sparse(
+            scipy.sparse.csr_array(grouping)[row_idx, :]
+        )
         folded_counts = observation.folded_counts.data[row_idx]
         folded_backratio = observation.folded_backratio.data[row_idx]
         area = instrument.area.data[col_idx]
@@ -172,6 +197,20 @@ class ObsConfiguration(xr.Dataset):
                 transfer_matrix,
                 {
                     "description": "Transfer matrix to use to fold the incoming spectrum. It is built and restricted using the grouping, redistribution matrix, effective area, quality flags and energy bands defined by the user."
+                },
+            ),
+            "redistribution": (
+                ["instrument_channel", "unfolded_channel"],
+                redistribution_trimmed,
+                {
+                    "description": "Redistribution matrix (RMF), trimmed to the same unfolded energy range as the transfer matrix. Together with grouping, area and exposure, it satisfies grouping @ (redistribution * area * exposure) == transfer_matrix."
+                },
+            ),
+            "grouping": (
+                ["folded_channel", "instrument_channel"],
+                grouping_trimmed,
+                {
+                    "description": "Grouping matrix, trimmed to the same folded channel range as the transfer matrix. Aggregates raw instrument channels into folded channels."
                 },
             ),
             "area": (

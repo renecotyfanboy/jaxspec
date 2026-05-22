@@ -145,12 +145,12 @@ class Phabs(MultiplicativeComponent):
 
     def __init__(self):
         table = Table.read(table_manager.fetch("xsect_phabs_aspl.fits"))
-        self.energy = nnx.Variable(np.asarray(table["ENERGY"], dtype=np.float64))
-        self.sigma = nnx.Variable(np.asarray(table["SIGMA"], dtype=np.float64))
+        self._energy = np.asarray(table["ENERGY"], dtype=np.float64)
+        self._sigma = np.asarray(table["SIGMA"], dtype=np.float64)
         self.nh = nnx.Param(1.0)
 
     def factor(self, energy):
-        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
+        sigma = jnp.interp(energy, self._energy, self._sigma, left=1e9, right=0.0)
 
         return jnp.exp(-self.nh * sigma)
 
@@ -165,12 +165,12 @@ class Wabs(MultiplicativeComponent):
 
     def __init__(self):
         table = Table.read(table_manager.fetch("xsect_wabs_angr.fits"))
-        self.energy = nnx.Variable(np.asarray(table["ENERGY"], dtype=np.float64))
-        self.sigma = nnx.Variable(np.asarray(table["SIGMA"], dtype=np.float64))
+        self._energy = np.asarray(table["ENERGY"], dtype=np.float64)
+        self._sigma = np.asarray(table["SIGMA"], dtype=np.float64)
         self.nh = nnx.Param(1.0)
 
     def factor(self, energy):
-        sigma = jnp.interp(energy, self.energy, self.sigma, left=1e9, right=0.0)
+        sigma = jnp.interp(energy, self._energy, self._sigma, left=1e9, right=0.0)
 
         return jnp.exp(-self.nh * sigma)
 
@@ -283,8 +283,8 @@ class Tbpcf(MultiplicativeComponent):
 
     def __init__(self):
         table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-        self._energy = nnx.Variable(np.asarray(table["ENERGY"], dtype=np.float64))
-        self._sigma = nnx.Variable(np.asarray(table["SIGMA"], dtype=np.float64))
+        self._energy = np.asarray(table["ENERGY"], dtype=np.float64)
+        self._sigma = np.asarray(table["SIGMA"], dtype=np.float64)
         self.nh = nnx.Param(1.0)
         self.f = nnx.Param(0.2)
 

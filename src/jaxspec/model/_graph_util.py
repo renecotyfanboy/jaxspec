@@ -118,29 +118,33 @@ def compose(
     return graph
 
 
+_MERMAID_OP_SYMBOLS = {"add": "**+**", "mul": "**x**"}
+
+
+def _render_mermaid_node(node, attributes) -> str:
+    if attributes["type"] == "out":
+        return f'    {node}("Output")\n'
+
+    operation_type, node_type = attributes["type"].split("_")
+
+    if node_type == "component":
+        name, number = attributes["name"].split("_")
+        return f'    {node}("{name.capitalize()} ({number})")\n'
+
+    if node_type == "operation":
+        symbol = _MERMAID_OP_SYMBOLS.get(operation_type)
+        if symbol is not None:
+            return f"    {node}{{{symbol}}}\n"
+
+    return ""
+
+
 def export_to_mermaid(graph, file=None):
     mermaid_code = "graph LR\n"  # LR = left to right
 
-    # Add nodes
     for node, attributes in graph.nodes(data=True):
-        if attributes["type"] == "out":
-            mermaid_code += f'    {node}("Output")\n'
+        mermaid_code += _render_mermaid_node(node, attributes)
 
-        else:
-            operation_type, node_type = attributes["type"].split("_")
-
-            if node_type == "component":
-                name, number = attributes["name"].split("_")
-                mermaid_code += f'    {node}("{name.capitalize()} ({number})")\n'
-
-            elif node_type == "operation":
-                if operation_type == "add":
-                    mermaid_code += f"    {node}{{**+**}}\n"
-
-                elif operation_type == "mul":
-                    mermaid_code += f"    {node}{{**x**}}\n"
-
-    # Draw connexion between nodes
     for source, target in graph.edges():
         mermaid_code += f"    {source} --> {target}\n"
 

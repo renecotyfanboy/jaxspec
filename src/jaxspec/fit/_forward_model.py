@@ -1,23 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from functools import cached_property
 from typing import TYPE_CHECKING, Any
 
-import jax
 import jax.numpy as jnp
-import numpy as np
 
 from flax import nnx
-from jax.experimental.sparse import BCOO
-from jax.typing import ArrayLike
 
 from ..data import ObsConfiguration
+from ..data.obsconf import to_jax_matrix
 from ..model.abc import HideUnderscoreMixin, SpectralModel
+from ..model.background import BackgroundModel
+from ..model.instrument import InstrumentModel
 
 if TYPE_CHECKING:
-    from ..model.background import BackgroundModel
-    from ..model.instrument import InstrumentModel
+    pass
 
 
 def _normalise_observations(
@@ -33,205 +29,169 @@ def _normalise_observations(
     raise ValueError(f"Invalid type for observations : {type(observations)}")
 
 
-def _build_transfer_matrix(obs: ObsConfiguration, sparse: bool = False):
-    if sparse:
-        return BCOO.from_scipy_sparse(obs.transfer_matrix.data.to_scipy_sparse().tocsr())
-    return jnp.asarray(obs.transfer_matrix.data.todense())
+def _build_obs_cache(
+    obs: ObsConfiguration, instrument: InstrumentModel | None, *, sparse: bool
+) -> dict[str, Any]:
+    """Pre-build per-observation JAX-typed response views for one observation.
+
+    Always builds ``"transfer_matrix"``. Additionally builds the un-merged
+    components (``redistribution``, ``grouping``, ``area``, ``exposure``) when
+    the per-obs instrument declares :attr:`InstrumentModel.requires_components`.
+    """
+    cache: dict[str, Any] = {
+        "transfer_matrix": to_jax_matrix(obs.transfer_matrix.data, sparse=sparse),
+    }
+    if instrument is not None and instrument.requires_components:
+        cache["redistribution"] = to_jax_matrix(obs.redistribution.data, sparse=sparse)
+        cache["grouping"] = to_jax_matrix(obs.grouping.data, sparse=sparse)
+        cache["area"] = jnp.asarray(obs.area.data)
+        cache["exposure"] = jnp.asarray(obs.exposure.data)
+    return cache
+
+
+def _normalise_background(
+    background_model: BackgroundModel | dict[str, BackgroundModel | None] | None,
+    obs_names: list[str],
+) -> dict[str, BackgroundModel]:
+    """Singleton → cloned per-obs dict; dict → as-is (drop None entries); None → empty."""
+    if background_model is None:
+        return {}
+    if isinstance(background_model, BackgroundModel):
+        return {name: nnx.clone(background_model) for name in obs_names}
+    return {name: bg for name, bg in background_model.items() if bg is not None}
+
+
+def _normalise_instrument(
+    instrument_model: dict[str, InstrumentModel | None] | None,
+) -> dict[str, InstrumentModel]:
+    """Drop ``None`` entries — those observations get the identity fold."""
+    if instrument_model is None:
+        return {}
+    return {name: m for name, m in instrument_model.items() if m is not None}
+
+
+def _validate_obs_keys(user_dict: dict, obs_names: list[str], *, model_kind: str) -> None:
+    """Raise if ``user_dict`` has keys that don't match any observation name.
+
+    Catches typos before the silent-drop in ``_normalise_*`` would discard the
+    user's configuration. Only applied when the user passes a dict (singleton
+    ``BackgroundModel`` / ``None`` skip this entirely).
+    """
+    unknown = [k for k in user_dict if k not in obs_names]
+    if unknown:
+        raise ValueError(
+            f"{model_kind} contains keys {unknown!r} that are not in the "
+            f"observation set {obs_names!r}. Keys must match observation names "
+            f"(auto-generated as 'data_0', 'data_1', ... for list inputs; the "
+            f"dict key for dict inputs; or 'data' for a single ObsConfiguration)."
+        )
 
 
 class ForwardModel(HideUnderscoreMixin, nnx.Module):
-    """Deterministic forward model.
+    """Pure parametric nnx tree consumed by :func:`~jaxspec.fit._bayesian_model._bind_priors`.
 
-    Owns a :class:`~jaxspec.model.abc.SpectralModel`, one or more
-    :class:`~jaxspec.data.ObsConfiguration` objects, pre-built transfer
-    matrices, and — optionally — a
-    :class:`~jaxspec.model.background.BackgroundModel` and a
-    :class:`~jaxspec.model.instrument.InstrumentModel`. Given parameter dicts,
-    it produces expected counts (source, background, total) per observation.
+    Only parameters and parametric submodules live here. Non-parametric state
+    (xarray observations, response caches, settings) is held off the nnx tree
+    on :attr:`_aux` — these Python objects aren't pytree-friendly and don't
+    belong in nnx's Variable tracking.
+
+    Parameters live as ``nnx.Param`` leaves under three dict-of-modules attributes:
+
+    - :attr:`spectrum`: ``{obs_name: SpectralModel}`` — one cloned replica per
+      observation, so per-obs spectral params become natural nnx leaves at
+      ``spectrum.<obs>.<path>``.
+    - :attr:`instrument`: ``{obs_name: InstrumentModel}`` — only observations
+      with a non-``None`` entry in the user's ``instrument_model`` arg.
+    - :attr:`background`: ``{obs_name: BackgroundModel}`` — singleton expanded
+      to per-obs clones, or the per-obs dict as supplied; ``None`` entries
+      dropped.
 
     Parameters:
-        spectral_model: The spectral model whose photon flux is folded through
-            the instrument response.
+        spectral_model: The spectral model template; cloned per observation.
         observations: One or more observation configurations. Accepts a single
-            :class:`~jaxspec.data.ObsConfiguration`, a list, or a
-            ``{name: obs}`` dict.
-        background_model: Optional background model used to predict the
-            background rate per observation.
-        instrument_model: Optional instrument calibration model providing
-            per-observation gain / shift callables.
+            :class:`~jaxspec.data.ObsConfiguration`, a list (auto-named
+            ``data_0``, ``data_1``, ...), or a ``{name: obs}`` dict.
+        background_model: ``None``, a singleton ``BackgroundModel`` (applied to
+            every observation as a clone), or a ``{obs_name: BackgroundModel | None}``
+            dict for per-obs heterogeneous backgrounds.
+        instrument_model: ``None``, or a ``{obs_name: InstrumentModel | None}``
+            dict. ``None`` entries (and observations missing from the dict)
+            apply the identity fold.
         sparsify_matrix: Whether to store transfer matrices as sparse BCOO.
         n_points: Number of quadrature points per energy bin for the flux
             integration.
     """
 
-    settings: dict[str, Any]
-
     def __init__(
         self,
         spectral_model: SpectralModel,
         observations: ObsConfiguration | list | dict,
-        background_model: BackgroundModel | None = None,
-        instrument_model: InstrumentModel | None = None,
+        background_model: BackgroundModel | dict[str, BackgroundModel | None] | None = None,
+        instrument_model: dict[str, InstrumentModel | None] | None = None,
         sparsify_matrix: bool = False,
         n_points: int = 2,
     ):
-        self.spectrum = spectral_model
-        self.observations = nnx.data(_normalise_observations(observations))
-        self.background_model = background_model
-        self.instrument_model = instrument_model
-        self.settings = {"sparse": sparsify_matrix, "n_points": n_points}
-        self._transfer_matrices = nnx.data(
-            {
-                name: _build_transfer_matrix(obs, sparse=sparsify_matrix)
-                for name, obs in self.observations.items()
-            }
+        obs_dict = _normalise_observations(observations)
+        obs_names = list(obs_dict)
+
+        # Catch typos in user-supplied per-obs dicts before normalisation
+        # silently drops the misspelled entries.
+        if isinstance(instrument_model, dict):
+            _validate_obs_keys(instrument_model, obs_names, model_kind="instrument_model")
+        if isinstance(background_model, dict):
+            _validate_obs_keys(background_model, obs_names, model_kind="background_model")
+
+        instrument_dict = _normalise_instrument(instrument_model)
+        background_dict = _normalise_background(background_model, obs_names)
+
+        self.spectrum = nnx.data({name: nnx.clone(spectral_model) for name in obs_dict})
+        self.instrument = nnx.data(instrument_dict)
+        self.background = nnx.data(background_dict)
+
+        # Non-parametric state lives OFF the nnx tree (plain attributes on
+        # ForwardModel itself would still be tracked; stash them on the orchestrator).
+        # These are exposed to the BayesianModel via the public accessors below.
+        self._aux = _ForwardModelAux(
+            observations=obs_dict,
+            caches={
+                name: _build_obs_cache(obs, self.instrument.get(name), sparse=sparsify_matrix)
+                for name, obs in obs_dict.items()
+            },
+            settings={"sparse": sparsify_matrix, "n_points": n_points},
         )
 
-    @cached_property
-    def parameter_names(self) -> list[str]:
-        """Sorted list of dotted paths to every leaf ``nnx.Param`` owned by this
-        module (e.g. ``"spectrum.powerlaw_1.alpha"``)."""
-        _, param_state, _ = nnx.split(self, nnx.Param, ...)
-        pure = nnx.to_pure_dict(param_state)
+        # Background models with caches (e.g. SpectralModelBackground transfer matrix,
+        # BackgroundWithError per-bin shape) need their per-obs cache before any
+        # JAX trace runs over their __call__.
+        for name, bg in self.background.items():
+            bg._set_obs_cache(obs_dict[name], sparse=sparsify_matrix)
 
-        def _walk(prefix: str, d: dict) -> list[str]:
-            out: list[str] = []
-            for k, v in d.items():
-                path = f"{prefix}.{k}" if prefix else k
-                if isinstance(v, dict):
-                    out.extend(_walk(path, v))
-                else:
-                    out.append(path)
-            return out
+    # ----- Non-parametric state accessors (read-through to self._aux) -----
 
-        return sorted(_walk("", pure))
+    @property
+    def observations(self) -> dict[str, ObsConfiguration]:
+        return self._aux.observations
 
-    def _build_gain_shift(
-        self, instrument_params: dict | None
-    ) -> dict[str, tuple[Callable | None, Callable | None]]:
-        """Return ``{obs_name: (gain_fn, shift_fn)}`` for every observation."""
-        obs_names = list(self.observations.keys())
-        if self.instrument_model is None:
-            return {name: (None, None) for name in obs_names}
-        return self.instrument_model(obs_names, params=instrument_params)
+    @property
+    def settings(self) -> dict[str, Any]:
+        return self._aux.settings
 
-    @staticmethod
-    def _simulate_one(
-        spectral_model: SpectralModel,
-        obs: ObsConfiguration,
-        transfer_matrix,
-        gain: Callable | None,
-        shift: Callable | None,
-        n_points: int,
-        split_branches: bool,
-    ):
-        energies = np.asarray(obs.in_energies)
-        energies = shift(energies) if shift is not None else energies
-        energies = jnp.clip(energies, min=1e-6)
-        factor = gain(energies) if gain is not None else 1.0
-        factor = jnp.clip(factor, min=0.0)
+    @property
+    def obs_caches(self) -> dict[str, dict[str, Any]]:
+        return self._aux.caches
 
-        if not split_branches:
-            expected_counts = transfer_matrix @ (
-                spectral_model.turbo_flux(*energies, n_points=n_points) * factor
-            )
-            return jnp.clip(expected_counts, min=1e-6)
 
-        model_flux = spectral_model.turbo_flux(*energies, n_points=n_points, return_branches=True)
-        return jax.tree.map(
-            lambda f: jnp.clip(transfer_matrix @ (f * factor), min=1e-6), model_flux
-        )
+class _ForwardModelAux:
+    """Non-pytree container for the per-observation Python objects that don't
+    belong on the nnx tree (xarray datasets, pre-built caches, plain dicts).
 
-    def __call__(
-        self,
-        params: dict | None = None,
-        *,
-        instrument_params: dict | None = None,
-        split_branches: bool = False,
-    ) -> dict[str, ArrayLike]:
-        """Compute expected source counts for every observation.
+    Stashing them here instead of as direct ``ForwardModel`` attributes keeps
+    them out of nnx's Variable tracking.
+    """
 
-        Parameters:
-            params: Optional dotted-path parameter dict for the spectral model.
-                Values may be scalar (shared across observations) or have a
-                leading axis of length ``n_obs`` (per-observation). If
-                ``None``, the parameters currently stored on the module are
-                used.
-            instrument_params: Optional instrument-calibration parameter dict
-                (as produced by :meth:`InstrumentModel.register_priors`). If
-                the forward model owns an :attr:`instrument_model`, these are
-                converted internally into per-observation gain / shift
-                callables.
-            split_branches: If ``True``, return per-branch folded counts
-                (one entry per additive branch of the spectral model).
+    __slots__ = ("observations", "caches", "settings")
 
-        Returns:
-            ``{obs_name: expected_source_counts}`` dict.
-        """
-        counts: dict[str, ArrayLike] = {}
-        n_points = self.settings["n_points"]
-        gain_shift = self._build_gain_shift(instrument_params)
-
-        for name, obs in self.observations.items():
-            params_i = (
-                {key: value[name] for key, value in params.items()} if params is not None else None
-            )
-            spectral_model = self.spectrum._with_params(params_i)
-            gain, shift = gain_shift[name]
-            counts[name] = self._simulate_one(
-                spectral_model,
-                obs,
-                self._transfer_matrices[name],
-                gain,
-                shift,
-                n_points,
-                split_branches,
-            )
-        return counts
-
-    def expected_counts(
-        self,
-        source_params: dict | None = None,
-        instrument_params: dict | None = None,
-        background_params: dict | None = None,
-    ) -> dict[str, dict[str, ArrayLike]]:
-        """Compose source, instrument and background into per-observation counts.
-
-        Parameters:
-            source_params: Optional spectral-model parameter dict (same
-                convention as :meth:`__call__`).
-            instrument_params: Optional instrument-calibration parameter dict.
-            background_params: Optional background-model parameter dict (as
-                produced by :meth:`BackgroundModel.register_priors`).
-
-        Returns:
-            ``{obs_name: {"source", "background_rate",
-            "background_in_obs_space", "total"}}``. ``background_rate`` is in
-            background energy space (pre-``folded_backratio``);
-            ``background_in_obs_space`` is ``background_rate *
-            obs.folded_backratio.data``; ``total`` is ``source +
-            background_in_obs_space``. When no background model is attached,
-            ``background_rate`` and ``background_in_obs_space`` are ``0.0``.
-        """
-        source_counts = self(params=source_params, instrument_params=instrument_params)
-
-        out: dict[str, dict[str, ArrayLike]] = {}
-        for name, obs in self.observations.items():
-            source = source_counts[name]
-            if self.background_model is None:
-                bkg_rate: ArrayLike = jnp.asarray(0.0)
-                bkg_in_obs: ArrayLike = jnp.asarray(0.0)
-            else:
-                if background_params is not None:
-                    bkg_params_i = {key: value[name] for key, value in background_params.items()}
-                else:
-                    bkg_params_i = None
-                bkg_rate = self.background_model(obs, name=name, params=bkg_params_i)
-                bkg_in_obs = bkg_rate * obs.folded_backratio.data
-            out[name] = {
-                "source": source,
-                "background_rate": bkg_rate,
-                "background_in_obs_space": bkg_in_obs,
-                "total": source + bkg_in_obs,
-            }
-        return out
+    def __init__(self, observations, caches, settings):
+        self.observations = observations
+        self.caches = caches
+        self.settings = settings

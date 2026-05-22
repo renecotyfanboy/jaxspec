@@ -1,9 +1,6 @@
 from contextlib import nullcontext as does_not_raise
 
-import arviz as az
-import jax.numpy as jnp
-import numpy as np
-import numpyro
+import jax
 import numpyro.distributions as dist
 import pytest
 
@@ -15,7 +12,7 @@ from conftest import (
     single_obsconf,
     spectral_model,
 )
-from jaxspec.fit import BayesianModel, MCMCFitter, NSFitter, PerObs, TiedParameter, VIFitter
+from jaxspec.fit import BayesianModel, MCMCFitter, NSFitter, TiedParameter, VIFitter
 from jaxspec.model.additive import Powerlaw
 from jaxspec.model.background import (
     BackgroundWithError,
@@ -123,7 +120,8 @@ def test_prior_samples_with_ragged_background_default_prior():
     prior_samples = fitter.prior_samples(num_samples=1)
 
     for i, obsconf in enumerate(list_of_obsconf):
-        site_name = f"background.countrate.data_{i}"
+        # Per-obs sites are registered under the literal "forward." prefix.
+        site_name = f"forward.background.data_{i}.countrate"
         assert site_name in prior_samples
         assert prior_samples[site_name].shape == (1, len(obsconf.folded_background))
 
@@ -157,6 +155,9 @@ def test_run_ns(model, prior, obsconf, expectation):
     """Try to generate mock observations from the given combination of observation and priors"""
     with expectation:
         bkg_spectral_model = Tbabs() * Powerlaw()
+        # SpectralModelBackground exposes its inner spec's components directly
+        # under the ``background.`` prefix via the ``user_path`` hook — users
+        # write the same keys they would for the source spectrum.
         prior_with_backgrounds = {
             **prior,
             "background.powerlaw_1.alpha": dist.Uniform(0, 5),
@@ -209,38 +210,75 @@ def test_run_vi(model, prior, obsconf, expectation):
 
 
 @pytest.mark.fast
-def test_nested_per_obs_raises_at_build_time():
+def test_unknown_obs_in_scope_raises_at_build_time():
     prior = {
         **prior_shared_pars,
-        "spectrum.powerlaw_1.norm": PerObs(PerObs(dist.LogUniform(1e-5, 1e-2))),
+        "spectrum.powerlaw_1.norm[not_an_obs]": dist.LogUniform(1e-5, 1e-2),
     }
 
-    with pytest.raises(TypeError, match="PerObs inside PerObs"):
+    with pytest.raises(ValueError, match="not in the 'spectrum' applicable set"):
         BayesianModel(spectral_model, prior, list_of_obsconf)
 
 
 @pytest.mark.fast
-def test_tied_parameter_inside_per_obs_raises_at_build_time():
+def test_instrument_scope_without_instrument_model_raises():
     prior = {
         **prior_shared_pars,
-        "spectrum.powerlaw_1.norm": PerObs(
-            TiedParameter("spectrum.blackbodyrad_1.norm", lambda x: 0.5 * x)
-        ),
+        "instrument.gain.factor[*]": dist.Uniform(0.5, 1.5),
     }
 
-    with pytest.raises(TypeError, match="TiedParameter inside PerObs"):
+    # No instrument_model passed → no observations are 'applicable' for the
+    # instrument prefix; the build should error early.
+    with pytest.raises(ValueError, match="no observations are attached"):
         BayesianModel(spectral_model, prior, list_of_obsconf)
 
 
 @pytest.mark.fast
-def test_missing_per_obs_entries_raise_at_build_time():
+def test_prior_key_without_module_prefix_raises():
+    """A flat key like 'tbabs_1_nh' (no dot, no module prefix) raises clearly."""
     prior = {
         **prior_shared_pars,
-        "spectrum.powerlaw_1.norm": PerObs({"data_0": dist.LogUniform(1e-5, 1e-2)}),
+        "tbabs_1_nh": dist.Uniform(0, 1),
     }
-
-    with pytest.raises(ValueError, match="missing observations"):
+    with pytest.raises(ValueError, match="no module prefix"):
         BayesianModel(spectral_model, prior, list_of_obsconf)
+
+
+@pytest.mark.fast
+def test_prior_key_with_unknown_module_prefix_raises():
+    """A key starting with an unrecognised module (e.g. 'foo.bar.baz') raises clearly."""
+    prior = {
+        **prior_shared_pars,
+        "foo.tbabs_1.nh": dist.Uniform(0, 1),
+    }
+    with pytest.raises(ValueError, match="unknown module 'foo'"):
+        BayesianModel(spectral_model, prior, list_of_obsconf)
+
+
+@pytest.mark.fast
+def test_instrument_model_with_unknown_obs_key_raises():
+    """instrument_model dict with a key that doesn't match any obs raises clearly."""
+    with pytest.raises(ValueError, match="not in the observation set"):
+        BayesianModel(
+            spectral_model,
+            prior_shared_pars,
+            dict_of_obsconf,
+            instrument_model={
+                "typo_obs": InstrumentModel(gain=ConstantGain(), shift=ConstantShift()),
+            },
+        )
+
+
+@pytest.mark.fast
+def test_background_model_dict_with_unknown_obs_key_raises():
+    """background_model dict with a key that doesn't match any obs raises clearly."""
+    with pytest.raises(ValueError, match="not in the observation set"):
+        BayesianModel(
+            spectral_model,
+            prior_shared_pars,
+            dict_of_obsconf,
+            background_model={"typo_obs": BackgroundWithError()},
+        )
 
 
 @pytest.mark.slow
@@ -248,19 +286,19 @@ def test_missing_per_obs_entries_raise_at_build_time():
 def test_instrument_model_building(sampler):
     prior_with_instruments = {
         **prior_shared_pars,
-        "instrument.gain.factor": dist.Uniform(0.8, 1.2),
-        "instrument.shift.offset": dist.Uniform(-0.1, +0.1),
+        "instrument.gain.factor[*]": dist.Uniform(0.8, 1.2),
+        "instrument.shift.offset[*]": dist.Uniform(-0.1, +0.1),
     }
     forward_model = MCMCFitter(
         spectral_model,
         prior_with_instruments,
         dict_of_obsconf,
         background_model=None,
-        instrument_model=InstrumentModel(
-            "PN",
-            gain_model=ConstantGain(),
-            shift_model=ConstantShift(),
-        ),
+        instrument_model={
+            "PN": None,  # explicit reference
+            "MOS1": InstrumentModel(gain=ConstantGain(), shift=ConstantShift()),
+            "MOS2": InstrumentModel(gain=ConstantGain(), shift=ConstantShift()),
+        },
     )
 
     result = forward_model.fit(
@@ -304,7 +342,50 @@ def test_tied_parameters(sampler):
     result.energy_flux(0.7, 1.2, register=True)
     result.luminosity(0.7, 1.2, redshift=0.01, register=True)
     [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
-    result.to_chain("test")
+    chain = result.to_chain("test")
+
+    # Tied destinations are deterministic functions of their source; the user
+    # convention is to exclude them from corner plots so the displayed
+    # parameter set matches the genuinely sampled posterior.
+    cols = list(chain.samples.columns)
+    assert not any(
+        "powerlaw_2.alpha" in c for c in cols
+    ), f"tied destination 'powerlaw_2.alpha' should not be in chain columns: {cols}"
+    assert any(
+        "powerlaw_1.alpha" in c for c in cols
+    ), f"tied source 'powerlaw_1.alpha' should remain in chain columns: {cols}"
+
+
+@pytest.mark.slow
+def test_to_chain_includes_per_obs_columns():
+    """[*] per-obs parameters should appear in to_chain output, one column per obs.
+
+    Pinned to NUTS — the column structure is sampler-independent and ensemble
+    samplers (AIES / ESS) want n_chains ≥ 2·n_params which we'd need to scale
+    up for, defeating the point of a fast smoke test.
+    """
+    prior = {
+        **{k: v for k, v in prior_shared_pars.items() if k != "spectrum.powerlaw_1.norm"},
+        "spectrum.powerlaw_1.norm[*]": dist.LogUniform(1e-5, 1e-2),
+    }
+    forward = MCMCFitter(spectral_model, prior, dict_of_obsconf)
+    result = forward.fit(
+        num_chains=2,
+        num_warmup=5,
+        num_samples=5,
+        sampler="nuts",
+        mcmc_kwargs={"progress_bar": False},
+    )
+    chain = result.to_chain("test")
+    cols = list(chain.samples.columns)
+
+    # One per-obs column per observation, labeled "<param>\n[<obs>]"
+    per_obs_norm_cols = [c for c in cols if "powerlaw_1.norm" in c and "\n[" in c]
+    assert len(per_obs_norm_cols) == len(
+        dict_of_obsconf
+    ), f"expected {len(dict_of_obsconf)} per-obs norm columns, got {per_obs_norm_cols}"
+    obs_names_in_cols = {c.split("\n[")[1].rstrip("]") for c in per_obs_norm_cols}
+    assert obs_names_in_cols == set(dict_of_obsconf.keys())
 
 
 @pytest.mark.fast
@@ -319,14 +400,14 @@ def test_invalid_fixed_prior_raises_at_build_time():
 
 
 @pytest.mark.fast
-def test_invalid_per_obs_fixed_prior_raises_at_build_time():
+def test_invalid_split_fixed_prior_raises_at_build_time():
     class NotCastableAsArray:
         def __array__(self, dtype=None):
             raise TypeError("cannot convert to array")
 
     prior = {
         **prior_shared_pars,
-        "spectrum.powerlaw_1.norm": PerObs(NotCastableAsArray()),
+        "spectrum.powerlaw_1.norm[*]": NotCastableAsArray(),
     }
 
     with pytest.raises(TypeError, match="Invalid fixed prior value"):
@@ -337,8 +418,10 @@ def test_invalid_per_obs_fixed_prior_raises_at_build_time():
 def test_background_model_without_background_raises_on_sampling():
     obsconf_without_background = single_obsconf.copy(deep=True)
     del obsconf_without_background["folded_background"]
+    bkg_spec = Tbabs() * Powerlaw()
     prior = {
         **prior_shared_pars,
+        "background.tbabs_1.nh": dist.Uniform(0, 1),
         "background.powerlaw_1.alpha": dist.Uniform(0, 5),
         "background.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
     }
@@ -347,7 +430,7 @@ def test_background_model_without_background_raises_on_sampling():
         spectral_model,
         prior,
         obsconf_without_background,
-        background_model=SpectralModelBackground(Powerlaw()),
+        background_model=SpectralModelBackground(bkg_spec),
     )
 
     with pytest.raises(ValueError, match="Trying to fit a background model but no background"):
@@ -355,203 +438,169 @@ def test_background_model_without_background_raises_on_sampling():
 
 
 @pytest.mark.fast
-def test_extract_posterior_samples_stacks_matching_per_obs_shapes():
-    observation_names = list(dict_of_obsconf)
-    alpha = np.arange(6, dtype=float).reshape(2, 3)
-    norms = {
-        f"spectrum.powerlaw_1.norm.{obs_name}": np.full((2, 3), i + 1.0)
-        for i, obs_name in enumerate(observation_names)
-    }
+@pytest.mark.parametrize(
+    "key, expected",
+    [
+        ("spectrum.powerlaw_1.alpha", ("spectrum.powerlaw_1.alpha", None)),
+        ("instrument.gain.factor[*]", ("instrument.gain.factor", "*")),
+        ("spectrum.tbabs_1.nh[PN]", ("spectrum.tbabs_1.nh", "PN")),
+        ("background.countrate[data_0]", ("background.countrate", "data_0")),
+    ],
+)
+def test_parse_prior_key_valid(key, expected):
+    from jaxspec.fit._bayesian_model import parse_prior_key
+
+    assert parse_prior_key(key) == expected
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("bad", ["malformed[", "key[]", "[obs]", "a[b][c]", "[", "]"])
+def test_parse_prior_key_malformed_raises(bad):
+    from jaxspec.fit._bayesian_model import parse_prior_key
+
+    with pytest.raises(ValueError, match="Malformed prior key"):
+        parse_prior_key(bad)
+
+
+@pytest.mark.fast
+def test_joint_prior_factory_matches_components():
+    """joint_prior_factory returns Delta for matching paths, None for misses."""
+    import jax.numpy as jnp
+    import numpyro
+    import numpyro.distributions as dist
+
+    from jaxspec.fit import joint_prior_factory
+
+    captured = {}
+
+    def model():
+        lookup = joint_prior_factory(
+            components=("spectrum.powerlaw_1.alpha", "spectrum.powerlaw_1.norm"),
+            joint_dist=dist.MultivariateNormal(
+                loc=jnp.array([2.0, -8.0]),
+                covariance_matrix=jnp.eye(2),
+            ),
+            name="joint_alpha_norm",
+        )
+        # Match through the per-obs leaf-path convention
+        captured["alpha"] = lookup("spectrum.PN.powerlaw_1.alpha")
+        captured["norm"] = lookup("spectrum.MOS1.powerlaw_1.norm")
+        captured["miss"] = lookup("spectrum.MOS1.tbabs_1.nh")
+
+    with numpyro.handlers.trace() as tr, numpyro.handlers.seed(rng_seed=0):
+        model()
+
+    assert "joint_alpha_norm" in tr
+    # New leaf-callable contract: array-like returns are pre-sampled values
+    # (no Delta wrapper). Joint slice picks out a scalar from the 2-vector draw.
+    assert isinstance(captured["alpha"], jax.Array)
+    assert isinstance(captured["norm"], jax.Array)
+    assert captured["alpha"].shape == ()
+    assert captured["norm"].shape == ()
+    assert captured["miss"] is None
+
+
+@pytest.mark.fast
+def test_per_obs_tied_parameter_resolution():
+    """TiedParameter with [obs]-scoped tied_to ties one obs's draw to another's."""
+    import numpyro.distributions as dist
+
+    from jaxspec.fit import BayesianModel
+
+    spec_only = spectral_model
     prior = {
+        **prior_shared_pars,
         "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-        "spectrum.powerlaw_1.norm": PerObs(dist.LogUniform(1e-5, 1e-2)),
-        "spectrum.blackbodyrad_1.kT": 1.5,
-        "spectrum.blackbodyrad_1.norm": 2.5,
-        "spectrum.tbabs_1.nh": 0.6,
-    }
-    inference_data = az.from_dict(
-        posterior={
-            "spectrum.powerlaw_1.alpha": alpha,
-            **norms,
-        }
-    )
-
-    extracted = spectral_model.extract_posterior_samples(
-        inference_data,
-        prior,
-        observation_names,
-    )
-
-    np.testing.assert_allclose(
-        extracted["spectrum.powerlaw_1.alpha"],
-        np.broadcast_to(alpha[..., None], (*alpha.shape, len(observation_names))),
-    )
-    np.testing.assert_allclose(
-        extracted["spectrum.powerlaw_1.norm"],
-        np.stack(
-            [norms[f"spectrum.powerlaw_1.norm.{obs_name}"] for obs_name in observation_names],
-            axis=-1,
+        # MOS1 gets an independent draw; MOS2 is tied to MOS1's draw via λ x: 0.5 * x
+        "spectrum.powerlaw_1.norm[MOS1]": dist.LogUniform(1e-5, 1e-2),
+        "spectrum.powerlaw_1.norm[MOS2]": TiedParameter(
+            "spectrum.powerlaw_1.norm[MOS1]", lambda x: 0.5 * x
         ),
-    )
+        # PN also tied — same pattern
+        "spectrum.powerlaw_1.norm[PN]": TiedParameter(
+            "spectrum.powerlaw_1.norm[MOS1]", lambda x: 0.25 * x
+        ),
+    }
+    # Strip the redundant entry from prior_shared_pars (it had spectrum.powerlaw_1.norm shared,
+    # which conflicts with our per-obs entries above for the same path).
+    prior = {k: v for k, v in prior.items() if k != "spectrum.powerlaw_1.norm"}
+
+    bm = BayesianModel(spec_only, prior, dict_of_obsconf)
+
+    samples = bm.prior_samples(num_samples=1)
+
+    def site(obs):
+        return f"forward.spectrum.{obs}.powerlaw_1.norm"
+
+    mos1 = float(samples[site("MOS1")][0])
+    mos2 = float(samples[site("MOS2")][0])
+    pn = float(samples[site("PN")][0])
+    assert abs(mos2 - 0.5 * mos1) < 1e-6
+    assert abs(pn - 0.25 * mos1) < 1e-6
 
 
 @pytest.mark.fast
-def test_extract_posterior_samples_keeps_ragged_per_obs_values_as_dict():
-    observation_names = list(dict_of_obsconf)
+def test_per_obs_tied_parameter_wildcard_source():
+    """tied_to with [*] derives each dest obs from its same-obs source draw."""
+    import numpyro.distributions as dist
+
+    from jaxspec.fit import BayesianModel
+
     prior = {
-        "background.countrate": PerObs(
-            {
-                observation_names[0]: np.array([1.0, 2.0]),
-                observation_names[1]: np.array([3.0]),
-                observation_names[2]: np.array([4.0, 5.0, 6.0]),
-            }
-        )
+        **{
+            k: v
+            for k, v in prior_shared_pars.items()
+            if k not in ("spectrum.powerlaw_1.norm", "spectrum.blackbodyrad_1.norm")
+        },
+        "spectrum.powerlaw_1.norm[*]": dist.LogUniform(1e-5, 1e-2),
+        "spectrum.blackbodyrad_1.norm[*]": TiedParameter(
+            "spectrum.powerlaw_1.norm[*]", lambda x: 2.0 * x
+        ),
     }
-    inference_data = az.from_dict(posterior={"dummy": np.zeros((1, 1))})
 
-    extracted = BackgroundWithError().extract_posterior_samples(
-        inference_data,
-        prior,
-        observation_names,
-    )
-
-    assert isinstance(extracted["background.countrate"], dict)
-    assert list(extracted["background.countrate"]) == observation_names
+    bm = BayesianModel(spectral_model, prior, dict_of_obsconf)
+    samples = bm.prior_samples(num_samples=1)
+    for obs in dict_of_obsconf:
+        pw = float(samples[f"forward.spectrum.{obs}.powerlaw_1.norm"][0])
+        bb = float(samples[f"forward.spectrum.{obs}.blackbodyrad_1.norm"][0])
+        assert abs(bb - 2.0 * pw) < 1e-6
 
 
 @pytest.mark.fast
-def test_register_priors_fixed_shared_value():
-    observation_names = list(dict_of_obsconf)
-    prior = {
-        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-        "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
-        "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
-        "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
-        "spectrum.tbabs_1.nh": 0.6,
+def test_dict_prior_resolves_shared_split_and_specific():
+    """dict_prior returns a pre-sampled array for shared / fixed entries,
+    a Distribution for unresolved [*] / [obs] entries, None on miss."""
+    import numpyro
+    import numpyro.distributions as dist
+
+    from jaxspec.fit import dict_prior
+
+    user_prior = {
+        "spectrum.tbabs_1.nh": dist.Uniform(0, 1),  # shared → pre-sampled array
+        "spectrum.powerlaw_1.norm[*]": dist.LogUniform(1e-5, 1e-2),  # [*]    → Distribution
+        "spectrum.powerlaw_1.alpha[MOS1]": dist.Uniform(0, 5),  # [obs]  → Distribution
+        "spectrum.blackbodyrad_1.kT": 0.5,  # fixed shared → pre-sampled array
     }
+    captured = {}
 
-    with numpyro.handlers.seed(rng_seed=0):
-        result = spectral_model.register_priors(prior, observation_names)
+    def model():
+        lookup = dict_prior(user_prior)
+        captured["shared_dist"] = lookup("spectrum.MOS1.tbabs_1.nh", ())
+        captured["shared_fixed"] = lookup("spectrum.PN.blackbodyrad_1.kT", ())
+        captured["split"] = lookup("spectrum.PN.powerlaw_1.norm", ())
+        captured["specific_match"] = lookup("spectrum.MOS1.powerlaw_1.alpha", ())
+        captured["specific_miss"] = lookup("spectrum.PN.powerlaw_1.alpha", ())
+        captured["unknown"] = lookup("spectrum.MOS1.unknown.path", ())
 
-    assert set(result["spectrum.tbabs_1.nh"]) == set(observation_names)
-    for obs_name in observation_names:
-        np.testing.assert_allclose(result["spectrum.tbabs_1.nh"][obs_name], 0.6)
+    with numpyro.handlers.trace() as tr, numpyro.handlers.seed(rng_seed=0):
+        model()
 
-
-@pytest.mark.fast
-def test_register_priors_fixed_per_obs_value():
-    observation_names = list(dict_of_obsconf)
-    per_obs_values = {obs: float(i + 1) for i, obs in enumerate(observation_names)}
-    prior = {
-        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-        "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
-        "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
-        "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
-        "spectrum.tbabs_1.nh": PerObs(per_obs_values),
-    }
-
-    with numpyro.handlers.seed(rng_seed=0):
-        result = spectral_model.register_priors(prior, observation_names)
-
-    for obs_name, expected in per_obs_values.items():
-        np.testing.assert_allclose(result["spectrum.tbabs_1.nh"][obs_name], expected)
-
-
-@pytest.mark.fast
-def test_register_priors_tied_parameter():
-    observation_names = list(dict_of_obsconf)
-    prior = {
-        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-        "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
-        "spectrum.blackbodyrad_1.kT": TiedParameter("spectrum.powerlaw_1.alpha", lambda x: 2.0 * x),
-        "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
-        "spectrum.tbabs_1.nh": dist.Uniform(0, 1),
-    }
-
-    with numpyro.handlers.seed(rng_seed=0):
-        result = spectral_model.register_priors(prior, observation_names)
-
-    for obs_name in observation_names:
-        np.testing.assert_allclose(
-            result["spectrum.blackbodyrad_1.kT"][obs_name],
-            2.0 * result["spectrum.powerlaw_1.alpha"][obs_name],
-        )
-
-
-@pytest.mark.fast
-def test_register_priors_tied_parameter_unknown_source():
-    observation_names = list(dict_of_obsconf)
-    prior = {
-        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-        "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
-        "spectrum.blackbodyrad_1.kT": TiedParameter("spectrum.does_not_exist", lambda x: x),
-        "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
-        "spectrum.tbabs_1.nh": dist.Uniform(0, 1),
-    }
-
-    with numpyro.handlers.seed(rng_seed=0):
-        with pytest.raises(ValueError, match="unknown source"):
-            spectral_model.register_priors(prior, observation_names)
-
-
-@pytest.mark.fast
-def test_extract_posterior_samples_tied_parameter_shared_source():
-    observation_names = list(dict_of_obsconf)
-    alpha = np.arange(6, dtype=float).reshape(2, 3)
-    prior = {
-        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-        "spectrum.powerlaw_1.norm": 1e-3,
-        "spectrum.blackbodyrad_1.kT": TiedParameter("spectrum.powerlaw_1.alpha", lambda x: 2.0 * x),
-        "spectrum.blackbodyrad_1.norm": 1.0,
-        "spectrum.tbabs_1.nh": 0.6,
-    }
-    inference_data = az.from_dict(posterior={"spectrum.powerlaw_1.alpha": alpha})
-
-    extracted = spectral_model.extract_posterior_samples(inference_data, prior, observation_names)
-
-    assert not isinstance(extracted["spectrum.blackbodyrad_1.kT"], dict)
-    np.testing.assert_allclose(
-        extracted["spectrum.blackbodyrad_1.kT"],
-        2.0 * extracted["spectrum.powerlaw_1.alpha"],
-    )
-
-
-@pytest.mark.fast
-def test_extract_posterior_samples_tied_parameter_ragged_source():
-    observation_names = list(dict_of_obsconf)
-    ragged_values = {
-        observation_names[0]: np.array([1.0, 2.0]),
-        observation_names[1]: np.array([3.0]),
-        observation_names[2]: np.array([4.0, 5.0, 6.0]),
-    }
-    prior = {
-        "background.countrate": PerObs(ragged_values),
-        "background.derived": TiedParameter("background.countrate", lambda x: 10.0 * x),
-    }
-    inference_data = az.from_dict(posterior={"dummy": np.zeros((1, 1))})
-
-    extracted = BackgroundWithError().extract_posterior_samples(
-        inference_data, prior, observation_names
-    )
-
-    assert isinstance(extracted["background.derived"], dict)
-    for obs_name, source_value in ragged_values.items():
-        source_leaf = extracted["background.countrate"][obs_name]
-        np.testing.assert_allclose(extracted["background.derived"][obs_name], 10.0 * source_leaf)
-        np.testing.assert_allclose(jnp.squeeze(source_leaf), jnp.asarray(source_value))
-
-
-@pytest.mark.fast
-def test_extract_posterior_samples_tied_parameter_unknown_source():
-    observation_names = list(dict_of_obsconf)
-    prior = {
-        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-        "spectrum.blackbodyrad_1.kT": TiedParameter("spectrum.does_not_exist", lambda x: x),
-        "spectrum.powerlaw_1.norm": 1e-3,
-        "spectrum.blackbodyrad_1.norm": 1.0,
-        "spectrum.tbabs_1.nh": 0.6,
-    }
-    inference_data = az.from_dict(posterior={"spectrum.powerlaw_1.alpha": np.zeros((2, 3))})
-
-    with pytest.raises(ValueError, match="unknown source"):
-        spectral_model.extract_posterior_samples(inference_data, prior, observation_names)
+    assert "spectrum.tbabs_1.nh" in tr  # shared sampled once at top
+    # Shared / fixed entries return pre-sampled arrays (new leaf-callable contract).
+    assert isinstance(captured["shared_dist"], jax.Array)
+    assert isinstance(captured["shared_fixed"], jax.Array)
+    # Per-obs / [*] entries still return Distributions (sampled at leaf time).
+    assert isinstance(captured["split"], dist.LogUniform)
+    assert isinstance(captured["specific_match"], dist.Uniform)
+    assert captured["specific_miss"] is None  # only MOS1 has the [obs] entry
+    assert captured["unknown"] is None

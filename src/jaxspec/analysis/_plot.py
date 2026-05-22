@@ -153,6 +153,20 @@ def adaptive_bin_1d(counts, min_counts):
     return bin_ids
 
 
+def _compute_bin_ids(observed_counts, min_counts, grouping):
+    """Resolve the rebinning policy for an observation.
+
+    ``min_counts`` triggers adaptive merging; ``grouping`` triggers fixed-size
+    groups; both ``None`` returns ``None`` (no rebinning). Mutual exclusion is
+    enforced by the caller.
+    """
+    if min_counts is not None:
+        return adaptive_bin_1d(observed_counts, min_counts)
+    if grouping is not None:
+        return np.arange(len(observed_counts)) // grouping
+    return None
+
+
 def rebin_counts(data, bin_ids):
     """Sum counts inside each bin group.
 

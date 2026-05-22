@@ -35,7 +35,7 @@ def test_likelihood():
 def test_external_sampler_style_interfaces():
     bayesian_model = BayesianModel(spectral_model, prior_shared_pars, single_obsconf)
 
-    assert bayesian_model.forward_model.parameter_names == sorted(prior_shared_pars)
+    assert bayesian_model.parameter_names == sorted(prior_shared_pars)
 
     theta = bayesian_model.dict_to_array(_example_parameter_dict())
     parameters = bayesian_model.array_to_dict(theta)

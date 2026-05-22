@@ -8,6 +8,23 @@ from astropy.io import fits
 from astropy.table import QTable
 
 
+def _from_header_or_column(header, data, key):
+    if key in header:
+        return header[key]
+    if key in data.colnames:
+        return data[key]
+    else:
+        raise ValueError(f"No {key} found in the PHA file.")
+
+
+def _reject_unsupported_hduclas(header, key, bad_value):
+    if header.get(key) == bad_value:
+        raise ValueError(
+            f"The {key}={bad_value} keyword in the PHA file is not supported."
+            f"Please open an issue if this is required."
+        )
+
+
 class DataPHA:
     r"""
     Class to handle PHA data defined with OGIP standards.
@@ -82,17 +99,8 @@ class DataPHA:
         header = fits.getheader(pha_file, "SPECTRUM")
         flags = []
 
-        if header.get("HDUCLAS3") == "RATE":
-            raise ValueError(
-                f"The HDUCLAS3={header.get('HDUCLAS3')} keyword in the PHA file is not supported."
-                f"Please open an issue if this is required."
-            )
-
-        if header.get("HDUCLAS4") == "TYPE:II":
-            raise ValueError(
-                f"The HDUCLAS4={header.get('HDUCLAS4')} keyword in the PHA file is not supported."
-                f"Please open an issue if this is required."
-            )
+        _reject_unsupported_hduclas(header, "HDUCLAS3", "RATE")
+        _reject_unsupported_hduclas(header, "HDUCLAS4", "TYPE:II")
 
         if header.get("GROUPING") == 0:
             grouping = None
@@ -108,21 +116,12 @@ class DataPHA:
         else:
             raise ValueError("No QUALITY column found in the PHA file.")
 
+        backscal = _from_header_or_column(header, data, "BACKSCAL")
         if "BACKSCAL" in header:
-            backscal = header["BACKSCAL"] * np.ones_like(data["CHANNEL"], dtype=float)
-        elif "BACKSCAL" in data.colnames:
-            backscal = data["BACKSCAL"]
-        else:
-            raise ValueError("No BACKSCAL found in the PHA file.")
-
+            backscal = backscal * np.ones_like(data["CHANNEL"], dtype=float)
         backscal = np.where(backscal == 0, 1.0, backscal)
 
-        if "AREASCAL" in header:
-            areascal = header["AREASCAL"]
-        elif "AREASCAL" in data.colnames:
-            areascal = data["AREASCAL"]
-        else:
-            raise ValueError("No AREASCAL found in the PHA file.")
+        areascal = _from_header_or_column(header, data, "AREASCAL")
 
         if header.get("HDUCLAS2") == "NET":
             flags.append("NET")

@@ -1,10 +1,29 @@
+from collections.abc import Callable
+
 import numpyro.distributions as dist
 
 from jax.typing import ArrayLike
 
-from ..fit._parameter import PerObs, TiedParameter
+from ..fit._parameter import TiedParameter
 
-# TODO Put this at top level so every subpackage can use it ?
-
-PriorValueType = dist.Distribution | ArrayLike | float | PerObs | TiedParameter
+PriorValueType = dist.Distribution | ArrayLike | float | TiedParameter
 PriorDictType = dict[str, PriorValueType]
+
+"""
+Leaf-form prior callable: receives ``(nnx_leaf_path, shape)`` and returns
+either a :class:`numpyro.distributions.Distribution` (registered as a
+numpyro sample site) or any array-like value (written directly to the leaf
+with no numpyro site, useful for pre-sampled / deterministic values). Used
+directly inside :func:`~jaxspec.fit._bayesian_model._bind_priors`.
+"""
+LeafCallable = Callable[[str, tuple[int, ...]], dist.Distribution | ArrayLike]
+
+"""
+Factory-form prior callable: a zero-arg factory that, when invoked inside
+``numpyro_model``'s trace context, returns a :data:`LeafCallable`. Use this
+shape when the leaf callable needs to first sample shared / hierarchical
+hyperparameters via :func:`numpyro.sample`.
+"""
+FactoryCallable = Callable[[], LeafCallable]
+
+PriorType = PriorDictType | LeafCallable | FactoryCallable
