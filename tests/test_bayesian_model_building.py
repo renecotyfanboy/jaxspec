@@ -448,7 +448,7 @@ def test_background_model_without_background_raises_on_sampling():
     ],
 )
 def test_parse_prior_key_valid(key, expected):
-    from jaxspec.fit._bayesian_model import parse_prior_key
+    from jaxspec.fit._prior_resolution import parse_prior_key
 
     assert parse_prior_key(key) == expected
 
@@ -456,7 +456,7 @@ def test_parse_prior_key_valid(key, expected):
 @pytest.mark.fast
 @pytest.mark.parametrize("bad", ["malformed[", "key[]", "[obs]", "a[b][c]", "[", "]"])
 def test_parse_prior_key_malformed_raises(bad):
-    from jaxspec.fit._bayesian_model import parse_prior_key
+    from jaxspec.fit._prior_resolution import parse_prior_key
 
     with pytest.raises(ValueError, match="Malformed prior key"):
         parse_prior_key(bad)

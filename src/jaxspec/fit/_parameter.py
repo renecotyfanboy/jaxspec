@@ -142,7 +142,7 @@ def dict_prior(
     The dict resolution order is the same as the framework's: explicit
     ``[obs]`` > ``[*]`` > shared > miss.
     """
-    from ._bayesian_model import _split_nnx_leaf, parse_prior_key
+    from ._prior_resolution import _split_nnx_leaf, parse_prior_key
 
     # Pre-sample shared entries once.
     shared: dict[str, object] = {}

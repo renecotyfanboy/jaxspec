@@ -21,8 +21,8 @@ from jax.experimental.sparse import BCOO
 from jax.typing import ArrayLike
 from scipy.special import gammaln
 
-from ..fit._bayesian_model import parse_prior_key
 from ..fit._parameter import TiedParameter
+from ..fit._prior_resolution import _per_obs_site_name, parse_prior_key
 from ._plot import (
     BACKGROUND_COLOR,
     BACKGROUND_DATA_COLOR,
@@ -366,19 +366,32 @@ class FitResult:
 
         These show up in the posterior as ``numpyro.deterministic`` sites and
         carry no independent posterior info, so they're excluded from the
-        corner plot. Site-name construction is delegated to
-        ``_expand_scope_for_sampling`` for a single source of truth.
+        corner plot. Mirrors the site-naming convention used by
+        :func:`~jaxspec.fit._bayesian_model._resolve_tied_entry`.
         """
         names: set[str] = set()
         effective_prior = self.bayesian_fitter._effective_prior
         if not isinstance(effective_prior, dict):
             return names
+        applicable = {
+            "spectrum": set(self.bayesian_fitter.forward_model.spectrum),
+            "instrument": set(self.bayesian_fitter.forward_model.instrument),
+            "background": set(self.bayesian_fitter.forward_model.background),
+        }
         for raw_key, value in effective_prior.items():
             if not isinstance(value, TiedParameter):
                 continue
             path, scope = parse_prior_key(raw_key)
-            for _, site_name in self.bayesian_fitter._expand_scope_for_sampling(path, scope):
-                names.add(site_name)
+            if scope is None:
+                names.add(path)
+                continue
+            prefix = path.split(".", 1)[0]
+            obs_set = applicable.get(prefix, set())
+            if scope == "*":
+                for obs in obs_set:
+                    names.add(_per_obs_site_name(path, obs))
+            elif scope in obs_set:
+                names.add(_per_obs_site_name(path, scope))
         return names
 
     def _var_to_dataframes(self, var, array, obs_ids) -> list[pd.DataFrame]:
@@ -457,9 +470,9 @@ class FitResult:
         # Strip the structural prefix from shared / derived columns. Per-obs
         # columns already display "<rest>\n[<obs>]" with no prefix to strip.
         df = df.rename(
-            columns=lambda col: col.split(".", maxsplit=1)[1]
-            if "." in col and "\n[" not in col
-            else col
+            columns=lambda col: (
+                col.split(".", maxsplit=1)[1] if "." in col and "\n[" not in col else col
+            )
         )
 
         return Chain(samples=df, name=name)

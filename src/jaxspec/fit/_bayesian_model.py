@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import inspect
 import operator
-import re
 
 from collections.abc import Callable
 from functools import cached_property
@@ -38,75 +36,12 @@ from ..model.background import BackgroundModel
 from ..model.instrument import InstrumentModel
 from ._forward_model import ForwardModel
 from ._parameter import TiedParameter
-
-#: First dotted segment of every prior key. Used to validate that user keys
-#: target one of the three model layers in the forward model.
-_KNOWN_PREFIXES = ("spectrum", "instrument", "background")
-
-#: Default fold used by observations with no per-obs ``InstrumentModel``.
-#: With ``gain=None`` and ``shift=None`` it has zero ``nnx.Param`` leaves and
-#: zero state, so it never appears in the forward tree's parameter walk —
-#: ``_applicable_obs("instrument")`` stays restricted to the user-instrumented
-#: obs and no extra numpyro sites get registered.
-_IDENTITY_INSTRUMENT = InstrumentModel()
-
-
-def _bind_priors(nn_module, prior):
-    """Sample every nnx.Param leaf of ``nn_module`` from ``prior`` and return a
-    bound copy of the module with the sampled values.
-
-    Per-obs numpyro sites are registered under the literal prefix ``"forward."``
-    (e.g. ``"forward.spectrum.MOS1.powerlaw_1.norm"``). The prefix is applied
-    manually rather than via ``numpyro.handlers.scope`` — the handler's
-    site-rename interacts badly with NSFitter's UniformReparam under jaxns
-    scoring (substitution coverage breaks for handler-added sites).
-    """
-    graph_def, params_state, other_state = nnx.split(nn_module, nnx.Param, nnx.Not(nnx.Param))
-    params_pure = nnx.to_pure_dict(params_state)
-
-    _sample_leaves(params_pure, prior, prefix="", site_prefix="forward.")
-
-    nnx.replace_by_pure_dict(params_state, params_pure)
-    return nnx.merge(graph_def, params_state, other_state, copy=True)
-
-
-def _sample_leaves(
-    params: dict,
-    prior,
-    *,
-    prefix: str,
-    site_prefix: str = "",
-) -> None:
-    """Walk the pure-dict nnx params tree, binding each leaf via the prior callable.
-
-    Writes back into ``params`` in-place; safe because we read each leaf into
-    ``item`` before assigning the new value.
-
-    The prior callable receives ``(flatten_name, shape)`` and returns one of:
-
-    * a :class:`numpyro.distributions.Distribution` — registered as a numpyro
-      sample site under ``site_prefix + flatten_name`` and assigned to the leaf.
-    * any array-like value — written directly to the leaf with no numpyro site.
-      Used by the dict-form prior, where :meth:`_resolve_prior` samples each
-      entry once and the adapter routes pre-sampled values to leaves. Avoids
-      spawning redundant sites for the per-obs duplicates of shared params,
-      which keeps the trace clean for nested-sampling backends.
-    """
-    for name, item in params.items():
-        flatten_name = f"{prefix}.{name}" if prefix else name
-        if isinstance(item, dict):
-            _sample_leaves(item, prior, prefix=flatten_name, site_prefix=site_prefix)
-            continue
-        shape = jnp.shape(item)
-        result = prior(flatten_name, shape) if callable(prior) else prior[flatten_name]
-        if isinstance(result, dist.Distribution):
-            event_dim = getattr(result, "event_dim", 0)
-            batch_shape = shape[: len(shape) - event_dim]
-            params[name] = numpyro.sample(
-                f"{site_prefix}{flatten_name}", result.expand(batch_shape).to_event()
-            )
-        else:
-            params[name] = jnp.asarray(result)
+from ._prior_resolution import (
+    _KNOWN_PREFIXES,
+    _bind_priors,
+    parse_prior_key,
+    resolve_prior,
+)
 
 
 class BayesianModel:
@@ -285,7 +220,7 @@ class BayesianModel:
             spec = bound_forward.spectrum[obs_name]
             cache = fm.obs_caches[obs_name]
 
-            inst = bound_forward.instrument.get(obs_name, _IDENTITY_INSTRUMENT)
+            inst = bound_forward.instrument.get(obs_name, InstrumentModel())
             source = inst.fold(obs, cache, spec, n_points=n_points)
 
             bg = bound_forward.background.get(obs_name)
@@ -320,111 +255,17 @@ class BayesianModel:
                     obs=obs.folded_counts.data if observed else None,
                 )
 
-    # ----- Prior resolution helpers -----
+    # ----- Prior resolution -----
 
     def _resolve_prior(self) -> Callable:
-        """Normalise the user prior into a leaf callable.
+        """Normalise the user prior into a leaf callable consumed by ``_bind_priors``.
 
-        For the dict form we pre-sample every entry up-front: shared paths get
-        sampled once under their bare name (``"spectrum.powerlaw_1.alpha"``);
-        per-obs paths under their full prefixed name
-        (``"forward.spectrum.MOS1.powerlaw_1.norm"``). The returned adapter
-        routes each nnx leaf path to its already-sampled raw value — when
-        ``_bind_priors`` walks the nnx tree, every leaf is covered by a
-        pre-sampled array (no numpyro.sample inside the walk). This makes
-        ``TiedParameter`` resolution straightforward (sources are always
-        available in the samples dict, regardless of obs scope) and keeps the
-        trace clean.
+        Thin wrapper around :func:`~jaxspec.fit._prior_resolution.resolve_prior`:
+        builds the prefix → applicable-obs table this instance needs and forwards
+        the call.
         """
-        prior = self._effective_prior
-
-        if callable(prior):
-            return _normalise_callable_prior(prior)
-
-        # Dict form: sample every entry up-front, then build a lookup adapter.
-        samples: dict[tuple[str, str | None], Any] = {}
-        deferred_ties: list[tuple[str, str | None, TiedParameter]] = []
-
-        # Pass 1: sample non-tied entries with appropriate site names.
-        for raw_key, value in prior.items():
-            path, scope = parse_prior_key(raw_key)
-            if isinstance(value, TiedParameter):
-                deferred_ties.append((path, scope, value))
-                continue
-            for sample_obs, site_name in self._expand_scope_for_sampling(path, scope):
-                if isinstance(value, dist.Distribution):
-                    samples[(path, sample_obs)] = numpyro.sample(site_name, value)
-                else:
-                    samples[(path, sample_obs)] = jnp.asarray(value)
-
-        # Pass 2: resolve ties (sources are now all in `samples`). Each
-        # resolved tie is also registered as ``numpyro.deterministic`` so it
-        # appears in the trace for posterior inspection.
-        for path, scope, tied in deferred_ties:
-            src_path, src_scope = parse_prior_key(tied.tied_to)
-            for dest_obs, dest_site in self._expand_scope_for_sampling(path, scope):
-                key = _tied_source_key(src_scope, src_path, dest_obs)
-                source_value = _lookup_tied_source(samples, key, path, tied.tied_to)
-                value = tied.func(source_value)
-                samples[(path, dest_obs)] = value
-                numpyro.deterministic(dest_site, value)
-
-        return self._build_dict_adapter(samples)
-
-    def _expand_scope_for_sampling(
-        self, path: str, scope: str | None
-    ) -> list[tuple[str | None, str]]:
-        """Return ``[(sample_obs, site_name), ...]`` for a prior entry.
-
-        ``sample_obs=None`` denotes a shared sample; otherwise the specific
-        observation the sample belongs to. ``site_name`` is the numpyro site
-        name to register the sample under.
-        """
-        if scope is None:
-            return [(None, path)]
-        prefix, rest = path.split(".", 1)
-        if scope == "*":
-            applicable = sorted(self._applicable_obs(prefix))
-            return [(obs, f"forward.{prefix}.{obs}.{rest}") for obs in applicable]
-        # Specific obs
-        return [(scope, f"forward.{prefix}.{scope}.{rest}")]
-
-    def _build_dict_adapter(self, samples: dict[tuple[str, str | None], Any]) -> Callable:
-        """Return the per-leaf prior callable consumed by ``_bind_priors``.
-
-        Every per-leaf invocation returns the pre-sampled raw array — all
-        sampling happened in :meth:`_resolve_prior`. The adapter routes each
-        nnx leaf path to its matching value; ``_sample_leaves`` writes it
-        straight to the leaf with no numpyro site.
-
-        Resolution order for each leaf path ``"<prefix>.<obs>.<rest>"``:
-            1. ``samples[(base, obs)]``  (specific per-obs entry; covers ``[obs]`` and ``[*]``)
-            2. ``samples[(base, None)]``  (shared)
-            3. fall back to SpectralModelBackground's ``user_path`` re-mapping
-            4. raise KeyError              (loud failure on missing prior)
-        """
-
-        background_models = self.forward_model.background
-
-        def adapter(leaf_path: str, shape):
-            base, obs = _split_nnx_leaf(leaf_path)
-            candidates = _candidate_user_paths(base, obs, background_models)
-
-            for cand in candidates:
-                if (cand, obs) in samples:
-                    return samples[(cand, obs)]
-                if (cand, None) in samples:
-                    return samples[(cand, None)]
-
-            raise KeyError(
-                f"No prior provided for parameter {leaf_path!r}. "
-                f"Tried user-facing paths: {candidates}. "
-                f"Add an entry like {candidates[-1]!r} (shared), "
-                f"{candidates[-1] + '[*]'!r} (split), or "
-                f"{candidates[-1] + f'[{obs}]'!r} (specific) to the prior dict."
-            )
-
-        return adapter
+        applicable = {prefix: self._applicable_obs(prefix) for prefix in _KNOWN_PREFIXES}
+        return resolve_prior(self.forward_model, self._effective_prior, applicable)
 
     # ----- Cached properties for fitter machinery -----
 
@@ -625,108 +466,3 @@ class BayesianModel:
             plt.suptitle(f"Prior Predictive coverage for {key}")
             plt.tight_layout()
             plt.show()
-
-
-# ---- Module-level helpers used by the dict→callable adapter ----------------
-
-
-def _split_nnx_leaf(leaf_path: str) -> tuple[str, str]:
-    """Split ``"spectrum.MOS1.powerlaw_1.alpha"`` into ``("spectrum.powerlaw_1.alpha", "MOS1")``.
-
-    The forward_model's nnx tree has shape ``{<prefix>: {<obs>: <Module>}}``
-    where ``<prefix>`` is one of ``spectrum`` / ``instrument`` / ``background``.
-    Raises ``ValueError`` on paths with fewer than three segments;
-    :func:`dict_prior` relies on this to return ``None`` on miss.
-    """
-    parts = leaf_path.split(".")
-    if len(parts) < 3:
-        raise ValueError(f"Unexpected nnx leaf path: {leaf_path!r}")
-    prefix, obs, *rest = parts
-    return f"{prefix}.{'.'.join(rest)}", obs
-
-
-_PRIOR_KEY_RE = re.compile(r"^(?P<path>[^\[\]]+?)(?:\[(?P<scope>[^\[\]]+)\])?$")
-
-
-def parse_prior_key(key: str) -> tuple[str, str | None]:
-    """Split a prior dict key into ``(path, scope)``.
-
-    ``scope`` is ``None`` for a bare key (shared across applicable obs),
-    ``"*"`` for the wildcard (split across all applicable obs), or a specific
-    observation name.
-    """
-    match = _PRIOR_KEY_RE.match(key)
-    if match is None:
-        raise ValueError(f"Malformed prior key: {key!r}")
-    return match.group("path"), match.group("scope")
-
-
-def _normalise_callable_prior(prior: Callable) -> Callable:
-    """Resolve a callable prior to its 2-arg leaf-callable form.
-
-    Two callable shapes are auto-detected by argument count:
-      * 2 args → leaf callable ``(path, shape) -> Distribution``; used as-is.
-      * 0 args → factory ``() -> leaf_callable``; invoked inside the trace
-        so it can sample shared/hierarchical params before returning
-        the leaf callable.
-    """
-    n_params = len(inspect.signature(prior).parameters)
-    if n_params == 2:
-        return prior
-    if n_params == 0:
-        return prior()
-    raise TypeError(
-        f"Callable prior must take either 0 args (factory `() -> leaf_callable`) "
-        f"or 2 args (leaf callable `(path, shape) -> Distribution`); got {n_params}."
-    )
-
-
-def _tied_source_key(
-    src_scope: str | None, src_path: str, dest_obs: str | None
-) -> tuple[str, str | None]:
-    """Map a tied source's scope to the (path, obs) key under which it was sampled.
-
-    Three cases:
-      * source scope unscoped → ``(src_path, None)``
-      * source scope ``"*"``  → ``(src_path, dest_obs)`` (element-wise tie)
-      * specific source scope → ``(src_path, src_scope)`` (same value for all dests)
-    """
-    if src_scope is None:
-        return (src_path, None)
-    if src_scope == "*":
-        return (src_path, dest_obs)
-    return (src_path, src_scope)
-
-
-def _lookup_tied_source(
-    samples: dict[tuple[str, str | None], Any],
-    key: tuple[str, str | None],
-    dest_path: str,
-    tied_to: str,
-):
-    """Fetch the source sample for a tied parameter; raise with a rich message on miss."""
-    if key not in samples:
-        raise ValueError(
-            f"TiedParameter {dest_path!r} references unknown source "
-            f"{tied_to!r} (resolved key={key})."
-        )
-    return samples[key]
-
-
-def _candidate_user_paths(base: str, obs: str, background_models) -> list[str]:
-    """Resolve user-facing prior keys for an nnx leaf base.
-
-    Background models with wrapper segments (``SpectralModelBackground`` nests
-    under ``spectral_model.``) expose a flattened user-facing path. When the
-    base is a background path, append the flattened candidate so the adapter
-    can match the user's dict key form.
-    """
-    candidates = [base]
-    if base.startswith("background."):
-        bg = background_models.get(obs)
-        if bg is not None:
-            inner = base[len("background.") :]
-            user_inner = bg.user_path(inner)
-            if user_inner != inner:
-                candidates.append(f"background.{user_inner}")
-    return candidates
