@@ -21,6 +21,8 @@ from jax.experimental.sparse import BCOO
 from jax.typing import ArrayLike
 from scipy.special import gammaln
 
+from ..fit._bayesian_model import parse_prior_key
+from ..fit._parameter import TiedParameter
 from ._plot import (
     BACKGROUND_COLOR,
     BACKGROUND_DATA_COLOR,
@@ -38,7 +40,6 @@ from ._plot import (
 
 if TYPE_CHECKING:
     from ..fit import BayesianModel
-    from ..model.background import BackgroundModel
 
 
 _Y_UNITS_FOR_TYPE: dict[str, Any] = {
@@ -72,13 +73,11 @@ class FitResult:
         self,
         bayesian_fitter: BayesianModel,
         inference_data: az.InferenceData,
-        background_model: BackgroundModel = None,
     ):
         self.model = bayesian_fitter.spectral_model
         self.bayesian_fitter = bayesian_fitter
         self.inference_data = inference_data
         self.obsconfs = bayesian_fitter.forward_model.observations
-        self.background_model = background_model
 
         # Add the model used in fit to the metadata
         for group in self.inference_data.groups():
@@ -141,9 +140,6 @@ class FitResult:
         Returns an empty dict when the user passed a callable prior — there's
         no static key set to enumerate.
         """
-        from ..fit._bayesian_model import parse_prior_key
-        from ..fit._parameter import TiedParameter
-
         fm = self.bayesian_fitter.forward_model
         effective_prior = self.bayesian_fitter._effective_prior
 
@@ -373,9 +369,6 @@ class FitResult:
         corner plot. Site-name construction is delegated to
         ``_expand_scope_for_sampling`` for a single source of truth.
         """
-        from ..fit._bayesian_model import parse_prior_key
-        from ..fit._parameter import TiedParameter
-
         names: set[str] = set()
         effective_prior = self.bayesian_fitter._effective_prior
         if not isinstance(effective_prior, dict):
@@ -658,7 +651,10 @@ class FitResult:
                     legend_plots += extra_plots
                     legend_labels += extra_labels
 
-                if self.background_model is not None and plot_background:
+                if (
+                    self.bayesian_fitter.forward_model.background.get(obs_id) is not None
+                    and plot_background
+                ):
                     extra_plots, extra_labels = self._plot_background_overlay(
                         ax[0],
                         obsconf,
@@ -920,8 +916,6 @@ def _resolve_shared_entry(
     Returns ``None`` and appends to ``deferred_ties`` when the entry is a
     ``TiedParameter`` — the caller should skip this base for now.
     """
-    from ..fit._parameter import TiedParameter
-
     if isinstance(value, TiedParameter):
         deferred_ties.append((base, value, obs_axis))
         return None
@@ -941,8 +935,6 @@ def _resolve_per_obs_entry(
     Returns ``None`` when there's nothing to assemble (empty obs_axis, or a
     ``TiedParameter`` that was deferred).
     """
-    from ..fit._parameter import TiedParameter
-
     per_obs: dict[str, ArrayLike] = {}
     for obs in obs_axis:
         value = scopes.get(obs, scopes.get("*"))

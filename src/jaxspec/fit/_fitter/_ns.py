@@ -186,8 +186,4 @@ class NSFitter(BayesianModelFitter):
                 results.total_num_likelihood_evaluations
             )
 
-        return FitResult(
-            self,
-            inference_data,
-            background_model=self.background_model,
-        )
+        return FitResult(self, inference_data)

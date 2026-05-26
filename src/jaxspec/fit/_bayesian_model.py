@@ -5,7 +5,6 @@ import operator
 import re
 
 from collections.abc import Callable
-from copy import deepcopy
 from functools import cached_property
 from typing import Any
 
@@ -44,6 +43,13 @@ from ._parameter import TiedParameter
 #: target one of the three model layers in the forward model.
 _KNOWN_PREFIXES = ("spectrum", "instrument", "background")
 
+#: Default fold used by observations with no per-obs ``InstrumentModel``.
+#: With ``gain=None`` and ``shift=None`` it has zero ``nnx.Param`` leaves and
+#: zero state, so it never appears in the forward tree's parameter walk —
+#: ``_applicable_obs("instrument")`` stays restricted to the user-instrumented
+#: obs and no extra numpyro sites get registered.
+_IDENTITY_INSTRUMENT = InstrumentModel()
+
 
 def _bind_priors(nn_module, prior):
     """Sample every nnx.Param leaf of ``nn_module`` from ``prior`` and return a
@@ -57,23 +63,24 @@ def _bind_priors(nn_module, prior):
     """
     graph_def, params_state, other_state = nnx.split(nn_module, nnx.Param, nnx.Not(nnx.Param))
     params_pure = nnx.to_pure_dict(params_state)
-    new_params = deepcopy(params_pure)
 
-    _sample_leaves(params_pure, new_params, prior, prefix="", site_prefix="forward.")
+    _sample_leaves(params_pure, prior, prefix="", site_prefix="forward.")
 
-    nnx.replace_by_pure_dict(params_state, new_params)
+    nnx.replace_by_pure_dict(params_state, params_pure)
     return nnx.merge(graph_def, params_state, other_state, copy=True)
 
 
 def _sample_leaves(
     params: dict,
-    new_params: dict,
     prior,
     *,
     prefix: str,
     site_prefix: str = "",
 ) -> None:
     """Walk the pure-dict nnx params tree, binding each leaf via the prior callable.
+
+    Writes back into ``params`` in-place; safe because we read each leaf into
+    ``item`` before assigning the new value.
 
     The prior callable receives ``(flatten_name, shape)`` and returns one of:
 
@@ -88,24 +95,18 @@ def _sample_leaves(
     for name, item in params.items():
         flatten_name = f"{prefix}.{name}" if prefix else name
         if isinstance(item, dict):
-            _sample_leaves(
-                item,
-                new_params[name],
-                prior,
-                prefix=flatten_name,
-                site_prefix=site_prefix,
-            )
+            _sample_leaves(item, prior, prefix=flatten_name, site_prefix=site_prefix)
             continue
         shape = jnp.shape(item)
         result = prior(flatten_name, shape) if callable(prior) else prior[flatten_name]
         if isinstance(result, dist.Distribution):
             event_dim = getattr(result, "event_dim", 0)
             batch_shape = shape[: len(shape) - event_dim]
-            new_params[name] = numpyro.sample(
+            params[name] = numpyro.sample(
                 f"{site_prefix}{flatten_name}", result.expand(batch_shape).to_event()
             )
         else:
-            new_params[name] = jnp.asarray(result)
+            params[name] = jnp.asarray(result)
 
 
 class BayesianModel:
@@ -176,18 +177,6 @@ class BayesianModel:
     @property
     def background(self) -> dict[str, BackgroundModel]:
         return self.forward_model.background
-
-    @property
-    def background_model(self) -> BackgroundModel | None:
-        """Representative background model, or ``None`` if no obs has a bg.
-
-        Backward-compat accessor for fitter / FitResult code that predates the
-        per-obs background dict. Returns the first bg model in iteration order;
-        callers needing the full per-obs picture should use :attr:`background`.
-        """
-        for bg in self.forward_model.background.values():
-            return bg
-        return None
 
     @property
     def settings(self) -> dict[str, Any]:
@@ -279,8 +268,6 @@ class BayesianModel:
 
     def numpyro_model(self, observed: bool = True):
         """Build the full numpyro model: bind priors, compute counts, register likelihoods."""
-        import numpy as np
-
         prior_fn = self._resolve_prior()
 
         # Clone the forward_model per call so each ``_bind_priors`` invocation
@@ -298,13 +285,8 @@ class BayesianModel:
             spec = bound_forward.spectrum[obs_name]
             cache = fm.obs_caches[obs_name]
 
-            inst = bound_forward.instrument.get(obs_name)
-            if inst is not None:
-                source = inst.fold(obs, cache, spec, n_points=n_points)
-            else:
-                energies = np.asarray(obs.in_energies)
-                flux = spec.flux_func(*energies, n_points=n_points)
-                source = jnp.clip(cache["transfer_matrix"] @ flux, min=1e-6)
+            inst = bound_forward.instrument.get(obs_name, _IDENTITY_INSTRUMENT)
+            source = inst.fold(obs, cache, spec, n_points=n_points)
 
             bg = bound_forward.background.get(obs_name)
             if bg is not None:
@@ -653,7 +635,8 @@ def _split_nnx_leaf(leaf_path: str) -> tuple[str, str]:
 
     The forward_model's nnx tree has shape ``{<prefix>: {<obs>: <Module>}}``
     where ``<prefix>`` is one of ``spectrum`` / ``instrument`` / ``background``.
-    The leaf path is always at least three segments.
+    Raises ``ValueError`` on paths with fewer than three segments;
+    :func:`dict_prior` relies on this to return ``None`` on miss.
     """
     parts = leaf_path.split(".")
     if len(parts) < 3:

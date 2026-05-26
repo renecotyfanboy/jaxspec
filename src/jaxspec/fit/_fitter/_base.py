@@ -8,7 +8,6 @@ from jax.numpy import concatenate
 from numpyro.infer import Predictive
 
 from ...analysis.results import FitResult
-from ...model.background import SubtractedBackground
 from .._bayesian_model import BayesianModel
 
 
@@ -54,9 +53,10 @@ class BayesianModelFitter(BayesianModel, ABC):
             )
 
             # TODO : should we really track the likelihood on the background model?
-            if self.background_model is not None and not isinstance(
-                self.background_model, SubtractedBackground
-            ):
+            has_stochastic_bg = any(
+                bg.is_stochastic for bg in self.forward_model.background.values()
+            )
+            if has_stochastic_bg:
                 log_likelihood["observed_background.all"] = concatenate(
                     [
                         ll
@@ -118,9 +118,9 @@ class BayesianModelFitter(BayesianModel, ABC):
 
         predictive_parameters = []
 
-        for key, value in self.forward_model.observations.items():
+        for key in self.forward_model.observations:
             predictive_parameters.append(f"observed.{key}")
-            if self.background_model is not None:
+            if self.forward_model.background.get(key) is not None:
                 predictive_parameters.append(f"observed_background.{key}")
 
         inference_data.posterior_predictive = inference_data.posterior_predictive[

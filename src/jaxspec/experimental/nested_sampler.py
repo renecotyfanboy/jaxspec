@@ -71,8 +71,4 @@ class NSFitter(BayesianModelFitter):
             posterior, num_chains=1, use_transformed_model=use_transformed_model
         )
 
-        return FitResult(
-            self,
-            inference_data,
-            background_model=self.background_model,
-        )
+        return FitResult(self, inference_data)
