@@ -145,19 +145,20 @@ class FitResult:
 
         posterior = az.extract(self.inference_data, combined=False)
         chain_draw = (posterior.sizes["chain"], posterior.sizes["draw"])
-        data_vars = {name: jnp.asarray(da.data) for name, da in posterior.data_vars.items()}
-
-        # Group entries by their base path so [obs] / [*] / shared get assembled together.
-        by_base: dict[str, dict[str | None, Any]] = {}
-        for raw_key, value in effective_prior.items():
-            base, scope = parse_prior_key(raw_key)
-            by_base.setdefault(base, {})[scope] = value
 
         prefix_to_obs = {
             "spectrum": list(fm.observations.keys()),
             "instrument": list(fm.instrument.keys()),
             "background": list(fm.background.keys()),
         }
+        needed = _needed_posterior_names(effective_prior, prefix_to_obs)
+        data_vars = {name: jnp.asarray(posterior[name].data) for name in needed}
+
+        # Group entries by their base path so [obs] / [*] / shared get assembled together.
+        by_base: dict[str, dict[str | None, Any]] = {}
+        for raw_key, value in effective_prior.items():
+            base, scope = parse_prior_key(raw_key)
+            by_base.setdefault(base, {})[scope] = value
 
         out: dict[str, ArrayLike] = {}
         deferred_ties: list[tuple[str, TiedParameter, list[str]]] = []
@@ -919,6 +920,33 @@ def _style_axes(
 
 
 # ---- Module-level helpers for input_parameters --------------------------------
+
+
+def _needed_posterior_names(effective_prior, prefix_to_obs) -> set[str]:
+    """Site names that :attr:`FitResult.input_parameters` will look up, derived
+    from ``effective_prior`` alone. Shared ``dist.Distribution`` entries
+    contribute the bare path; per-obs entries contribute
+    ``_per_obs_site_name(path, obs)`` for each applicable obs.
+    ``TiedParameter`` and fixed values contribute nothing.
+    """
+    needed: set[str] = set()
+    by_base: dict[str, dict[str | None, Any]] = {}
+    for raw_key, value in effective_prior.items():
+        base, scope = parse_prior_key(raw_key)
+        by_base.setdefault(base, {})[scope] = value
+
+    for base, scopes in by_base.items():
+        prefix = base.split(".", 1)[0]
+        obs_axis = prefix_to_obs.get(prefix, [])
+        if None in scopes:
+            if isinstance(scopes[None], dist.Distribution):
+                needed.add(base)
+        else:
+            for obs in obs_axis:
+                value = scopes.get(obs, scopes.get("*"))
+                if isinstance(value, dist.Distribution):
+                    needed.add(_per_obs_site_name(base, obs))
+    return needed
 
 
 def _resolve_shared_entry(
