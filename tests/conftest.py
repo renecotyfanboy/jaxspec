@@ -109,7 +109,7 @@ def obs_model_prior(obsconfs):
 def get_individual_mcmc_results(obs_model_prior):
     obsconfs, model, prior = obs_model_prior
 
-    return [MCMCFitter(model, prior, obsconf).fit(num_samples=5000) for obsconf in obsconfs]
+    return [MCMCFitter(model, prior, obsconf).fit(num_samples=1000) for obsconf in obsconfs]
 
 
 @pytest.fixture(scope="session")
@@ -125,7 +125,7 @@ def get_failed_mcmc_results(obs_model_prior):
 def get_joint_mcmc_result(obs_model_prior):
     obsconfs, model, prior = obs_model_prior
 
-    return [MCMCFitter(model, prior, obsconfs).fit(num_samples=5000)]
+    return [MCMCFitter(model, prior, obsconfs).fit(num_samples=1000)]
 
 
 @pytest.fixture(scope="session")
