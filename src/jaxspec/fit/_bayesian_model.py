@@ -16,6 +16,7 @@ import numpyro.distributions as dist
 from flax import nnx
 from jax import Array
 from jax.random import key as rng_key
+from jaxtyping import ArrayLike
 from numpyro.distributions import Poisson, TransformedDistribution
 from numpyro.infer import Predictive
 from numpyro.infer.inspect import get_model_relations
@@ -42,6 +43,13 @@ from ._prior_resolution import (
     parse_prior_key,
     resolve_prior,
 )
+
+
+def redistribute(integrated_spectrum, old_e_low, old_e_high, e_low, e_high):
+    # Suppose old_e_high[i] == old_e_low[i+1]
+    edges = jnp.concatenate([old_e_low[:1], old_e_high])
+    cumflux = jnp.concatenate([jnp.zeros(1), jnp.cumsum(integrated_spectrum)])
+    return jnp.interp(e_high, edges, cumflux) - jnp.interp(e_low, edges, cumflux)
 
 
 class BayesianModel:
@@ -76,6 +84,7 @@ class BayesianModel:
         instrument_model: dict[str, InstrumentModel | None] | None = None,
         sparsify_matrix: bool = False,
         n_points: int = 2,
+        energy_grid: ArrayLike | None = None,
     ):
         self.forward_model = ForwardModel(
             model,
@@ -84,7 +93,9 @@ class BayesianModel:
             instrument_model=instrument_model,
             sparsify_matrix=sparsify_matrix,
             n_points=n_points,
+            energy_grid=energy_grid,
         )
+
         self._user_prior = prior
         self._effective_prior = self._build_prior_dict()
         self._validate_prior_dict()
@@ -215,15 +226,28 @@ class BayesianModel:
 
         fm = self.forward_model
         n_points = fm.settings["n_points"]
+        energy_grid = fm.settings["energy_grid"]
+
+        if energy_grid is not None:
+            energies = np.stack([energy_grid[:-1], energy_grid[1:]])
+            spectral_model = next(iter(bound_forward.spectrum.values()))
+            shared_source_flux = spectral_model.flux_func(*energies, n_points=n_points)
 
         for obs_name, obs in fm.observations.items():
             spec = bound_forward.spectrum[obs_name]
             cache = fm.obs_caches[obs_name]
-
             inst = bound_forward.instrument.get(obs_name, InstrumentModel())
-            source = inst.fold(obs, cache, spec, n_points=n_points)
+
+            if energy_grid is not None:
+                source_flux = inst.fold(shared_source_flux, cache, eval_energies=energies)
+
+            else:
+                shifted_energies = inst.apply_shift(obs.in_energies)
+                source_flux = spectral_model.flux_func(*shifted_energies, n_points=n_points)
+                source_flux = inst.fold(source_flux, cache)
 
             bg = bound_forward.background.get(obs_name)
+
             if bg is not None:
                 if getattr(obs, "folded_background", None) is None:
                     raise ValueError(
@@ -232,7 +256,7 @@ class BayesianModel:
                     )
                 bkg_rate = bg(obs)
                 bkg_in_obs = bkg_rate * obs.folded_backratio.data
-                total = source + bkg_in_obs
+                total = source_flux + bkg_in_obs
 
                 if bg.is_stochastic:
                     with numpyro.plate(
@@ -246,7 +270,7 @@ class BayesianModel:
                 else:
                     numpyro.deterministic(f"observed_background.{obs_name}", bkg_rate)
             else:
-                total = source
+                total = source_flux
 
             with numpyro.plate(f"observed_plate.{obs_name}", len(obs.folded_counts)):
                 numpyro.sample(

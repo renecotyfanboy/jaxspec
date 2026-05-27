@@ -4,10 +4,16 @@ from abc import abstractmethod
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 from flax import nnx
 from jax.typing import ArrayLike
+
+
+def redistribute(integrated_spectrum, old_e_low, old_e_high, e_low, e_high):
+    # Suppose old_e_high[i] == old_e_low[i+1]
+    edges = jnp.concatenate([old_e_low[:1], old_e_high])
+    cumflux = jnp.concatenate([jnp.zeros(1), jnp.cumsum(integrated_spectrum)])
+    return jnp.interp(e_high, edges, cumflux) - jnp.interp(e_low, edges, cumflux)
 
 
 class GainModel(nnx.Module):
@@ -91,13 +97,13 @@ class InstrumentModel(nnx.Module):
         self.gain = gain
         self.shift = shift
 
-    def _apply_shift(self, energies: ArrayLike) -> ArrayLike:
+    def apply_shift(self, energies: ArrayLike) -> ArrayLike:
         """Apply :attr:`shift` to ``energies`` and clip away non-positive values."""
         if self.shift is None:
             return energies
         return jnp.clip(self.shift(energies), min=1e-6)
 
-    def _apply_gain(self, flux, energies: ArrayLike):
+    def apply_gain(self, flux, energies: ArrayLike):
         """Multiply ``flux`` (or each branch in a pytree) by :attr:`gain`'s factor."""
         if self.gain is None:
             return flux
@@ -106,34 +112,21 @@ class InstrumentModel(nnx.Module):
 
     def fold(
         self,
-        observation,
+        spectrum: ArrayLike,
         cache: dict,
-        spectral_model,
-        *,
-        n_points: int = 2,
-        split_branches: bool = False,
+        eval_energies: ArrayLike | None = None,
     ):
-        """Return expected counts in folded space (or a per-branch pytree).
-
-        Parameters:
-            observation: The :class:`~jaxspec.data.ObsConfiguration` for this
-                pointing (used for energy-grid metadata).
-            cache: Per-observation JAX-typed views built by
-                :class:`~jaxspec.fit._forward_model.ForwardModel`. Always
-                contains ``"transfer_matrix"``; also contains
-                ``"redistribution"``, ``"grouping"``, ``"area"``, ``"exposure"``
-                when :attr:`requires_components` is ``True``.
-            spectral_model: The per-obs spectral model replica (already
-                parameter-bound).
-            n_points: Quadrature points per energy bin for flux integration.
-            split_branches: If ``True``, return a pytree with one folded counts
-                array per additive branch of the spectral model.
         """
-        energies = self._apply_shift(np.asarray(observation.in_energies))
+        Fold the input spectrum (or branches of a pytree) into the instrument using the pre-computed transfer matrix.
+        """
 
-        flux = spectral_model.flux_func(
-            *energies, n_points=n_points, return_branches=split_branches
-        )
-        flux = self._apply_gain(flux, energies)
+        # Current contract: shift is applied here if a grid is provided, else in the forward model
+        if eval_energies is not None:
+            eval_energies = self.apply_shift(eval_energies)
+            spectrum = jax.tree.map(
+                lambda s: redistribute(s, *eval_energies, *cache["in_energies"]), spectrum
+            )
 
-        return jax.tree.map(lambda f: jnp.clip(cache["transfer_matrix"] @ f, min=1e-6), flux)
+        spectrum = jax.tree.map(lambda s: self.apply_gain(s, cache["in_energies"]), spectrum)
+
+        return jax.tree.map(lambda s: jnp.clip(cache["transfer_matrix"] @ s, min=1e-6), spectrum)

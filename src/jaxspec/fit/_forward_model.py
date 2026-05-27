@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import jax.numpy as jnp
 
 from flax import nnx
+from jax.typing import ArrayLike
 
 from ..data import ObsConfiguration
 from ..data.obsconf import to_jax_matrix
@@ -40,7 +41,9 @@ def _build_obs_cache(
     """
     cache: dict[str, Any] = {
         "transfer_matrix": to_jax_matrix(obs.transfer_matrix.data, sparse=sparse),
+        "in_energies": jnp.asarray(obs.in_energies),
     }
+
     if instrument is not None and instrument.requires_components:
         cache["redistribution"] = to_jax_matrix(obs.redistribution.data, sparse=sparse)
         cache["grouping"] = to_jax_matrix(obs.grouping.data, sparse=sparse)
@@ -130,6 +133,7 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
         instrument_model: dict[str, InstrumentModel | None] | None = None,
         sparsify_matrix: bool = False,
         n_points: int = 2,
+        energy_grid: ArrayLike | None = None,
     ):
         obs_dict = _normalise_observations(observations)
         obs_names = list(obs_dict)
@@ -157,7 +161,7 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
                 name: _build_obs_cache(obs, self.instrument.get(name), sparse=sparsify_matrix)
                 for name, obs in obs_dict.items()
             },
-            settings={"sparse": sparsify_matrix, "n_points": n_points},
+            settings={"sparse": sparsify_matrix, "n_points": n_points, "energy_grid": energy_grid},
         )
 
         # Background models with caches (e.g. SpectralModelBackground transfer matrix,
