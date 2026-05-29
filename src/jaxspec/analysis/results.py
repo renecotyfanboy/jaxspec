@@ -17,12 +17,11 @@ import xarray as xr
 from astropy.cosmology import Cosmology, Planck18
 from astropy.units import Unit
 from chainconsumer import Chain, ChainConsumer, PlotConfig
-from jax.experimental.sparse import BCOO
 from jax.typing import ArrayLike
 from scipy.special import gammaln
 
 from ..fit._parameter import TiedParameter
-from ..fit._prior_resolution import _per_obs_site_name, parse_prior_key
+from ..fit._prior_resolution import _enumerate_leaves, _per_obs_site_name, parse_prior_key
 from ._plot import (
     BACKGROUND_COLOR,
     BACKGROUND_DATA_COLOR,
@@ -96,34 +95,72 @@ class FitResult:
         return bool((rhat.to_array() < 1.01).all())
 
     def _ppc_folded_branches(self, obs_id):
-        # TODO : move this to the forward model class, it has nothing to do in here
-        obs = self.obsconfs[obs_id]
+        """Per-branch posterior-predictive counts for ``obs_id``.
 
-        idx = list(self.obsconfs.keys()).index(obs_id)
-        obs_parameters = jax.tree.map(lambda x: x[..., idx], self.spectrum_parameters)
-
-        if self.bayesian_fitter.settings.get("sparse", False):
-            transfer_matrix = BCOO.from_scipy_sparse(
-                obs.transfer_matrix.data.to_scipy_sparse().tocsr()
+        Returns ``{branch_name: (n_chains, n_draws, n_bins)}`` count arrays
+        suitable for component overlays (each branch is one
+        ``additive * multiplicative*…`` path in the spectral model). Routes
+        through :meth:`ForwardModel.evaluate` so the same spectral + folding
+        path used for inference is used here, and the per-obs instrument
+        gain/shift is honored (the old in-`results` reimplementation skipped
+        the instrument model — this is the intended correctness improvement
+        from the migration).
+        """
+        fm = self.bayesian_fitter.forward_model
+        inputs = self._leaf_inputs_from_input_parameters()
+        if not inputs:
+            raise ValueError(
+                "Per-component PPC overlay is unavailable for callable priors "
+                "(no static parameter set to enumerate)."
             )
 
-        else:
-            transfer_matrix = np.asarray(obs.transfer_matrix.data.todense())
+        @jax.jit
+        @jax.vmap
+        @jax.vmap
+        def evaluate_one(inp):
+            return fm.evaluate(inp, split_branches=True, with_background=False)[obs_id]["source"]
 
-        energies = obs.in_energies
+        folded = evaluate_one(inputs)  # {branch: (chain, draw, n_bins)}
+        return jax.tree.map(lambda flux: np.random.poisson(np.asarray(flux)), folded)
 
-        flux_func = jax.jit(
-            jax.vmap(
-                jax.vmap(lambda p: self.model.photon_flux(*energies, params=p, split_branches=True))
-            )
-        )
+    def _leaf_inputs_from_input_parameters(self) -> dict[str, ArrayLike]:
+        """Convert user-path :attr:`input_parameters` into the flat leaf-path
+        inputs dict that :meth:`ForwardModel.evaluate` consumes.
 
-        convolve_func = jax.jit(
-            jax.vmap(jax.vmap(lambda flux: jnp.clip(transfer_matrix @ flux, a_min=1e-6)))
-        )
-        return jax.tree.map(
-            lambda flux: np.random.poisson(convolve_func(flux)), flux_func(obs_parameters)
-        )
+        Inverts the broadcasting :attr:`input_parameters` applies: shared
+        params (broadcast to ``(..., n_obs)``) get sliced per obs, ``[*]``
+        stacks (same shape) get sliced per obs by index, and ragged
+        ``{obs: array}`` entries get looked up by name. The result is keyed
+        by nnx leaf paths (``"<prefix>.<obs>.<rest>"``) and every
+        ``nnx.Param`` leaf of the forward model is covered — missing keys
+        would surface as a :func:`bind_inputs` ``KeyError``.
+        """
+        fm = self.bayesian_fitter.forward_model
+        leaves = _enumerate_leaves(fm)  # {user_path: {obs_name: leaf_path}}
+        prefix_to_obs = {
+            "spectrum": list(fm.observations.keys()),
+            "instrument": list(fm.instrument.keys()),
+            "background": list(fm.background.keys()),
+        }
+
+        params = self.input_parameters
+        inputs: dict[str, ArrayLike] = {}
+        for user_path, by_obs in leaves.items():
+            value = params.get(user_path)
+            if value is None:
+                continue
+            prefix = user_path.split(".", 1)[0]
+            obs_order = prefix_to_obs[prefix]
+            for obs_name, leaf_path in by_obs.items():
+                if isinstance(value, dict):
+                    # Ragged per-obs ``{obs: arr}``: pick by name.
+                    if obs_name in value:
+                        inputs[leaf_path] = value[obs_name]
+                else:
+                    # Trailing obs axis (shared broadcast OR stacked [*]).
+                    obs_idx = obs_order.index(obs_name)
+                    inputs[leaf_path] = value[..., obs_idx]
+        return inputs
 
     @cached_property
     def input_parameters(self) -> dict[str, ArrayLike]:
@@ -134,8 +171,9 @@ class FitResult:
 
         Shared parameters are broadcast along a trailing observation axis and
         per-observation samples are stacked on that same axis when every
-        observation leaf has the same shape. Ragged per-observation entries are
-        kept as ``{observation_name: array}``.
+        applicable observation is present with the same shape. Ragged
+        per-observation entries, and entries covering only a subset of the
+        applicable observations, are kept as ``{observation_name: array}``.
 
         Returns an empty dict when the user passed a callable prior — there's
         no static key set to enumerate.
@@ -971,7 +1009,8 @@ def _resolve_shared_entry(
 def _resolve_per_obs_entry(
     scopes, base, prefix, rest, obs_axis, data_vars, chain_draw, deferred_ties
 ) -> ArrayLike | dict | None:
-    """Materialise a per-obs prior entry; stack across obs when shapes agree.
+    """Materialise a per-obs prior entry; stack across obs when every applicable
+    obs is present with the same shape, else return a ``{obs: array}`` dict.
 
     Returns ``None`` when there's nothing to assemble (empty obs_axis, or a
     ``TiedParameter`` that was deferred).
@@ -994,7 +1033,12 @@ def _resolve_per_obs_entry(
     if not per_obs:
         return None
     shapes = {arr.shape for arr in per_obs.values()}
-    if len(shapes) == 1:
+    # Only collapse into a trailing obs axis when every applicable obs is present
+    # AND shapes agree. A partial set (a leaf that exists on only some obs) or a
+    # ragged set is returned as ``{obs: array}`` so consumers
+    # (e.g. ``_leaf_inputs_from_input_parameters``) select by name rather than by
+    # full-obs-order position — otherwise the compacted axis misaligns.
+    if len(shapes) == 1 and len(per_obs) == len(obs_axis):
         return jnp.stack(list(per_obs.values()), axis=-1)
     return per_obs
 

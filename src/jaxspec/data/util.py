@@ -3,12 +3,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar
 
 import jax
-import jax.numpy as jnp
-import numpy as np
 import numpyro
 
 from astropy.io import fits
-from jax.experimental.sparse import BCOO
 from numpyro import handlers
 
 from ..model.abc import SpectralModel
@@ -138,46 +135,57 @@ def forward_model_with_multiple_inputs(
 ):
     """Evaluate a spectral model for a batch of parameter sets.
 
-    Uses ``jax.vmap`` over the parameter dimensions and folds the resulting
-    photon flux through the observation's transfer matrix to produce expected
-    counts.
+    Delegates to :meth:`~jaxspec.fit._forward_model.ForwardModel.evaluate` so
+    ``fakeit``, posterior-predictive checks, and the numpyro likelihood share
+    one spectral + folding code path. ``jax.vmap`` is applied per parameter
+    batch dimension.
 
     Parameters:
         model: The spectral model.
         parameters: A dict mapping dotted-path parameter names (e.g.
             ``"powerlaw_1.alpha"``) to arrays whose shape encodes
-            the batch dimensions.
+            the batch dimensions. Every model parameter must be supplied —
+            there is no default fallback; a missing key raises ``ValueError``.
         obs_configuration: The observation configuration providing the energy
             grid and transfer matrix.
         sparse: Whether to use a sparse BCOO transfer matrix.
 
     Returns:
-        Expected counts with shape ``(*batch_dims, n_channels)``.
+        Expected counts with shape ``(*batch_dims, n_channels)``, clipped at
+        ``1e-6`` (the ``InstrumentModel.fold`` floor).
     """
-    energies = np.asarray(obs_configuration.in_energies)
+    from ..fit._forward_model import ForwardModel
+    from ..fit._prior_resolution import _enumerate_leaves
+
+    forward = ForwardModel(model, {"data": obs_configuration}, sparsify_matrix=sparse)
+
+    # fakeit has no prior-style defaults: every model parameter must be supplied.
+    # Validate up front so a forgotten key fails with a parameter-centric message
+    # rather than the prior-dict KeyError ``evaluate`` would raise lazily inside
+    # the JIT trace.
+    required = {
+        up.removeprefix("spectrum.")
+        for up in _enumerate_leaves(forward)
+        if up.startswith("spectrum.")
+    }
+    missing = required - set(parameters)
+    if missing:
+        raise ValueError(
+            f"fakeit requires a value for every model parameter; missing: {sorted(missing)}."
+        )
+
+    # Promote user keys ("tbabs_1.nh", "powerlaw_1.alpha") to leaf paths
+    # matching the single-obs ForwardModel tree ("spectrum.data.<rest>").
+    inputs = {f"spectrum.data.{path}": value for path, value in parameters.items()}
     parameter_dims = next(iter(parameters.values())).shape
 
-    def flux_func(p):
-        return model.photon_flux(*energies, params=p)
+    def evaluate(inp):
+        return forward.evaluate(inp)["data"]["source"]
 
     for _ in parameter_dims:
-        flux_func = jax.vmap(flux_func)
+        evaluate = jax.vmap(evaluate)
 
-    flux_func = jax.jit(flux_func)
-
-    if sparse:
-        # folding.transfer_matrix.data.density > 0.015 is a good criterion to consider sparsify
-        transfer_matrix = BCOO.from_scipy_sparse(
-            obs_configuration.transfer_matrix.data.to_scipy_sparse().tocsr()
-        )
-        expected_counts = transfer_matrix @ flux_func(parameters).T
-
-    else:
-        transfer_matrix = np.asarray(obs_configuration.transfer_matrix.data.todense())
-        expected_counts = jnp.matvec(transfer_matrix, flux_func(parameters))
-
-    # The result is clipped at 1e-6 to avoid 0 round-off and diverging likelihoods
-    return jnp.clip(expected_counts, a_min=1e-6)
+    return jax.jit(evaluate)(inputs)
 
 
 def fakeit_for_multiple_parameters(

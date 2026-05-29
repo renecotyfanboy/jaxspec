@@ -86,9 +86,9 @@ def joint_prior_factory(
     component_to_idx = {comp: i for i, comp in enumerate(components)}
 
     def lookup(leaf_path: str) -> ArrayLike | None:
-        # ``_bind_priors`` calls the prior callable with paths like
-        # ``"spectrum.<obs>.powerlaw_1.alpha"`` (the obs segment is part of
-        # the nnx tree shape). Strip it to match user-facing component paths.
+        # The callable form of ``sample_prior`` calls the prior callable with
+        # paths like ``"spectrum.<obs>.powerlaw_1.alpha"`` (the obs segment is
+        # part of the nnx tree shape). Strip it to match user-facing paths.
         parts = leaf_path.split(".")
         if len(parts) >= 3:
             stripped = f"{parts[0]}.{'.'.join(parts[2:])}"

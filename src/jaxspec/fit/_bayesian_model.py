@@ -39,17 +39,9 @@ from ._forward_model import ForwardModel
 from ._parameter import TiedParameter
 from ._prior_resolution import (
     _KNOWN_PREFIXES,
-    _bind_priors,
     parse_prior_key,
-    resolve_prior,
+    sample_prior,
 )
-
-
-def redistribute(integrated_spectrum, old_e_low, old_e_high, e_low, e_high):
-    # Suppose old_e_high[i] == old_e_low[i+1]
-    edges = jnp.concatenate([old_e_low[:1], old_e_high])
-    cumflux = jnp.concatenate([jnp.zeros(1), jnp.cumsum(integrated_spectrum)])
-    return jnp.interp(e_high, edges, cumflux) - jnp.interp(e_low, edges, cumflux)
 
 
 class BayesianModel:
@@ -99,6 +91,14 @@ class BayesianModel:
         self._user_prior = prior
         self._effective_prior = self._build_prior_dict()
         self._validate_prior_dict()
+
+        # Tell the ForwardModel whether the eval-once-then-fold fast path is
+        # safe for this fit. Only safe when an explicit energy_grid is set AND
+        # every spectral prior entry is shared (no [obs] / [*] scopes), since
+        # any per-obs spectral param means each replica produces a different
+        # flux on the grid. Callable priors are conservatively treated as
+        # non-shared (we can't statically inspect them).
+        self.forward_model.settings["spectrum_shared"] = self._spectrum_is_shared()
 
     @property
     def spectral_model(self) -> SpectralModel:
@@ -213,48 +213,36 @@ class BayesianModel:
     # ----- numpyro model wiring -----
 
     def numpyro_model(self, observed: bool = True):
-        """Build the full numpyro model: bind priors, compute counts, register likelihoods."""
-        prior_fn = self._resolve_prior()
+        """Sample the prior, evaluate the forward model, register likelihoods.
 
-        # Clone the forward_model per call so each ``_bind_priors`` invocation
-        # sees a fresh tree (the original module's Variables would otherwise
-        # accumulate tracers across MCMC's repeated traces, surfacing as
-        # UnexpectedTracerError).
+        Thin wrapper around :meth:`ForwardModel.evaluate`: this method owns
+        only the numpyro-specific concerns (sample sites + Poisson
+        likelihoods on the observed counts). The deterministic forward pass
+        — spectral evaluation, instrument folding, background — lives on
+        the forward model and is reused by ``fakeit`` and posterior-predictive
+        checks.
+        """
+        inputs = self._sample_inputs()
+
+        # Clone the forward_model per call so each evaluate sees a fresh tree
+        # (the original module's Variables would otherwise accumulate tracers
+        # across MCMC's repeated traces, surfacing as UnexpectedTracerError).
+        # ``evaluate`` itself does NOT clone — that would break ``jax.vmap``.
         fresh_forward = nnx.clone(self.forward_model)
-
-        bound_forward = _bind_priors(fresh_forward, prior=prior_fn)
+        predictions = fresh_forward.evaluate(inputs)
 
         fm = self.forward_model
-        n_points = fm.settings["n_points"]
-        energy_grid = fm.settings["energy_grid"]
-
-        if energy_grid is not None:
-            energies = np.stack([energy_grid[:-1], energy_grid[1:]])
-            spectral_model = next(iter(bound_forward.spectrum.values()))
-            shared_source_flux = spectral_model.flux_func(*energies, n_points=n_points)
-
         for obs_name, obs in fm.observations.items():
-            spec = bound_forward.spectrum[obs_name]
-            cache = fm.obs_caches[obs_name]
-            inst = bound_forward.instrument.get(obs_name, InstrumentModel())
+            source_flux = predictions[obs_name]["source"]
+            bkg_rate = predictions[obs_name]["background"]
+            bg = fm.background.get(obs_name)
 
-            if energy_grid is not None:
-                source_flux = inst.fold(shared_source_flux, cache, eval_energies=energies)
-
-            else:
-                shifted_energies = inst.apply_shift(obs.in_energies)
-                source_flux = spectral_model.flux_func(*shifted_energies, n_points=n_points)
-                source_flux = inst.fold(source_flux, cache)
-
-            bg = bound_forward.background.get(obs_name)
-
-            if bg is not None:
+            if bkg_rate is not None:
                 if getattr(obs, "folded_background", None) is None:
                     raise ValueError(
                         "Trying to fit a background model but no background is "
                         "linked to this observation"
                     )
-                bkg_rate = bg(obs)
                 bkg_in_obs = bkg_rate * obs.folded_backratio.data
                 total = source_flux + bkg_in_obs
 
@@ -279,17 +267,39 @@ class BayesianModel:
                     obs=obs.folded_counts.data if observed else None,
                 )
 
-    # ----- Prior resolution -----
+    # ----- Prior sampling -----
 
-    def _resolve_prior(self) -> Callable:
-        """Normalise the user prior into a leaf callable consumed by ``_bind_priors``.
+    def _sample_inputs(self) -> dict[str, Any]:
+        """Sample the (effective) prior into the leaf-path inputs dict that
+        :meth:`ForwardModel.evaluate` consumes.
 
-        Thin wrapper around :func:`~jaxspec.fit._prior_resolution.resolve_prior`:
-        builds the prefix → applicable-obs table this instance needs and forwards
-        the call.
+        Creates the per-leaf numpyro sample sites along the way. Thin wrapper
+        around :func:`~jaxspec.fit._prior_resolution.sample_prior` that
+        provides the prefix → applicable-obs table built from
+        :meth:`_applicable_obs`.
         """
         applicable = {prefix: self._applicable_obs(prefix) for prefix in _KNOWN_PREFIXES}
-        return resolve_prior(self.forward_model, self._effective_prior, applicable)
+        return sample_prior(self.forward_model, self._effective_prior, applicable)
+
+    def _spectrum_is_shared(self) -> bool:
+        """Whether every spectral prior entry is shared across obs.
+
+        Used at construction time to set :attr:`ForwardModel.settings`'s
+        ``"spectrum_shared"`` flag, which lets :meth:`ForwardModel.evaluate`
+        evaluate the spectrum **once** when a user energy grid is set
+        (otherwise each obs's per-obs replica must be evaluated separately,
+        e.g. when any spectral param has a ``[*]`` / ``[obs]`` scope).
+
+        Conservative: callable priors return ``False`` since we cannot
+        statically inspect them.
+        """
+        if not isinstance(self._effective_prior, dict):
+            return False
+        for raw_key in self._effective_prior:
+            path, scope = parse_prior_key(raw_key)
+            if path.startswith("spectrum.") and scope is not None:
+                return False
+        return True
 
     # ----- Cached properties for fitter machinery -----
 

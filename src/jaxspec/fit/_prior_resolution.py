@@ -1,10 +1,20 @@
-"""Prior resolution machinery for the dict / callable forms.
+"""Prior sampling + leaf binding for the unified inputs-dict interface.
 
-This module owns the pure functions that walk a forward model's nnx tree,
-match user prior entries to nnx leaves, and produce the leaf-callable adapter
-consumed by :func:`_bind_priors`. The orchestrating
-:class:`~jaxspec.fit.BayesianModel` keeps validation (which needs ``self``)
-but defers the actual resolution to :func:`resolve_prior` here.
+The :class:`~jaxspec.fit._forward_model.ForwardModel` evaluation contract is a
+flat ``{leaf_path: value}`` dict ("inputs"). This module owns two operations
+that bridge that contract with numpyro:
+
+* :func:`sample_prior` — turn the user's prior (dict-of-distributions form,
+  callable form, or any mix of fixed values / :class:`TiedParameter` /
+  :class:`~numpyro.distributions.Distribution`) into the inputs dict, creating
+  the numpyro sample sites along the way.
+* :func:`bind_inputs` — bind an already-sampled inputs dict onto the forward
+  model's nnx tree, deterministically. No numpyro sites, no ``nnx.clone`` so
+  it stays ``jax.vmap``-safe.
+
+The split lets non-sampling callers (``fakeit``, posterior-predictive checks)
+reuse :meth:`~jaxspec.fit._forward_model.ForwardModel.evaluate` without
+spinning a numpyro trace.
 """
 
 from __future__ import annotations
@@ -28,27 +38,35 @@ from ._parameter import TiedParameter
 _KNOWN_PREFIXES = ("spectrum", "instrument", "background")
 
 
-def _bind_priors(nn_module, prior):
-    """Sample every nnx.Param leaf of ``nn_module`` from ``prior`` and return a
-    bound copy of the module with the sampled values.
+def bind_inputs(forward_model, inputs):
+    """Bind a leaf-path → value ``inputs`` dict onto a bound copy of
+    ``forward_model``'s nnx tree and return it.
 
-    Per-obs numpyro sites are registered under the literal prefix ``"forward."``
-    (e.g. ``"forward.spectrum.MOS1.powerlaw_1.norm"``). The prefix is applied
-    manually rather than via ``numpyro.handlers.scope``: when the model is
-    wrapped with ``numpyro.handlers.scope("forward", divider=".")`` and passed
-    through :class:`~jaxspec.fit.NSFitter`, jaxns crashes during the
-    ``parse_joint`` phase with ``unexpected PRNG key type <class 'NoneType'>``
-    inside its internal UniformReparam — the scope handler renames sites at
-    trace time but jaxns has pre-built substitution tables under the un-scoped
-    names. Verified empirically on jaxns >=2.6.9 / numpyro >0.20.1.
+    This is the deterministic half of prior binding: it creates **no** numpyro
+    sites and does **no** ``nnx.clone``, mirroring
+    :meth:`~jaxspec.model.abc.SpectralModel._with_params` so it stays
+    ``jax.vmap``-safe. The per-trace isolation that MCMC needs (to avoid
+    cross-trace ``UnexpectedTracerError``) is the caller's responsibility — it
+    clones the forward model once per trace before calling
+    :meth:`~jaxspec.fit._forward_model.ForwardModel.evaluate`.
+
+    Every ``nnx.Param`` leaf must have a matching key in ``inputs``; a miss
+    raises the rich :func:`_missing_prior_message` so a forgotten prior surfaces
+    loudly (same strict contract the old adapter enforced at bind time).
     """
-    graph_def, params_state, other_state = nnx.split(nn_module, nnx.Param, nnx.Not(nnx.Param))
+    graph_def, params_state, other_state = nnx.split(forward_model, nnx.Param, nnx.Not(nnx.Param))
     params_pure = nnx.to_pure_dict(params_state)
 
-    _sample_leaves(params_pure, prior, prefix="", site_prefix="forward.")
+    def _lookup(leaf_path, _shape):
+        try:
+            return inputs[leaf_path]
+        except KeyError:
+            raise KeyError(_missing_prior_message(leaf_path)) from None
+
+    _sample_leaves(params_pure, _lookup, prefix="", site_prefix="forward.")
 
     nnx.replace_by_pure_dict(params_state, params_pure)
-    return nnx.merge(graph_def, params_state, other_state, copy=True)
+    return nnx.merge(graph_def, params_state, other_state)
 
 
 def _sample_leaves(
@@ -68,10 +86,10 @@ def _sample_leaves(
     * a :class:`numpyro.distributions.Distribution` — registered as a numpyro
       sample site under ``site_prefix + flatten_name`` and assigned to the leaf.
     * any array-like value — written directly to the leaf with no numpyro site.
-      Used by the dict-form prior, where :func:`resolve_prior` samples each
-      entry once and the adapter routes pre-sampled values to leaves. Avoids
-      spawning redundant sites for the per-obs duplicates of shared params,
-      which keeps the trace clean for nested-sampling backends.
+      Used by :func:`bind_inputs` to route pre-sampled values from a
+      ``{leaf_path: value}`` inputs dict to the nnx tree (no extra sites), and
+      by dict-form :func:`sample_prior` to broadcast a single shared draw to
+      every per-obs leaf without spawning redundant per-obs sites.
     """
     for name, item in params.items():
         flatten_name = f"{prefix}.{name}" if prefix else name
@@ -323,24 +341,33 @@ def _missing_prior_message(leaf_path: str) -> str:
     )
 
 
-def resolve_prior(
+def sample_prior(
     forward_model,
     prior: dict | Callable,
     applicable: dict[str, set[str]],
-) -> Callable:
-    """Normalise a user prior into the leaf callable consumed by :func:`_bind_priors`.
+) -> dict[str, Any]:
+    """Produce a ``{leaf_path: value}`` inputs dict by sampling ``prior``.
 
-    * Callable forms (2-arg leaf or 0-arg factory) are normalised by
-      :func:`_normalise_callable_prior`.
-    * Dict forms walk the forward-model nnx tree once via :func:`_enumerate_leaves`,
-      sample each entry into ``samples[leaf_path]``, resolve ties, and return a
-      ``dict.get``-style adapter.
+    This is the sampling half of the old ``resolve_prior``: it creates the
+    numpyro sample sites and returns the inputs dict that
+    :meth:`~jaxspec.fit._forward_model.ForwardModel.evaluate` will bind onto
+    the tree (via :func:`bind_inputs`).
+
+    * Dict form — walk the tree once via :func:`_enumerate_leaves`, sample
+      each entry into ``samples[leaf_path]`` (one shared site broadcast to
+      every targeted leaf, or one site per leaf for ``[*]`` / ``[obs]``
+      scopes), then resolve :class:`TiedParameter` entries.
+    * Callable form — walk the tree's leaves via :func:`_sample_leaves` so
+      each ``nnx.Param`` leaf gets one ``"forward.<leaf>"`` site.
+
+    Strict coverage is enforced *later* by :func:`bind_inputs`: a leaf with
+    no matching inputs entry raises :func:`_missing_prior_message`.
 
     ``applicable`` is the prefix → set-of-obs table the caller built from
-    :meth:`BayesianModel._applicable_obs`.
+    :meth:`BayesianModel._applicable_obs` (unused in the callable form).
     """
     if callable(prior):
-        return _normalise_callable_prior(prior)
+        return _sample_callable_prior(forward_model, _normalise_callable_prior(prior))
 
     leaves = _enumerate_leaves(forward_model)
     samples: dict[str, Any] = {}
@@ -356,9 +383,28 @@ def resolve_prior(
     for path, scope, tied in deferred_ties:
         _resolve_tied_entry(path, scope, tied, leaves, applicable, samples)
 
-    def adapter(leaf_path: str, _shape):
-        if leaf_path not in samples:
-            raise KeyError(_missing_prior_message(leaf_path))
-        return samples[leaf_path]
+    return samples
 
-    return adapter
+
+def _sample_callable_prior(forward_model, leaf_callable: Callable) -> dict[str, Any]:
+    """Walk the tree's nnx.Param leaves and sample each one via ``leaf_callable``.
+
+    Mirrors the dict-form output: returns ``{leaf_path: value}``. Each leaf
+    that hits a :class:`~numpyro.distributions.Distribution` becomes a
+    ``"forward.<leaf>"`` site (same naming the old adapter produced); leaves
+    that resolve to plain values are written through unchanged.
+    """
+    _, params_state, _ = nnx.split(forward_model, nnx.Param, nnx.Not(nnx.Param))
+    params_pure = nnx.to_pure_dict(params_state)
+    _sample_leaves(params_pure, leaf_callable, prefix="", site_prefix="forward.")
+    return dict(_iter_pure_dict_values(params_pure))
+
+
+def _iter_pure_dict_values(d: dict, prefix: str = "") -> Any:
+    """Yield ``(dotted_path, value)`` pairs from a nested pure-dict."""
+    for name, item in d.items():
+        full = f"{prefix}.{name}" if prefix else name
+        if isinstance(item, dict):
+            yield from _iter_pure_dict_values(item, full)
+        else:
+            yield full, item

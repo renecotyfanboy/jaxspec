@@ -13,8 +13,9 @@ PriorDictType = dict[str, PriorValueType]
 Leaf-form prior callable: receives ``(nnx_leaf_path, shape)`` and returns
 either a :class:`numpyro.distributions.Distribution` (registered as a
 numpyro sample site) or any array-like value (written directly to the leaf
-with no numpyro site, useful for pre-sampled / deterministic values). Used
-directly inside :func:`~jaxspec.fit._bayesian_model._bind_priors`.
+with no numpyro site, useful for pre-sampled / deterministic values).
+Consumed by :func:`~jaxspec.fit._prior_resolution.sample_prior` (callable
+form).
 """
 LeafCallable = Callable[[str, tuple[int, ...]], dist.Distribution | ArrayLike]
 

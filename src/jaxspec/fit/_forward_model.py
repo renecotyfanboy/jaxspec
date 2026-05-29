@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
+import numpy as np
 
 from flax import nnx
 from jax.typing import ArrayLike
@@ -15,6 +16,38 @@ from ..model.instrument import InstrumentModel
 
 if TYPE_CHECKING:
     pass
+
+
+#: Reused per-obs identity instrument for observations the user didn't
+#: configure. ``InstrumentModel()`` with ``gain=None`` and ``shift=None`` has
+#: no ``nnx.Param`` leaves, so ``apply_shift`` / ``apply_gain`` are no-ops and
+#: ``fold(...)`` reduces to ``transfer_matrix @ spectrum``. Module-level
+#: singleton to keep allocations out of the JIT-traced obs loop.
+_IDENTITY_INSTRUMENT = InstrumentModel()
+
+
+def _validate_energy_grid(energy_grid: ArrayLike) -> jnp.ndarray:
+    """Validate a user-supplied energy grid and return it as a ``jnp.ndarray``.
+
+    The grid is the edges over which the spectral model gets evaluated, then
+    redistributed onto each instrument's native grid by
+    :meth:`~jaxspec.model.instrument.InstrumentModel.fold`. We require:
+
+    * 1-D with at least 2 edges (the model integrates over ``[edge_i, edge_{i+1}]``);
+    * strictly increasing (the redistribution path uses
+      :func:`jnp.interp` which assumes a monotonic ``xp``);
+    * strictly positive (energies are in keV).
+    """
+    arr = np.asarray(energy_grid)
+    if arr.ndim != 1:
+        raise ValueError(f"energy_grid must be 1-D, got shape {arr.shape}.")
+    if arr.size < 2:
+        raise ValueError(f"energy_grid must have at least 2 points, got {arr.size}.")
+    if not bool((arr[1:] > arr[:-1]).all()):
+        raise ValueError("energy_grid must be strictly increasing.")
+    if not bool((arr > 0).all()):
+        raise ValueError("energy_grid values must be strictly positive.")
+    return jnp.asarray(arr)
 
 
 def _normalise_observations(
@@ -91,12 +124,12 @@ def _validate_obs_keys(user_dict: dict, obs_names: list[str], *, model_kind: str
 
 
 class ForwardModel(HideUnderscoreMixin, nnx.Module):
-    """Pure parametric nnx tree consumed by :func:`~jaxspec.fit._bayesian_model._bind_priors`.
+    """Parametric nnx tree + per-obs caches + a deterministic :meth:`evaluate`.
 
-    Only parameters and parametric submodules live here. Non-parametric state
-    (xarray observations, response caches, settings) is held off the nnx tree
-    on :attr:`_aux` — these Python objects aren't pytree-friendly and don't
-    belong in nnx's Variable tracking.
+    Only parameters and parametric submodules live on the nnx tree.
+    Non-parametric state (xarray observations, response caches, settings) is
+    held off the nnx tree on :attr:`_aux` — these Python objects aren't
+    pytree-friendly and don't belong in nnx's Variable tracking.
 
     Parameters live as ``nnx.Param`` leaves under three dict-of-modules attributes:
 
@@ -152,16 +185,29 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
         self.instrument = nnx.data(instrument_dict)
         self.background = nnx.data(background_dict)
 
+        validated_grid = _validate_energy_grid(energy_grid) if energy_grid is not None else None
+
         # Non-parametric state lives OFF the nnx tree (plain attributes on
         # ForwardModel itself would still be tracked; stash them on the orchestrator).
         # These are exposed to the BayesianModel via the public accessors below.
+        #
+        # ``spectrum_shared`` is a hint set by :class:`BayesianModel` after it
+        # inspects the prior dict; ``evaluate`` reads it to decide whether a
+        # user-supplied ``energy_grid`` enables the eval-once-then-fold fast
+        # path. Defaults to ``False`` so direct ForwardModel use is correct
+        # by default (no fast path; one spectral eval per obs).
         self._aux = _ForwardModelAux(
             observations=obs_dict,
             caches={
                 name: _build_obs_cache(obs, self.instrument.get(name), sparse=sparsify_matrix)
                 for name, obs in obs_dict.items()
             },
-            settings={"sparse": sparsify_matrix, "n_points": n_points, "energy_grid": energy_grid},
+            settings={
+                "sparse": sparsify_matrix,
+                "n_points": n_points,
+                "energy_grid": validated_grid,
+                "spectrum_shared": False,
+            },
         )
 
         # Background models with caches (e.g. SpectralModelBackground transfer matrix,
@@ -184,6 +230,112 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
     def obs_caches(self) -> dict[str, dict[str, Any]]:
         return self._aux.caches
 
+    # ----- Unified evaluation entry point -----
+
+    def evaluate(
+        self,
+        inputs: dict[str, ArrayLike],
+        *,
+        split_branches: bool = False,
+        with_background: bool = True,
+    ) -> dict[str, dict[str, Any]]:
+        """Bind ``inputs`` and run the per-observation forward pass.
+
+        ``inputs`` is a flat ``{leaf_path: value}`` dict keyed by nnx leaf
+        paths (e.g. ``"spectrum.PN.powerlaw_1.norm"``,
+        ``"instrument.MOS1.gain.factor"``, ``"background.PN.countrate"``).
+        Every ``nnx.Param`` leaf of the tree must be covered; a miss raises a
+        ``KeyError`` with the rich :func:`_missing_prior_message`.
+
+        The method is **deterministic** — no numpyro sites are created here.
+        Callers that need numpyro sampling build the inputs dict via
+        :func:`~jaxspec.fit._prior_resolution.sample_prior` first (which is
+        what :meth:`BayesianModel.numpyro_model` does), then call
+        ``evaluate``. Non-sampling callers (``fakeit``, posterior-predictive
+        checks) build the inputs dict from concrete values and call
+        ``evaluate`` directly, vmapping over batch dimensions.
+
+        When ``settings["energy_grid"]`` is set, the spectral model is
+        evaluated over that grid and redistributed onto each obs's native
+        grid by :meth:`InstrumentModel.fold`. With
+        ``settings["spectrum_shared"]`` additionally ``True`` the grid
+        evaluation happens **once** and is broadcast to every obs (the
+        BayesianModel sets this flag when no per-obs spectral prior is
+        present). When ``energy_grid`` is ``None`` each obs evaluates the
+        spectrum on its own (instrument-shifted) native grid.
+
+        Parameters:
+            inputs: Flat leaf-path → value dict covering every
+                ``nnx.Param`` leaf of the tree.
+            split_branches: If ``True``, the per-obs ``"source"`` entry is a
+                ``{branch_name: folded_flux}`` pytree instead of a summed
+                array. Used by posterior-predictive checks that overlay each
+                component.
+            with_background: If ``False``, skip the background evaluation and
+                set each ``"background"`` entry to ``None``. Used by the
+                source-only component overlay to avoid computing a rate it
+                discards.
+
+        Returns:
+            ``{obs_name: {"source": folded_flux | {branch: folded_flux},
+            "background": background_rate | None}}``. The background entry
+            is ``None`` for obs without a background model.
+        """
+        from ._prior_resolution import bind_inputs
+
+        bound = bind_inputs(self, inputs)
+        settings = self.settings
+        n_points = settings["n_points"]
+        energy_grid = settings["energy_grid"]
+        spectrum_shared = settings.get("spectrum_shared", False)
+
+        # Fast path: spectrum is shared across every obs AND the user gave us a
+        # grid — evaluate the spectral model once and reuse the result.
+        shared_flux = None
+        if energy_grid is not None and spectrum_shared:
+            e_low = energy_grid[:-1]
+            e_high = energy_grid[1:]
+            any_replica = next(iter(bound.spectrum.values()))
+            shared_flux = any_replica.flux_func(
+                e_low, e_high, n_points=n_points, return_branches=split_branches
+            )
+
+        predictions: dict[str, dict[str, Any]] = {}
+        for obs_name, obs in self.observations.items():
+            cache = self.obs_caches[obs_name]
+            inst = bound.instrument.get(obs_name, _IDENTITY_INSTRUMENT)
+
+            if energy_grid is not None:
+                e_low = energy_grid[:-1]
+                e_high = energy_grid[1:]
+                eval_energies = jnp.stack([e_low, e_high])
+                if shared_flux is not None:
+                    flux = shared_flux
+                else:
+                    spec = bound.spectrum[obs_name]
+                    flux = spec.flux_func(
+                        e_low, e_high, n_points=n_points, return_branches=split_branches
+                    )
+                # Shift is applied *inside* fold when eval_energies is provided
+                # (see InstrumentModel.fold's contract).
+                source_flux = inst.fold(flux, cache, eval_energies=eval_energies)
+            else:
+                spec = bound.spectrum[obs_name]
+                shifted = inst.apply_shift(cache["in_energies"])
+                flux = spec.flux_func(
+                    shifted[0], shifted[1], n_points=n_points, return_branches=split_branches
+                )
+                source_flux = inst.fold(flux, cache)
+
+            if with_background:
+                bg = bound.background.get(obs_name)
+                bg_rate = bg(obs) if bg is not None else None
+            else:
+                bg_rate = None
+            predictions[obs_name] = {"source": source_flux, "background": bg_rate}
+
+        return predictions
+
 
 class _ForwardModelAux:
     """Non-pytree container for the per-observation Python objects that don't
@@ -193,7 +345,7 @@ class _ForwardModelAux:
     them out of nnx's Variable tracking.
     """
 
-    __slots__ = ("observations", "caches", "settings")
+    __slots__ = ("caches", "observations", "settings")
 
     def __init__(self, observations, caches, settings):
         self.observations = observations

@@ -604,3 +604,44 @@ def test_dict_prior_resolves_shared_split_and_specific():
     assert isinstance(captured["specific_match"], dist.Uniform)
     assert captured["specific_miss"] is None  # only MOS1 has the [obs] entry
     assert captured["unknown"] is None
+
+
+@pytest.mark.fast
+def test_resolve_per_obs_entry_partial_coverage_stays_dict():
+    """Regression: a per-obs entry covering only a subset of the applicable obs
+    must NOT be collapsed into a compacted trailing axis — otherwise
+    ``_leaf_inputs_from_input_parameters`` misindexes it by full-obs-order
+    position and a leaf silently gets another obs's parameters. Partial coverage
+    must stay a ``{obs: array}`` dict; full coverage still stacks."""
+    from jaxspec.analysis.results import _resolve_per_obs_entry
+
+    obs_axis = ["A", "B", "C"]
+    chain_draw = (2, 5)
+
+    # Leaf present only on B and C (e.g. gain on the non-reference instruments).
+    partial = _resolve_per_obs_entry(
+        {"B": 1.0, "C": 2.0},
+        "instrument.gain.factor",
+        "instrument",
+        "gain.factor",
+        obs_axis,
+        {},
+        chain_draw,
+        [],
+    )
+    assert isinstance(partial, dict)
+    assert set(partial) == {"B", "C"}
+
+    # Full coverage still collapses into a trailing obs axis (len == n_obs).
+    full = _resolve_per_obs_entry(
+        {"A": 0.0, "B": 1.0, "C": 2.0},
+        "instrument.gain.factor",
+        "instrument",
+        "gain.factor",
+        obs_axis,
+        {},
+        chain_draw,
+        [],
+    )
+    assert not isinstance(full, dict)
+    assert full.shape == (*chain_draw, len(obs_axis))
