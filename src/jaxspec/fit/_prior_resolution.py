@@ -19,6 +19,7 @@ spinning a numpyro trace.
 
 from __future__ import annotations
 
+import difflib
 import inspect
 import re
 
@@ -205,12 +206,14 @@ def _resolve_targets(
 
     * ``scope is None`` (shared) — every applicable obs that owns ``path``.
     * ``scope == "*"``           — every applicable obs that owns ``path``.
-    * specific obs               — that obs only (silently skipped if no leaf).
+    * specific obs               — that obs only.
 
     ``applicable`` is the prefix → set-of-obs table built by the caller;
     validation has already ensured the requested obs is in that set, so a
     miss here means "no leaf exists for this obs" (e.g. a background path
-    that exists on some obs but not others).
+    that exists on some obs but not others). Returns an empty list on a
+    miss — callers raise :func:`_unmatched_key_message` so a typo'd key
+    surfaces loudly instead of being silently dropped.
     """
     by_obs = leaves.get(path, {})
     if not by_obs:
@@ -241,7 +244,7 @@ def _sample_entry(
     """
     targets = _resolve_targets(path, scope, leaves, applicable)
     if not targets:
-        return
+        raise KeyError(_unmatched_key_message(path, scope, leaves))
     if scope is None:
         if isinstance(value, dist.Distribution):
             sample = numpyro.sample(path, value)
@@ -277,11 +280,13 @@ def _resolve_tied_entry(
 
     source_for_obs = _source_lookup_for_tie(src_scope, src_targets, samples)
     dest_targets = _resolve_targets(path, scope, leaves, applicable)
+    if not dest_targets:
+        raise KeyError(_unmatched_key_message(path, scope, leaves))
 
     if scope is None:
         # Shared dest: compute the derived value once, broadcast to every leaf,
         # register one deterministic site under the bare path.
-        first_obs = dest_targets[0][0] if dest_targets else next(iter(src_targets))[0]
+        first_obs = dest_targets[0][0]
         value = tied.func(source_for_obs(first_obs))
         numpyro.deterministic(path, value)
         for _obs, dest_leaf in dest_targets:
@@ -324,6 +329,31 @@ def _per_obs_site_name(path: str, obs: str) -> str:
     """Compose the canonical per-obs site name ``"forward.<prefix>.<obs>.<rest>"``."""
     prefix, rest = path.split(".", 1)
     return f"forward.{prefix}.{obs}.{rest}"
+
+
+def _prefix_to_obs_names(forward_model) -> dict[str, list[str]]:
+    """Map each known prefix to the obs names it applies to, in the forward
+    model's insertion order: ``spectrum`` → every observation,
+    ``instrument`` / ``background`` → the obs that own a model."""
+    return {
+        "spectrum": list(forward_model.observations.keys()),
+        "instrument": list(forward_model.instrument.keys()),
+        "background": list(forward_model.background.keys()),
+    }
+
+
+def _unmatched_key_message(path: str, scope: str | None, leaves: dict[str, dict[str, str]]) -> str:
+    """Build the error message for a prior key that resolves to zero leaves."""
+    key = path if scope is None else f"{path}[{scope}]"
+    if path in leaves:
+        owners = sorted(leaves[path])
+        return (
+            f"Prior key {key!r} matches no parameter: {path!r} only exists on "
+            f"observation(s) {owners}."
+        )
+    close = difflib.get_close_matches(path, leaves, n=3, cutoff=0.6)
+    hint = f" Did you mean {' or '.join(repr(c) for c in close)}?" if close else ""
+    return f"Prior key {key!r} does not match any model parameter.{hint}"
 
 
 def _missing_prior_message(leaf_path: str) -> str:

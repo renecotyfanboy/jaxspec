@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
 
 from flax import nnx
 from jax.typing import ArrayLike
+
+if TYPE_CHECKING:
+    from ..data import ObsConfiguration
 
 
 def redistribute(integrated_spectrum, old_e_low, old_e_high, e_low, e_high):
@@ -97,6 +101,16 @@ class InstrumentModel(nnx.Module):
         self.gain = gain
         self.shift = shift
 
+    def default_prior(self, observation: ObsConfiguration, obs_name: str) -> dict:
+        """Return data-dependent default priors scoped to this obs.
+
+        Mirrors :meth:`~jaxspec.model.background.BackgroundModel.default_prior`:
+        subclasses (e.g. pileup models with per-obs dead-time / grade-fraction
+        parameters) override this to inject ``[obs_name]``-scoped defaults.
+        User prior entries override these defaults.
+        """
+        return {}
+
     def apply_shift(self, energies: ArrayLike) -> ArrayLike:
         """Apply :attr:`shift` to ``energies`` and clip away non-positive values."""
         if self.shift is None:
@@ -120,11 +134,15 @@ class InstrumentModel(nnx.Module):
         Fold the input spectrum (or branches of a pytree) into the instrument using the pre-computed transfer matrix.
         """
 
-        # Current contract: shift is applied here if a grid is provided, else in the forward model
+        # Current contract: shift is applied here if a grid is provided, else in
+        # the forward model. The spectrum was integrated on the *unshifted*
+        # ``eval_energies``, so the shift must go on the native grid: bin i
+        # collects the flux from its shifted band, matching the no-grid path
+        # (which evaluates flux_func on the shifted native energies directly).
         if eval_energies is not None:
-            eval_energies = self.apply_shift(eval_energies)
+            target_energies = self.apply_shift(cache["in_energies"])
             spectrum = jax.tree.map(
-                lambda s: redistribute(s, *eval_energies, *cache["in_energies"]), spectrum
+                lambda s: redistribute(s, *eval_energies, *target_energies), spectrum
             )
 
         spectrum = jax.tree.map(lambda s: self.apply_gain(s, cache["in_energies"]), spectrum)

@@ -289,26 +289,27 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
         energy_grid = settings["energy_grid"]
         spectrum_shared = settings.get("spectrum_shared", False)
 
-        # Fast path: spectrum is shared across every obs AND the user gave us a
-        # grid — evaluate the spectral model once and reuse the result.
+        # Slice the user grid once — it is identical for every obs. Fast path:
+        # when the spectrum is also shared across every obs, evaluate the
+        # spectral model once and reuse the result.
         shared_flux = None
-        if energy_grid is not None and spectrum_shared:
+        eval_energies = None
+        if energy_grid is not None:
             e_low = energy_grid[:-1]
             e_high = energy_grid[1:]
-            any_replica = next(iter(bound.spectrum.values()))
-            shared_flux = any_replica.flux_func(
-                e_low, e_high, n_points=n_points, return_branches=split_branches
-            )
+            eval_energies = jnp.stack([e_low, e_high])
+            if spectrum_shared:
+                any_replica = next(iter(bound.spectrum.values()))
+                shared_flux = any_replica.flux_func(
+                    e_low, e_high, n_points=n_points, return_branches=split_branches
+                )
 
         predictions: dict[str, dict[str, Any]] = {}
         for obs_name, obs in self.observations.items():
             cache = self.obs_caches[obs_name]
             inst = bound.instrument.get(obs_name, _IDENTITY_INSTRUMENT)
 
-            if energy_grid is not None:
-                e_low = energy_grid[:-1]
-                e_high = energy_grid[1:]
-                eval_energies = jnp.stack([e_low, e_high])
+            if eval_energies is not None:
                 if shared_flux is not None:
                     flux = shared_flux
                 else:

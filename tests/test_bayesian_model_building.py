@@ -210,6 +210,74 @@ def test_run_vi(model, prior, obsconf, expectation):
 
 
 @pytest.mark.fast
+def test_energy_grid_shift_consistent_with_native_folding():
+    """Regression: the user-grid folding path must apply the instrument energy
+    shift in the same frame as the native path. With a fine grid and a smooth
+    spectrum both paths must produce (nearly) identical folded counts for a
+    shifted instrument — the old code shifted the *source* grid labels in
+    ``InstrumentModel.fold``, inverting the shift's sign."""
+    import jax.numpy as jnp
+    import numpy as np
+
+    from jaxspec.fit._forward_model import ForwardModel
+
+    obs = single_obsconf
+    model = Powerlaw() + Powerlaw()
+    offset = 0.2
+
+    native_energies = np.asarray(obs.in_energies)
+    grid = jnp.geomspace(
+        max(native_energies.min() - offset, 1e-2),
+        native_energies.max() + 2 * offset,
+        6000,
+    )
+
+    def build(energy_grid):
+        return ForwardModel(
+            model,
+            obs,
+            instrument_model={"data": InstrumentModel(shift=ConstantShift())},
+            energy_grid=energy_grid,
+        )
+
+    inputs = {
+        "spectrum.data.powerlaw_1.alpha": jnp.asarray(1.7),
+        "spectrum.data.powerlaw_1.norm": jnp.asarray(1e-3),
+        "spectrum.data.powerlaw_2.alpha": jnp.asarray(2.5),
+        "spectrum.data.powerlaw_2.norm": jnp.asarray(5e-4),
+        "instrument.data.shift.offset": jnp.asarray(offset),
+    }
+
+    native = build(None).evaluate(inputs)["data"]["source"]
+    gridded = build(grid).evaluate(inputs)["data"]["source"]
+
+    np.testing.assert_allclose(np.asarray(gridded), np.asarray(native), rtol=1e-3)
+
+
+@pytest.mark.fast
+def test_unmatched_prior_key_raises_at_build_time():
+    """A typo'd parameter path (valid prefix, bogus tail) must raise at build
+    time instead of being silently dropped."""
+    prior = {
+        **prior_shared_pars,
+        "spectrum.powerlaw_1.alph": dist.Uniform(0, 5),
+    }
+    with pytest.raises(KeyError, match="does not match any model parameter"):
+        BayesianModel(spectral_model, prior, list_of_obsconf)
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize(
+    "bad_key", ["spectrum.powerlaw_1.nrom[*]", "spectrum.powerlaw_1.nrom[data_0]"]
+)
+def test_unmatched_scoped_prior_key_raises_at_build_time(bad_key):
+    """Same strictness for [*] / [obs] scoped keys with a typo'd parameter path."""
+    prior = {**prior_shared_pars, bad_key: dist.LogUniform(1e-5, 1e-2)}
+    with pytest.raises(KeyError, match="does not match any model parameter"):
+        BayesianModel(spectral_model, prior, list_of_obsconf)
+
+
+@pytest.mark.fast
 def test_unknown_obs_in_scope_raises_at_build_time():
     prior = {
         **prior_shared_pars,
@@ -354,6 +422,45 @@ def test_tied_parameters(sampler):
     assert any(
         "powerlaw_1.alpha" in c for c in cols
     ), f"tied source 'powerlaw_1.alpha' should remain in chain columns: {cols}"
+
+
+@pytest.mark.slow
+def test_scoped_tied_parameters_fit_and_extraction():
+    """Scoped TiedParameter entries must survive the full fit → posterior
+    extraction path (``input_parameters`` / fluxes / PPC), not just prior
+    sampling — extraction used to look up ``tied_to`` without parsing its
+    ``[obs]`` scope and drop the direct entries of a mixed direct+tied base."""
+    import numpy as np
+
+    prior = {
+        **{k: v for k, v in prior_shared_pars.items() if k != "spectrum.powerlaw_1.norm"},
+        "spectrum.powerlaw_1.norm[MOS1]": dist.LogUniform(1e-5, 1e-2),
+        "spectrum.powerlaw_1.norm[MOS2]": TiedParameter(
+            "spectrum.powerlaw_1.norm[MOS1]", lambda x: 0.5 * x
+        ),
+        "spectrum.powerlaw_1.norm[PN]": TiedParameter(
+            "spectrum.powerlaw_1.norm[MOS1]", lambda x: 0.25 * x
+        ),
+    }
+
+    fitter = MCMCFitter(spectral_model, prior, dict_of_obsconf)
+    result = fitter.fit(
+        num_chains=2,
+        num_warmup=5,
+        num_samples=5,
+        sampler="nuts",
+        mcmc_kwargs={"progress_bar": False},
+    )
+
+    norm = np.asarray(result.input_parameters["spectrum.powerlaw_1.norm"])
+    obs_order = list(dict_of_obsconf.keys())
+    mos1 = norm[..., obs_order.index("MOS1")]
+    np.testing.assert_allclose(norm[..., obs_order.index("MOS2")], 0.5 * mos1, rtol=1e-6)
+    np.testing.assert_allclose(norm[..., obs_order.index("PN")], 0.25 * mos1, rtol=1e-6)
+
+    result.photon_flux(0.7, 1.2, register=True)
+    [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
+    result.to_chain("test")
 
 
 @pytest.mark.slow
@@ -622,8 +729,6 @@ def test_resolve_per_obs_entry_partial_coverage_stays_dict():
     partial = _resolve_per_obs_entry(
         {"B": 1.0, "C": 2.0},
         "instrument.gain.factor",
-        "instrument",
-        "gain.factor",
         obs_axis,
         {},
         chain_draw,
@@ -636,8 +741,6 @@ def test_resolve_per_obs_entry_partial_coverage_stays_dict():
     full = _resolve_per_obs_entry(
         {"A": 0.0, "B": 1.0, "C": 2.0},
         "instrument.gain.factor",
-        "instrument",
-        "gain.factor",
         obs_axis,
         {},
         chain_draw,

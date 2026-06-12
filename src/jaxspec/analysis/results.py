@@ -21,7 +21,12 @@ from jax.typing import ArrayLike
 from scipy.special import gammaln
 
 from ..fit._parameter import TiedParameter
-from ..fit._prior_resolution import _enumerate_leaves, _per_obs_site_name, parse_prior_key
+from ..fit._prior_resolution import (
+    _enumerate_leaves,
+    _per_obs_site_name,
+    _prefix_to_obs_names,
+    parse_prior_key,
+)
 from ._plot import (
     BACKGROUND_COLOR,
     BACKGROUND_DATA_COLOR,
@@ -137,11 +142,7 @@ class FitResult:
         """
         fm = self.bayesian_fitter.forward_model
         leaves = _enumerate_leaves(fm)  # {user_path: {obs_name: leaf_path}}
-        prefix_to_obs = {
-            "spectrum": list(fm.observations.keys()),
-            "instrument": list(fm.instrument.keys()),
-            "background": list(fm.background.keys()),
-        }
+        prefix_to_obs = _prefix_to_obs_names(fm)
 
         params = self.input_parameters
         inputs: dict[str, ArrayLike] = {}
@@ -184,11 +185,7 @@ class FitResult:
         posterior = az.extract(self.inference_data, combined=False)
         chain_draw = (posterior.sizes["chain"], posterior.sizes["draw"])
 
-        prefix_to_obs = {
-            "spectrum": list(fm.observations.keys()),
-            "instrument": list(fm.instrument.keys()),
-            "background": list(fm.background.keys()),
-        }
+        prefix_to_obs = _prefix_to_obs_names(fm)
         needed = _needed_posterior_names(effective_prior, prefix_to_obs)
         data_vars = {name: jnp.asarray(posterior[name].data) for name in needed}
 
@@ -199,11 +196,10 @@ class FitResult:
             by_base.setdefault(base, {})[scope] = value
 
         out: dict[str, ArrayLike] = {}
-        deferred_ties: list[tuple[str, TiedParameter, list[str]]] = []
+        deferred_ties: list[tuple[str, str | None, TiedParameter, list[str]]] = []
 
         for base, scopes in by_base.items():
             prefix = base.split(".", 1)[0]
-            rest = base[len(prefix) + 1 :]
             obs_axis = prefix_to_obs.get(prefix, [])
 
             if None in scopes:
@@ -216,8 +212,6 @@ class FitResult:
                 value = _resolve_per_obs_entry(
                     scopes,
                     base,
-                    prefix,
-                    rest,
                     obs_axis,
                     data_vars,
                     chain_draw,
@@ -226,7 +220,7 @@ class FitResult:
                 if value is not None:
                     out[base] = value
 
-        _apply_tied_resolutions(out, deferred_ties)
+        _apply_tied_resolutions(out, deferred_ties, prefix_to_obs)
         return out
 
     @cached_property
@@ -413,9 +407,10 @@ class FitResult:
         if not isinstance(effective_prior, dict):
             return names
         applicable = {
-            "spectrum": set(self.bayesian_fitter.forward_model.spectrum),
-            "instrument": set(self.bayesian_fitter.forward_model.instrument),
-            "background": set(self.bayesian_fitter.forward_model.background),
+            prefix: set(obs_names)
+            for prefix, obs_names in _prefix_to_obs_names(
+                self.bayesian_fitter.forward_model
+            ).items()
         }
         for raw_key, value in effective_prior.items():
             if not isinstance(value, TiedParameter):
@@ -996,7 +991,7 @@ def _resolve_shared_entry(
     ``TiedParameter`` — the caller should skip this base for now.
     """
     if isinstance(value, TiedParameter):
-        deferred_ties.append((base, value, obs_axis))
+        deferred_ties.append((base, None, value, obs_axis))
         return None
     if isinstance(value, dist.Distribution):
         arr = data_vars[base]
@@ -1007,51 +1002,116 @@ def _resolve_shared_entry(
 
 
 def _resolve_per_obs_entry(
-    scopes, base, prefix, rest, obs_axis, data_vars, chain_draw, deferred_ties
+    scopes, base, obs_axis, data_vars, chain_draw, deferred_ties
 ) -> ArrayLike | dict | None:
     """Materialise a per-obs prior entry; stack across obs when every applicable
     obs is present with the same shape, else return a ``{obs: array}`` dict.
 
-    Returns ``None`` when there's nothing to assemble (empty obs_axis, or a
-    ``TiedParameter`` that was deferred).
+    ``TiedParameter`` scopes are deferred per obs to
+    :func:`_apply_tied_resolutions`; the direct scopes still materialise here,
+    and the base stays an (uncompacted) dict until the ties fill in the
+    missing obs.
+
+    Returns ``None`` when there's nothing to assemble.
     """
     per_obs: dict[str, ArrayLike] = {}
+    has_ties = False
     for obs in obs_axis:
         value = scopes.get(obs, scopes.get("*"))
         if value is None:
             continue
         if isinstance(value, TiedParameter):
-            deferred_ties.append((base, value, obs_axis))
-            return None
-        site_name = f"forward.{prefix}.{obs}.{rest}"
+            deferred_ties.append((base, obs, value, obs_axis))
+            has_ties = True
+            continue
         if isinstance(value, dist.Distribution):
-            per_obs[obs] = data_vars[site_name]
+            per_obs[obs] = data_vars[_per_obs_site_name(base, obs)]
         else:
             fixed = jnp.asarray(value)
             per_obs[obs] = jnp.broadcast_to(fixed, (*chain_draw, *fixed.shape))
 
+    if has_ties:
+        return per_obs
     if not per_obs:
         return None
+    return _compact_per_obs(per_obs, obs_axis)
+
+
+def _compact_per_obs(per_obs: dict, obs_axis: list[str]) -> ArrayLike | dict:
+    """Collapse ``{obs: array}`` into a trailing obs axis when every applicable
+    obs is present with the same shape. A partial set (a leaf that exists on
+    only some obs) or a ragged set stays a ``{obs: array}`` dict so consumers
+    (e.g. ``_leaf_inputs_from_input_parameters``) select by name rather than by
+    full-obs-order position — otherwise the compacted axis misaligns.
+    """
     shapes = {arr.shape for arr in per_obs.values()}
-    # Only collapse into a trailing obs axis when every applicable obs is present
-    # AND shapes agree. A partial set (a leaf that exists on only some obs) or a
-    # ragged set is returned as ``{obs: array}`` so consumers
-    # (e.g. ``_leaf_inputs_from_input_parameters``) select by name rather than by
-    # full-obs-order position — otherwise the compacted axis misaligns.
     if len(shapes) == 1 and len(per_obs) == len(obs_axis):
-        return jnp.stack(list(per_obs.values()), axis=-1)
+        return jnp.stack([per_obs[obs] for obs in obs_axis], axis=-1)
     return per_obs
 
 
-def _apply_tied_resolutions(out, deferred_ties) -> None:
-    """Resolve every deferred TiedParameter once all direct entries are in ``out``."""
-    for dest_base, tied, _obs_axis in deferred_ties:
-        if tied.tied_to not in out:
+def _apply_tied_resolutions(out, deferred_ties, prefix_to_obs) -> None:
+    """Resolve every deferred TiedParameter once all direct entries are in ``out``.
+
+    Mirrors the sampling-time semantics of
+    :func:`~jaxspec.fit._prior_resolution._resolve_tied_entry`: a bare or
+    ``[obs]``-scoped source provides one value for every destination, a
+    ``[*]`` source pairs each destination obs with its same-obs draw. Per-obs
+    tied values are merged into the base's ``{obs: array}`` staging dict (next
+    to its direct entries) and compacted afterwards.
+    """
+    touched: set[str] = set()
+    for dest_base, dest_obs, tied, obs_axis in deferred_ties:
+        src_base, src_scope = parse_prior_key(tied.tied_to)
+        entry = out.get(src_base)
+        if entry is None:
             raise ValueError(
                 f"TiedParameter {dest_base!r} references unknown source {tied.tied_to!r}"
             )
-        source = out[tied.tied_to]
-        if isinstance(source, dict):
-            out[dest_base] = {obs: tied.func(v) for obs, v in source.items()}
+        src_axis = prefix_to_obs.get(src_base.split(".", 1)[0], [])
+
+        def pick(obs, entry=entry, src_axis=src_axis):
+            if isinstance(entry, dict):
+                value = entry.get(obs)
+            elif obs in src_axis:
+                value = entry[..., src_axis.index(obs)]
+            else:
+                value = None
+            if value is None:
+                raise ValueError(
+                    f"TiedParameter {dest_base!r} cannot match a source value for "
+                    f"observation {obs!r}: tied_to={tied.tied_to!r}."
+                )
+            return value
+
+        if dest_obs is None:
+            # Shared destination — one derived value broadcast along the obs
+            # axis (mirroring _resolve_shared_entry's layout).
+            if src_scope is None:
+                if isinstance(entry, dict):
+                    out[dest_base] = {obs: tied.func(v) for obs, v in entry.items()}
+                else:
+                    out[dest_base] = tied.func(entry)
+            else:
+                anchor = src_scope if src_scope != "*" else sorted(obs_axis)[0]
+                value = tied.func(pick(anchor))
+                out[dest_base] = jnp.broadcast_to(value[..., None], (*value.shape, len(obs_axis)))
+            continue
+
+        # Per-obs destination — same-obs pairing for [*] sources, single value
+        # for bare / [obs]-scoped sources.
+        if src_scope == "*":
+            source = pick(dest_obs)
+        elif src_scope is None:
+            source = pick(dest_obs) if isinstance(entry, dict) else entry[..., 0]
         else:
-            out[dest_base] = tied.func(source)
+            source = pick(src_scope)
+        staged = out.setdefault(dest_base, {})
+        staged[dest_obs] = tied.func(source)
+        touched.add(dest_base)
+
+    for base in touched:
+        value = out[base]
+        if isinstance(value, dict):
+            obs_axis = prefix_to_obs.get(base.split(".", 1)[0], [])
+            out[base] = _compact_per_obs(value, obs_axis)

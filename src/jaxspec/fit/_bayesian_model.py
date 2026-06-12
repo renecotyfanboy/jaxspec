@@ -39,6 +39,10 @@ from ._forward_model import ForwardModel
 from ._parameter import TiedParameter
 from ._prior_resolution import (
     _KNOWN_PREFIXES,
+    _enumerate_leaves,
+    _prefix_to_obs_names,
+    _resolve_targets,
+    _unmatched_key_message,
     parse_prior_key,
     sample_prior,
 )
@@ -131,27 +135,21 @@ class BayesianModel:
     # ----- Prior dict validation + default-merge -----
 
     def _build_prior_dict(self) -> dict | Callable:
-        """Merge per-obs background defaults into the user prior (user wins).
-        For callable priors, pass through unchanged."""
+        """Merge per-obs background and instrument defaults into the user prior
+        (user wins). For callable priors, pass through unchanged."""
         if not isinstance(self._user_prior, dict):
             return self._user_prior
 
         prior = dict(self._user_prior)
-        for obs_name, bg in self.forward_model.background.items():
-            obs = self.forward_model.observations[obs_name]
-            for key, value in bg.default_prior(obs, obs_name).items():
-                prior.setdefault(key, value)
+        for modules in (self.forward_model.background, self.forward_model.instrument):
+            for obs_name, module in modules.items():
+                obs = self.forward_model.observations[obs_name]
+                for key, value in module.default_prior(obs, obs_name).items():
+                    prior.setdefault(key, value)
         return prior
 
     def _applicable_obs(self, prefix: str) -> set[str]:
-        fm = self.forward_model
-        if prefix == "spectrum":
-            return set(fm.observations.keys())
-        if prefix == "instrument":
-            return set(fm.instrument.keys())
-        if prefix == "background":
-            return set(fm.background.keys())
-        return set()
+        return set(_prefix_to_obs_names(self.forward_model).get(prefix, []))
 
     def _validate_prior_dict(self) -> None:
         """Validate the (effective) prior dict against the forward model.
@@ -161,10 +159,12 @@ class BayesianModel:
         """
         if not isinstance(self._effective_prior, dict):
             return
+        leaves = _enumerate_leaves(self.forward_model)
+        applicable = {prefix: self._applicable_obs(prefix) for prefix in _KNOWN_PREFIXES}
         for raw_key, value in self._effective_prior.items():
-            self._validate_prior_entry(raw_key, value)
+            self._validate_prior_entry(raw_key, value, leaves, applicable)
 
-    def _validate_prior_entry(self, raw_key, value) -> None:
+    def _validate_prior_entry(self, raw_key, value, leaves, applicable_by_prefix) -> None:
         # Catch flat keys like "tbabs_1_nh" before parse_prior_key — the
         # regex would accept them but downstream errors would be cryptic.
         if "." not in raw_key.split("[", 1)[0]:
@@ -185,7 +185,7 @@ class BayesianModel:
                 f"Did you mean 'spectrum.{path}'?"
             )
 
-        applicable = self._applicable_obs(prefix)
+        applicable = applicable_by_prefix[prefix]
         if not applicable:
             hint = (
                 "Did you forget to pass instrument_model= to the fitter?"
@@ -203,6 +203,10 @@ class BayesianModel:
                 f"Prior key {raw_key!r} references observation {scope!r} which is "
                 f"not in the {prefix!r} applicable set {sorted(applicable)}."
             )
+        # Strict leaf-existence check: a key that resolves to zero leaves is a
+        # typo'd parameter path — surface it at build time, not silently drop it.
+        if not _resolve_targets(path, scope, leaves, applicable_by_prefix):
+            raise KeyError(_unmatched_key_message(path, scope, leaves))
         if isinstance(value, dist.Distribution | TiedParameter):
             return
         try:
