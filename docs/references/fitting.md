@@ -5,6 +5,13 @@
       show_root_toc_entry: true
       heading_level: 3
 
+::: jaxspec.fit.ForwardModel
+    options:
+      show_root_heading: true
+      show_root_full_path: false
+      show_root_toc_entry: true
+      heading_level: 3
+
 ## Fitter classes
 
 ::: jaxspec.fit.MCMCFitter
@@ -15,6 +22,22 @@
       heading_level: 3
 
 ::: jaxspec.fit.VIFitter
+    options:
+      show_root_heading: true
+      show_root_full_path: false
+      show_root_toc_entry: true
+      heading_level: 3
+
+## Prior helpers
+
+::: jaxspec.fit.joint_prior_factory
+    options:
+      show_root_heading: true
+      show_root_full_path: false
+      show_root_toc_entry: true
+      heading_level: 3
+
+::: jaxspec.fit.dict_prior
     options:
       show_root_heading: true
       show_root_full_path: false

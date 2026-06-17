@@ -131,7 +131,7 @@ class ObsConfiguration(xr.Dataset):
         high_energy: float = 1e20,
     ):
         r"""
-        Build the observation configuration from an [`Instrument`][jaxspec.data.Instrument] and an [`Observation`][jaxspec.data.Observation] object.
+        Build the observation configuration from an [`Instrument`][jaxspec.data.instrument.Instrument] and an [`Observation`][jaxspec.data.observation.Observation] object.
 
         Parameters:
             instrument: The instrument object.

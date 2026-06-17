@@ -124,29 +124,29 @@ def _validate_obs_keys(user_dict: dict, obs_names: list[str], *, model_kind: str
 
 
 class ForwardModel(HideUnderscoreMixin, nnx.Module):
-    """Parametric nnx tree + per-obs caches + a deterministic :meth:`evaluate`.
+    """Parametric nnx tree + per-obs caches + a deterministic ``evaluate``.
 
     Only parameters and parametric submodules live on the nnx tree.
     Non-parametric state (xarray observations, response caches, settings) is
-    held off the nnx tree on :attr:`_aux` — these Python objects aren't
+    held off the nnx tree on ``_aux`` — these Python objects aren't
     pytree-friendly and don't belong in nnx's Variable tracking.
 
     Parameters live as ``nnx.Param`` leaves under three dict-of-modules attributes:
 
-    - :attr:`spectrum`: ``{obs_name: SpectralModel}`` — one cloned replica per
+    - ``spectrum``: ``{obs_name: SpectralModel}`` — one cloned replica per
       observation, so per-obs spectral params become natural nnx leaves at
       ``spectrum.<obs>.<path>``.
-    - :attr:`instrument`: ``{obs_name: InstrumentModel}`` — only observations
+    - ``instrument``: ``{obs_name: InstrumentModel}`` — only observations
       with a non-``None`` entry in the user's ``instrument_model`` arg.
-    - :attr:`background`: ``{obs_name: BackgroundModel}`` — singleton expanded
+    - ``background``: ``{obs_name: BackgroundModel}`` — singleton expanded
       to per-obs clones, or the per-obs dict as supplied; ``None`` entries
       dropped.
 
     Parameters:
         spectral_model: The spectral model template; cloned per observation.
         observations: One or more observation configurations. Accepts a single
-            :class:`~jaxspec.data.ObsConfiguration`, a list (auto-named
-            ``data_0``, ``data_1``, ...), or a ``{name: obs}`` dict.
+            [`ObsConfiguration`][jaxspec.data.obsconf.ObsConfiguration], a list
+            (auto-named ``data_0``, ``data_1``, ...), or a ``{name: obs}`` dict.
         background_model: ``None``, a singleton ``BackgroundModel`` (applied to
             every observation as a clone), or a ``{obs_name: BackgroundModel | None}``
             dict for per-obs heterogeneous backgrounds.
@@ -156,6 +156,12 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
         sparsify_matrix: Whether to store transfer matrices as sparse BCOO.
         n_points: Number of quadrature points per energy bin for the flux
             integration.
+        energy_grid: Optional shared 1-D array of energy bin edges (keV,
+            strictly increasing) on which to evaluate the spectral model before
+            redistributing onto each observation's native grid via
+            [`InstrumentModel.fold`][jaxspec.model.instrument.InstrumentModel.fold].
+            When ``None`` (default) each observation evaluates the spectrum on
+            its own native grid.
     """
 
     def __init__(
@@ -220,14 +226,17 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
 
     @property
     def observations(self) -> dict[str, ObsConfiguration]:
+        """The name-keyed observation configurations, ``{obs_name: ObsConfiguration}``."""
         return self._aux.observations
 
     @property
     def settings(self) -> dict[str, Any]:
+        """Evaluation settings (``sparse``, ``n_points``, ``energy_grid``, ``spectrum_shared``)."""
         return self._aux.settings
 
     @property
     def obs_caches(self) -> dict[str, dict[str, Any]]:
+        """Per-observation JAX-typed response caches (transfer matrix and components)."""
         return self._aux.caches
 
     # ----- Unified evaluation entry point -----
@@ -245,20 +254,20 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
         paths (e.g. ``"spectrum.PN.powerlaw_1.norm"``,
         ``"instrument.MOS1.gain.factor"``, ``"background.PN.countrate"``).
         Every ``nnx.Param`` leaf of the tree must be covered; a miss raises a
-        ``KeyError`` with the rich :func:`_missing_prior_message`.
+        ``KeyError`` with the rich ``_missing_prior_message``.
 
         The method is **deterministic** — no numpyro sites are created here.
         Callers that need numpyro sampling build the inputs dict via
-        :func:`~jaxspec.fit._prior_resolution.sample_prior` first (which is
-        what :meth:`BayesianModel.numpyro_model` does), then call
-        ``evaluate``. Non-sampling callers (``fakeit``, posterior-predictive
-        checks) build the inputs dict from concrete values and call
-        ``evaluate`` directly, vmapping over batch dimensions.
+        ``sample_prior`` first (which is what
+        [`BayesianModel.numpyro_model`][jaxspec.fit.BayesianModel.numpyro_model]
+        does), then call ``evaluate``. Non-sampling callers (``fakeit``,
+        posterior-predictive checks) build the inputs dict from concrete values
+        and call ``evaluate`` directly, vmapping over batch dimensions.
 
         When ``settings["energy_grid"]`` is set, the spectral model is
         evaluated over that grid and redistributed onto each obs's native
-        grid by :meth:`InstrumentModel.fold`. With
-        ``settings["spectrum_shared"]`` additionally ``True`` the grid
+        grid by [`InstrumentModel.fold`][jaxspec.model.instrument.InstrumentModel.fold].
+        With ``settings["spectrum_shared"]`` additionally ``True`` the grid
         evaluation happens **once** and is broadcast to every obs (the
         BayesianModel sets this flag when no per-obs spectral prior is
         present). When ``energy_grid`` is ``None`` each obs evaluates the
