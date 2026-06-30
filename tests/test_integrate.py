@@ -2,18 +2,15 @@ import inspect
 
 from dataclasses import dataclass
 
-import chex
 import jax
 import jax.numpy as jnp
-import numpyro
 import pytest
 
 from jax.scipy.special import gamma, hyp1f1
 from jax.typing import ArrayLike
 from jaxspec.util.integrate import integrate_interval, integrate_positive
 
-numpyro.enable_x64()
-chex.set_n_cpu_devices(n=4)
+# chex device count + x64 are configured once in conftest.py.
 
 
 @dataclass

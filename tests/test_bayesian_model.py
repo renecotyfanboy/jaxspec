@@ -1,9 +1,15 @@
+"""Public-interface tests for :class:`BayesianModel`: the likelihood / posterior
+methods and the flat array <-> dict parameter interfaces used by external samplers.
+
+Forward-model normalisation/validation helpers are tested in ``test_forward_model.py``;
+prior-resolution internals in ``test_prior_resolution.py``."""
+
 import operator
 
 import jax
 import jax.numpy as jnp
 
-from conftest import prior_shared_pars, single_obsconf, spectral_model
+from helpers import prior_shared_pars, single_obsconf, spectral_model
 from jaxspec.fit import BayesianModel
 
 

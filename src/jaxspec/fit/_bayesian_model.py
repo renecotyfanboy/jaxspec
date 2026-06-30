@@ -32,7 +32,7 @@ from ..analysis._plot import (
     rebin_counts,
 )
 from ..data import ObsConfiguration
-from ..model.abc import SpectralModel
+from ..model.abc import ModelComponent, SpectralModel
 from ..model.background import BackgroundModel
 from ..model.instrument import InstrumentModel
 from ._forward_model import ForwardModel
@@ -55,7 +55,9 @@ class BayesianModel:
 
     Parameters:
         model: The spectral model to fit (cloned per observation inside the
-            internal :class:`~jaxspec.fit._forward_model.ForwardModel`).
+            internal :class:`~jaxspec.fit._forward_model.ForwardModel`). A single
+            bare component (e.g. ``Powerlaw()``) is accepted and auto-wrapped via
+            :meth:`~jaxspec.model.abc.SpectralModel.from_component`.
         prior: Either a unified prior dict using the ``[obs]`` / ``[*]``
             scoping syntax (see module docs), or a factory callable
             ``() -> ((leaf_path, shape) -> Distribution)``. The factory form
@@ -73,7 +75,7 @@ class BayesianModel:
 
     def __init__(
         self,
-        model: SpectralModel,
+        model: SpectralModel | ModelComponent,
         prior: dict | Callable,
         observations: ObsConfiguration | list[ObsConfiguration] | dict[str, ObsConfiguration],
         background_model: BackgroundModel | dict[str, BackgroundModel | None] | None = None,
@@ -233,7 +235,7 @@ class BayesianModel:
         # across MCMC's repeated traces, surfacing as UnexpectedTracerError).
         # ``evaluate`` itself does NOT clone — that would break ``jax.vmap``.
         fresh_forward = nnx.clone(self.forward_model)
-        predictions = fresh_forward.evaluate(inputs)
+        predictions = fresh_forward.evaluate(inputs, missing_key_style="prior")
 
         fm = self.forward_model
         for obs_name, obs in fm.observations.items():

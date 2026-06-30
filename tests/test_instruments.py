@@ -4,8 +4,13 @@ import matplotlib.pyplot as plt
 import pytest
 
 from astropy.io import fits
-from conftest import data_collection, data_directory
+from helpers import curated_params, data_directory
 from jaxspec.data import Instrument, ObsConfiguration, Observation
+
+# Reasons a curated file can't be exercised by a given operation (wrong headers,
+# or the file is a pha2). Centralised here so each case surfaces as a real skip
+# rather than a silent vacuous pass.
+_PHA2_OR_BAD_HEADER = "unsupported curated file (pha2 or non-conforming header)"
 
 
 def test_loading_non_existent_files():
@@ -21,79 +26,82 @@ def test_loading_non_existent_files():
         ObsConfiguration.from_pha_file(path)
 
 
-@pytest.mark.parametrize("observation", data_collection, ids=lambda m: m["name"])
-def test_loading_curated_data_files_from_pha(observation):
-    # Not working either because the header are wrong or the file is a pha2
-    not_working = ["XMM-Newton/RGS", "XRISM/Resolve", "Chandra/LETGS"]
-
-    if observation["name"] not in not_working:
-        ObsConfiguration.from_pha_file(data_directory / observation["pha_path"])
-
-
-@pytest.mark.parametrize("observation", data_collection, ids=lambda m: m["name"])
-def test_plot_curated_data_files_grouping(observation):
-    # Not working because the file is a pha2
-    not_working = ["Chandra/LETGS", "IXPE/GPD"]
-
-    if observation["name"] not in not_working:
-        obs = Observation.from_pha_file(data_directory / observation["pha_path"])
-
-        if observation["name"] in ["XRISM/Resolve", "Hitomi/SXS"]:
-            obs.plot_counts()
-            plt.suptitle(observation["name"])
-            plt.show()
-
-        else:
-            obs.plot_grouping()
-            plt.suptitle(observation["name"])
-            plt.show()
+@pytest.mark.parametrize(
+    "observation",
+    curated_params({"XMM-Newton/RGS", "XRISM/Resolve", "Chandra/LETGS"}, _PHA2_OR_BAD_HEADER),
+)
+@pytest.mark.slow
+def test_loading_curated_data_files_from_pha(observation, curated_data_dir):
+    ObsConfiguration.from_pha_file(data_directory / observation["pha_path"])
 
 
-@pytest.mark.parametrize("observation", data_collection, ids=lambda m: m["name"])
-def test_loading_curated_data_files_from_pha_with_explicit_files(observation):
-    # Not working because the file is a pha2
-    not_working = ["Chandra/LETGS"]
+@pytest.mark.parametrize(
+    "observation",
+    curated_params({"Chandra/LETGS", "IXPE/GPD"}, _PHA2_OR_BAD_HEADER),
+)
+@pytest.mark.slow
+def test_plot_curated_data_files_grouping(observation, curated_data_dir):
+    obs = Observation.from_pha_file(data_directory / observation["pha_path"])
 
-    if observation["name"] not in not_working:
-        ObsConfiguration.from_pha_file(
-            data_directory / observation["pha_path"],
-            rmf_path=data_directory / observation["rmf_path"],
-            arf_path=data_directory / observation.get("arf_path", None)
-            if observation.get("arf_path", None) is not None
-            else None,
-        )
-
-
-@pytest.mark.parametrize("observation", data_collection, ids=lambda m: m["name"])
-def test_plot_instruments_from_curated_data_files(observation):
-    title = observation["name"]
-
-    if observation["name"] not in ["Chandra/LETGS"]:
-        if "arf_path" in observation.keys():
-            instrument = Instrument.from_ogip_file(
-                data_directory / observation["rmf_path"],
-                arf_path=data_directory / observation["arf_path"],
-            )
-
-            title += " (ARF included)"
-
-        else:
-            instrument = Instrument.from_ogip_file(
-                data_directory / observation["rmf_path"], arf_path=None
-            )
-
-            title += " (no ARF included)"
-
-        instrument.plot_area()
-        plt.suptitle(title)
+    if observation["name"] in ["XRISM/Resolve", "Hitomi/SXS"]:
+        obs.plot_counts()
+        plt.suptitle(observation["name"])
         plt.show()
 
-        if observation["name"] not in ["XRISM/Resolve", "Hitomi/SXS"]:
-            instrument.plot_redistribution()
-            plt.suptitle(observation["name"])
-            plt.show()
+    else:
+        obs.plot_grouping()
+        plt.suptitle(observation["name"])
+        plt.show()
 
 
+@pytest.mark.parametrize(
+    "observation",
+    curated_params({"Chandra/LETGS"}, _PHA2_OR_BAD_HEADER),
+)
+@pytest.mark.slow
+def test_loading_curated_data_files_from_pha_with_explicit_files(observation, curated_data_dir):
+    ObsConfiguration.from_pha_file(
+        data_directory / observation["pha_path"],
+        rmf_path=data_directory / observation["rmf_path"],
+        arf_path=data_directory / observation.get("arf_path", None)
+        if observation.get("arf_path", None) is not None
+        else None,
+    )
+
+
+@pytest.mark.parametrize(
+    "observation",
+    curated_params({"Chandra/LETGS"}, _PHA2_OR_BAD_HEADER),
+)
+@pytest.mark.slow
+def test_plot_instruments_from_curated_data_files(observation, curated_data_dir):
+    title = observation["name"]
+
+    if "arf_path" in observation.keys():
+        instrument = Instrument.from_ogip_file(
+            data_directory / observation["rmf_path"],
+            arf_path=data_directory / observation["arf_path"],
+        )
+        title += " (ARF included)"
+    else:
+        instrument = Instrument.from_ogip_file(
+            data_directory / observation["rmf_path"], arf_path=None
+        )
+        title += " (no ARF included)"
+
+    instrument.plot_area()
+    plt.suptitle(title)
+    plt.show()
+
+    # Resolve/SXS calorimeters have a near-diagonal redistribution that the
+    # generic plot doesn't handle — skip that sub-step for them only.
+    if observation["name"] not in ["XRISM/Resolve", "Hitomi/SXS"]:
+        instrument.plot_redistribution()
+        plt.suptitle(observation["name"])
+        plt.show()
+
+
+@pytest.mark.slow
 def test_plot_exemple_instruments(instruments: list[Instrument]):
     for instrument in instruments:
         plt.figure(figsize=(10, 5))
@@ -104,6 +112,7 @@ def test_plot_exemple_instruments(instruments: list[Instrument]):
         plt.show()
 
 
+@pytest.mark.slow
 def test_plot_exemple_observations(observations: list[Observation]):
     for observation in observations:
         observation.plot_grouping()
@@ -111,7 +120,7 @@ def test_plot_exemple_observations(observations: list[Observation]):
 
 
 @pytest.fixture
-def file_with_no_grouping(tmp_path):
+def file_with_no_grouping(tmp_path, curated_data_dir):
     file_path = tmp_path / "no_grouping.fits"
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.arf", tmp_path / "PN.arf")
@@ -128,13 +137,14 @@ def file_with_no_grouping(tmp_path):
     return file_path
 
 
+@pytest.mark.slow
 def test_loading_file_with_no_grouping(file_with_no_grouping):
     with pytest.raises(ValueError):
         Observation.from_pha_file(file_with_no_grouping)
 
 
 @pytest.fixture
-def file_with_no_backscal(tmp_path):
+def file_with_no_backscal(tmp_path, curated_data_dir):
     file_path = tmp_path / "no_backscal.fits"
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.arf", tmp_path / "PN.arf")
@@ -151,13 +161,14 @@ def file_with_no_backscal(tmp_path):
     return file_path
 
 
+@pytest.mark.slow
 def test_loading_file_with_no_backscal(file_with_no_backscal):
     with pytest.raises(ValueError):
         Observation.from_pha_file(file_with_no_backscal)
 
 
 @pytest.fixture
-def file_with_no_areascal(tmp_path):
+def file_with_no_areascal(tmp_path, curated_data_dir):
     file_path = tmp_path / "no_areascal.fits"
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN_spectrum_grp20.fits", file_path)
     shutil.copyfile(data_directory / "XMM-Newton/EPIC-PN/PN.arf", tmp_path / "PN.arf")
@@ -174,6 +185,7 @@ def file_with_no_areascal(tmp_path):
     return file_path
 
 
+@pytest.mark.slow
 def test_loading_file_with_no_areascal(file_with_no_areascal):
     with pytest.raises(ValueError):
         Observation.from_pha_file(file_with_no_areascal)

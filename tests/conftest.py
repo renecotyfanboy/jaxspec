@@ -4,81 +4,48 @@ import chex
 
 chex.set_n_cpu_devices(n=4)
 
-import os
+import matplotlib
 
-from pathlib import Path
+matplotlib.use("Agg")  # headless backend — avoids the macOS _macosx segfault
 
+import matplotlib.pyplot as plt
 import numpyro
-import numpyro.distributions as dist
-import pooch
 import pytest
-import yaml
 
 from jax import config
-from jaxspec.data.util import load_example_obsconf
-from jaxspec.fit import MCMCFitter
-from jaxspec.model.additive import Blackbodyrad, Powerlaw
-from jaxspec.model.multiplicative import Tbabs
 
 config.update("jax_enable_x64", True)
 numpyro.set_platform("cpu")
 numpyro.set_host_device_count(4)
 
-prior_shared_pars = {
-    "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-    "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
-    "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
-    "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
-    "spectrum.tbabs_1.nh": dist.Uniform(0, 1),
-}
+# Imported after the device setup above so the example-data load it triggers
+# sees the configured CPU device count and x64.
+from helpers import list_of_obsconf, prior_shared_pars, spectral_model
+from jaxspec.fit import MCMCFitter
 
-prior_split_pars = {
-    "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-    "spectrum.powerlaw_1.norm[*]": dist.LogUniform(1e-5, 1e-2),
-    "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
-    "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
-    "spectrum.tbabs_1.nh": dist.Uniform(0, 1),
-}
 
-prior = {
-    "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
-    "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
-    "spectrum.blackbodyrad_1.kT": dist.Uniform(0, 5),
-    "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
-    "spectrum.tbabs_1.nh": dist.Uniform(0, 1),
-}
+def pytest_collection_modifyitems(items):
+    """Complete the fast/slow taxonomy: anything not explicitly ``slow`` is ``fast``.
 
-single_obsconf = load_example_obsconf("NGC7793_ULX4_PN")
-list_of_obsconf = list(load_example_obsconf("NGC7793_ULX4_ALL").values())
-dict_of_obsconf = load_example_obsconf("NGC7793_ULX4_ALL")
+    Keeps the marker split exhaustive without sprinkling ``@pytest.mark.fast``
+    everywhere, and auto-classifies future tests. CI's ``-m "not slow"`` selector
+    is unaffected.
+    """
+    for item in items:
+        if "slow" not in item.keywords:
+            item.add_marker(pytest.mark.fast)
 
-# Dir containing 8 files
-parent_directory = Path(__file__).parent.resolve()
-data_directory = parent_directory / "data"
 
-if not data_directory.exists():
-    os.mkdir(data_directory)
-
-with open(parent_directory / "data_files.yml") as file:
-    data_collection = yaml.safe_load(file)
-
-with open(parent_directory / "data_hash.yml") as file:
-    data_hash = yaml.safe_load(file)
-
-pooch_dataset = pooch.create(
-    base_url="https://github.com/HEACIT/curated-test-data/raw/main/",
-    path=str(data_directory),
-    registry=data_hash,
-    retry_if_failed=10,
-)
-
-for file in data_hash.keys():
-    pooch_dataset.fetch(file)
+@pytest.fixture(autouse=True)
+def _close_figures():
+    """Close any matplotlib figures a test opened, preventing cross-test leakage."""
+    yield
+    plt.close("all")
 
 
 @pytest.fixture(scope="session")
 def obsconfs():
-    return list(load_example_obsconf("NGC7793_ULX4_ALL").values())
+    return list_of_obsconf
 
 
 @pytest.fixture(scope="session")
@@ -96,13 +63,17 @@ def instruments():
 
 
 @pytest.fixture(scope="session")
+def curated_data_dir():
+    """Download the HEACIT curated multi-mission files; only the curated-data
+    tests depend on this, so unrelated runs never trigger the fetch."""
+    from helpers import download_curated_data
+
+    return download_curated_data()
+
+
+@pytest.fixture(scope="session")
 def obs_model_prior(obsconfs):
-    from jaxspec.model.additive import Blackbodyrad, Powerlaw
-    from jaxspec.model.multiplicative import Tbabs
-
-    model = Tbabs() * (Powerlaw() + Blackbodyrad())
-
-    return obsconfs, model, prior
+    return obsconfs, spectral_model, prior_shared_pars
 
 
 @pytest.fixture(scope="session")
@@ -139,6 +110,3 @@ def get_result_list(get_individual_mcmc_results, get_joint_mcmc_result):
     name_list += ["Joint_mcmc"]
 
     return name_list, result_list
-
-
-spectral_model = Tbabs() * (Powerlaw() + Blackbodyrad())

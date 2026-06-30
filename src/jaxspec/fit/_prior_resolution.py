@@ -39,7 +39,7 @@ from ._parameter import TiedParameter
 _KNOWN_PREFIXES = ("spectrum", "instrument", "background")
 
 
-def bind_inputs(forward_model, inputs):
+def bind_inputs(forward_model, inputs, *, missing_key_style: str = "inputs"):
     """Bind a leaf-path → value ``inputs`` dict onto a bound copy of
     ``forward_model``'s nnx tree and return it.
 
@@ -54,6 +54,9 @@ def bind_inputs(forward_model, inputs):
     Every ``nnx.Param`` leaf must have a matching key in ``inputs``; a miss
     raises the rich :func:`_missing_prior_message` so a forgotten prior surfaces
     loudly (same strict contract the old adapter enforced at bind time).
+    ``missing_key_style`` picks that message's wording: ``"inputs"`` (default,
+    for direct ``evaluate`` / ``fakeit`` callers) points at the resolved leaf
+    path, while ``"prior"`` (the fitter flow) suggests the prior-dict key forms.
     """
     graph_def, params_state, other_state = nnx.split(forward_model, nnx.Param, nnx.Not(nnx.Param))
     params_pure = nnx.to_pure_dict(params_state)
@@ -62,7 +65,7 @@ def bind_inputs(forward_model, inputs):
         try:
             return inputs[leaf_path]
         except KeyError:
-            raise KeyError(_missing_prior_message(leaf_path)) from None
+            raise KeyError(_missing_prior_message(leaf_path, style=missing_key_style)) from None
 
     _sample_leaves(params_pure, _lookup, prefix="", site_prefix="forward.")
 
@@ -356,18 +359,39 @@ def _unmatched_key_message(path: str, scope: str | None, leaves: dict[str, dict[
     return f"Prior key {key!r} does not match any model parameter.{hint}"
 
 
-def _missing_prior_message(leaf_path: str) -> str:
-    """Build the rich error message for a leaf with no matching prior entry."""
+def _missing_prior_message(leaf_path: str, *, style: str = "inputs") -> str:
+    """Build the rich error message for a leaf with no matching value.
+
+    ``style`` tailors the advice to the calling flow:
+
+    * ``"inputs"`` — the direct :meth:`ForwardModel.evaluate` / ``fakeit`` path,
+      whose ``inputs`` dict is keyed by fully-resolved leaf paths. Points the user
+      at the resolved key verbatim and notes the bracketed prior-dict syntax does
+      not apply here.
+    * ``"prior"`` — the fitter prior-dict path, where the miss is an omitted prior
+      entry. Suggests the shared / ``[*]`` / ``[obs]`` key forms.
+    """
     parts = leaf_path.split(".")
+    if style == "prior":
+        if len(parts) < 3:
+            return f"No prior provided for parameter {leaf_path!r}."
+        prefix, obs, *rest = parts
+        rest_dotted = ".".join(rest)
+        return (
+            f"No prior provided for parameter {leaf_path!r}. Add an entry like "
+            f"'{prefix}.{rest_dotted}' (shared), "
+            f"'{prefix}.{rest_dotted}[*]' (split), or "
+            f"'{prefix}.{rest_dotted}[{obs}]' (specific) to the prior dict."
+        )
     if len(parts) < 3:
-        return f"No prior provided for parameter {leaf_path!r}."
-    prefix, obs, *rest = parts
+        return f"No value provided for parameter {leaf_path!r}."
+    prefix, _obs, *rest = parts
     rest_dotted = ".".join(rest)
     return (
-        f"No prior provided for parameter {leaf_path!r}. Add an entry like "
-        f"'{prefix}.{rest_dotted}' (shared), "
-        f"'{prefix}.{rest_dotted}[*]' (split), or "
-        f"'{prefix}.{rest_dotted}[{obs}]' (specific) to the prior dict."
+        f"No value provided for parameter {leaf_path!r}. evaluate() takes a flat "
+        f"inputs dict keyed by fully-resolved leaf paths — add {leaf_path!r} to it. "
+        f"The bracketed prior-dict syntax ('{prefix}.{rest_dotted}[*]', etc.) is only "
+        f"for the fitter prior dict, not evaluate()."
     )
 
 

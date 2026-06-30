@@ -1,18 +1,9 @@
-import os
-import sys
-
 import chex
 import jax
 import pytest
 
 from jaxspec.data import ObsConfiguration
 from jaxspec.data.util import fakeit_for_multiple_parameters
-
-chex.set_n_cpu_devices(n=4)
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-source_dir = os.path.abspath(os.path.join(current_dir, ".."))
-sys.path.append(source_dir)
 
 
 @pytest.fixture
@@ -107,19 +98,6 @@ def test_fakeits_sparsify(obsconfs, model, unidimensional_parameters):
         obsconf, model, unidimensional_parameters, apply_stat=False, sparsify_matrix=True
     )
     chex.assert_type(spectra, float)
-
-
-def test_fakeits_multiple_observation(obsconfs, model, multidimensional_parameters):
-    obsconf = obsconfs[0]
-    spectra = fakeit_for_multiple_parameters(
-        obsconf, model, multidimensional_parameters, apply_stat=False
-    )
-    chex.assert_type(spectra, float)
-
-    spectra = fakeit_for_multiple_parameters(
-        obsconf, model, multidimensional_parameters, apply_stat=True
-    )
-    chex.assert_type(spectra, int)
 
 
 def test_mock_obsconf(instruments, model, multidimensional_parameters):

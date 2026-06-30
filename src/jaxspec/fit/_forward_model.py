@@ -10,7 +10,7 @@ from jax.typing import ArrayLike
 
 from ..data import ObsConfiguration
 from ..data.obsconf import to_jax_matrix
-from ..model.abc import HideUnderscoreMixin, SpectralModel
+from ..model.abc import HideUnderscoreMixin, ModelComponent, SpectralModel
 from ..model.background import BackgroundModel
 from ..model.instrument import InstrumentModel
 
@@ -143,7 +143,10 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
       dropped.
 
     Parameters:
-        spectral_model: The spectral model template; cloned per observation.
+        spectral_model: The spectral model template; cloned per observation. A
+            single bare component (e.g. ``Powerlaw()``) is accepted too and is
+            auto-wrapped via
+            [`SpectralModel.from_component`][jaxspec.model.abc.SpectralModel.from_component].
         observations: One or more observation configurations. Accepts a single
             [`ObsConfiguration`][jaxspec.data.obsconf.ObsConfiguration], a list
             (auto-named ``data_0``, ``data_1``, ...), or a ``{name: obs}`` dict.
@@ -166,7 +169,7 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
 
     def __init__(
         self,
-        spectral_model: SpectralModel,
+        spectral_model: SpectralModel | ModelComponent,
         observations: ObsConfiguration | list | dict,
         background_model: BackgroundModel | dict[str, BackgroundModel | None] | None = None,
         instrument_model: dict[str, InstrumentModel | None] | None = None,
@@ -174,6 +177,12 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
         n_points: int = 2,
         energy_grid: ArrayLike | None = None,
     ):
+        # Accept a bare component (e.g. ``Powerlaw()``) where a SpectralModel is
+        # expected — wrap it so it gains flux_func / branch topology and its params
+        # nest under the conventional ``<component>_1`` name (e.g. ``powerlaw_1``).
+        if isinstance(spectral_model, ModelComponent):
+            spectral_model = SpectralModel.from_component(spectral_model)
+
         obs_dict = _normalise_observations(observations)
         obs_names = list(obs_dict)
 
@@ -247,6 +256,7 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
         *,
         split_branches: bool = False,
         with_background: bool = True,
+        missing_key_style: str = "inputs",
     ) -> dict[str, dict[str, Any]]:
         """Bind ``inputs`` and run the per-observation forward pass.
 
@@ -284,6 +294,10 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
                 set each ``"background"`` entry to ``None``. Used by the
                 source-only component overlay to avoid computing a rate it
                 discards.
+            missing_key_style: Internal selector for the "missing leaf" error
+                wording. ``"inputs"`` (default) points direct callers at the
+                resolved leaf path; the fitter passes ``"prior"`` to suggest the
+                prior-dict key forms.
 
         Returns:
             ``{obs_name: {"source": folded_flux | {branch: folded_flux},
@@ -292,7 +306,7 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
         """
         from ._prior_resolution import bind_inputs
 
-        bound = bind_inputs(self, inputs)
+        bound = bind_inputs(self, inputs, missing_key_style=missing_key_style)
         settings = self.settings
         n_points = settings["n_points"]
         energy_grid = settings["energy_grid"]
