@@ -79,6 +79,7 @@ def test_run_vi(model, prior, obsconf, expectation):
             num_steps=100,
             num_samples=10,
             optimizer=optim,
+            svi_kwargs={"progress_bar": False},
             plot_diagnostics=True,
         )
         assert_result_smoke(result)
