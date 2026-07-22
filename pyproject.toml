@@ -72,6 +72,7 @@ default-groups = [
 markers = [
     "slow: marks tests as slow, typically involving MCMC inference or external tools (deselect with '-m \"not slow\"')",
     "fast: marks tests as fast, suitable for quick iteration",
+    "xspec: marks tests that compare against a live PyXSPEC/HEASOFT install (run with 'bash scripts/run_xspec_tests.sh')",
 ]
 
 [build-system]

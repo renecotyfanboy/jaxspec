@@ -19,7 +19,7 @@ from helpers import (
 from jaxspec.fit import MCMCFitter, NSFitter, TiedParameter, VIFitter
 from jaxspec.model.additive import Powerlaw
 from jaxspec.model.background import BackgroundWithError, SpectralModelBackground
-from jaxspec.model.instrument import ConstantGain, ConstantShift, InstrumentModel
+from jaxspec.model.instrument import ConstantGain, ConstantShift, InstrumentModel, PileupModel
 from jaxspec.model.multiplicative import Tbabs
 from numpyro.optim import optax_to_numpyro
 from optax import adamw
@@ -106,6 +106,41 @@ def test_instrument_model_building(sampler):
     )
 
     result = forward_model.fit(**SHORT_MCMC_FIT, sampler=sampler)
+    assert_result_smoke(result)
+
+
+@pytest.mark.slow
+def test_pileup_model_building():
+    # Single-sampler smoke test: pileup prior binding is sampler-independent and
+    # the numerics are covered by the fast tests in ``tests/test_pileup.py``; the
+    # fine energy grid makes tracing the dominant cost, so NUTS alone suffices.
+    prior_with_instruments = {
+        **prior_shared_pars,
+        "instrument.alpha[*]": dist.Uniform(0.0, 1.0),
+        "instrument.psf_frac[*]": dist.Uniform(0.8, 1.0),
+        "instrument.gain.factor[*]": dist.Uniform(0.8, 1.2),
+        "instrument.shift.offset[*]": dist.Uniform(-0.1, +0.1),
+    }
+
+    pileup_kwargs = {
+        "frac_expo": 1.0,
+        "frame_time": 3.1,
+    }
+
+    forward_model = MCMCFitter(
+        spectral_model,
+        prior_with_instruments,
+        dict_of_obsconf,
+        background_model=None,
+        energy_grid=np.arange(0.20, 11 + 0.001, 0.001),
+        instrument_model={
+            "PN": None,  # explicit reference
+            "MOS1": PileupModel(gain=ConstantGain(), shift=ConstantShift(), **pileup_kwargs),
+            "MOS2": PileupModel(gain=ConstantGain(), shift=ConstantShift(), **pileup_kwargs),
+        },
+    )
+
+    result = forward_model.fit(**SHORT_MCMC_FIT, sampler="nuts")
     assert_result_smoke(result)
 
 
