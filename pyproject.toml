@@ -18,7 +18,7 @@ dependencies = [
     "chainconsumer>=1.1.2,<2",
     "cmasher>=1.6.3,<2",
     "sparse>=0.18",
-    "scipy<1.16",
+    "scipy<1.18",
     "mendeleev>=0.15,<1.2",
     "pooch>=1.8.2,<2",
     "interpax>=0.3.5,<0.4",
