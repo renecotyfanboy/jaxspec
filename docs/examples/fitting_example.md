@@ -15,7 +15,7 @@ numpyro.set_host_device_count(16) # (2)!
 2. Change this number to the number of cores you want to use. If you work with GPUs/TPUs, remove this line.
 
 
-!!! Warning
+!!! warning
 
     These lines are extremely important and must be run **at the beginning** of most of your scripts. It tells `JAX` how
     many cores you want to use and enforces the double precision, which is crucial when running MCMC.

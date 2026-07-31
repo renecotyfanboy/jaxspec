@@ -71,7 +71,7 @@ You should look at [`FitResult.photon_flux`][jaxspec.analysis.results.FitResult.
 
 You can use the `dill` package to serialise and un-serialise such objects. First you should install it using `pip`
 
-```
+```bash
 pip install dill
 ```
 

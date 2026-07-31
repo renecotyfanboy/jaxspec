@@ -2,7 +2,7 @@
 
 ## How can I load multiple spectra to fit ?
 
-Simply pass a list or dictionnary of [`ObsConfiguration`][jaxspec.data.ObsConfiguration] objects when building your
+Simply pass a list or dictionnary of [`ObsConfiguration`][jaxspec.data.obsconf.ObsConfiguration] objects when building your
 fitter object.
 
 ## Why should I use `jaxspec` over `xspec` or associated ?
@@ -33,7 +33,7 @@ publications on the subject agree that using the C-stat at all count rates is ne
 of the parameters.(e.g. [Kaastra, 2017](https://arxiv.org/abs/1707.09202) or
 [Buchner & Boorman, 2023](https://arxiv.org/abs/2309.05705)).
 
-![Cstat vs chi2](statics/cstat_vs_chi2.png){width=250, align=left}
+![Cstat vs chi2](statics/cstat_vs_chi2.png){ width="250" align="left" }
 
 This figure shows a comparison of true error on the parameters $(A, \Gamma)$ of a power-law recovered by fitting under
 $\chi^2$ or C-statistic (Adapted from [Buchner & Boorman, 2023](https://arxiv.org/abs/2309.05705)) and highlights the

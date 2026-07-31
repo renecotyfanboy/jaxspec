@@ -1,4 +1,4 @@
-# Additive components
+# Additive models
 
 ::: jaxspec.model.additive
     options:

@@ -7,22 +7,32 @@ requires-python = ">=3.11,<3.13"
 readme = "README.md"
 license = "MIT"
 dependencies = [
-    "jax<0.10",
+    # jaxspec reaches into flax nnx internals (nnx.split/clone bucket semantics,
+    # numpyro_mutable holders, the ForwardModel._aux container that exists solely to
+    # dodge a tracer leak). Those are not public API, so both flax and numpyro carry a
+    # tight upper bound: a minor release of either can break every installed jaxspec
+    # retroactively. Widen only after running the full suite, `tests/test_inference.py`
+    # included — the fast subset does not exercise the numpyro trace path.
+    "flax>=0.12.4,<0.13",
+    "numpyro>=0.21,<0.22",
+    "jax>=0.5.0,<0.10",
     "numpy<3.0.0",
     "pandas>=2.2.0,<3",
     "astropy>=6.0.0,<8",
-    "numpyro>0.20.1",
     "networkx~=3.1",
     "matplotlib>=3.8.0,<4",
     "arviz>=0.17.1,<0.24.0",
     "chainconsumer>=1.1.2,<2",
     "cmasher>=1.6.3,<2",
     "sparse>=0.18",
+    # Upper bound inherited from an automated bump that was reverted once (#214, #237);
+    # the reason was never recorded. scipy is used for sparse assembly in
+    # `data/obsconf.py` and `gammaln` in `analysis/results.py`, so test those before
+    # widening.
     "scipy<1.16",
     "mendeleev>=0.15,<1.2",
     "pooch>=1.8.2,<2",
     "interpax>=0.3.5,<0.4",
-    "flax>=0.12.4",
     "seaborn>=0.13.2",
 ]
 
@@ -78,6 +88,17 @@ markers = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# Declared, not inferred: hatchling's src-layout inference sweeps in every file under
+# `src/jaxspec`, which would silently ship locally generated lookup tables (hundreds of
+# MB) inside the wheel. Large tables are distributed via pooch — see
+# `jaxspec/util/online_storage.py`.
+packages = ["src/jaxspec"]
+exclude = ["tables/*.npz"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["src/jaxspec/tables/*.npz"]
 
 [tool.ruff]
 line-length = 100

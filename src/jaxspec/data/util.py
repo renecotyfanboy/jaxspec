@@ -235,22 +235,27 @@ def fakeit_for_multiple_parameters(
     obsconf_list = [obsconfs] if isinstance(obsconfs, ObsConfiguration) else obsconfs
     fakeits = []
 
-    for i, obsconf in enumerate(obsconf_list):
-        countrate = forward_model_with_multiple_inputs(
-            model, parameters, obsconf, sparse=sparsify_matrix
-        )
+    # One seed handler for the whole loop. `handlers.seed` splits its key per sample site
+    # in trace order, not by site name, so re-entering it inside the loop restarts from
+    # the same key every time and gives every observation *identical* Poisson noise —
+    # perfectly correlated counts across instruments in a joint simulation. A single-obs
+    # call is unaffected.
+    with handlers.seed(rng_seed=rng_key):
+        for i, obsconf in enumerate(obsconf_list):
+            countrate = forward_model_with_multiple_inputs(
+                model, parameters, obsconf, sparse=sparsify_matrix
+            )
 
-        if apply_stat:
-            with handlers.seed(rng_seed=rng_key):
+            if apply_stat:
                 spectrum = numpyro.sample(
                     f"likelihood_obs_{i}",
                     numpyro.distributions.Poisson(countrate),
                 )
 
-        else:
-            spectrum = countrate
+            else:
+                spectrum = countrate
 
-        fakeits.append(spectrum)
+            fakeits.append(spectrum)
 
     return fakeits[0] if len(fakeits) == 1 else fakeits
 
@@ -274,11 +279,17 @@ def data_path_finder(
     """
 
     def find_path(file_name: str, directory: str, raise_err: bool = True) -> str | None:
-        if raise_err:
-            if file_name.lower() != "none" and file_name != "":
-                return find_file_or_compressed_in_dir(file_name, directory, raise_err)
+        """Resolve one header keyword to a path.
 
-        return None
+        ``raise_err`` controls only what happens on a *miss*. The lookup itself always
+        runs — gating it made ``require_*=False`` return ``None`` without ever looking,
+        so ``Observation.from_pha_file`` (which passes ``False`` for all three) never
+        picked up a background or response sitting right next to the PHA file.
+        """
+        if file_name.lower() == "none" or file_name == "":
+            return None
+
+        return find_file_or_compressed_in_dir(file_name, directory, raise_err)
 
     header = fits.getheader(pha_path, "SPECTRUM")
     directory = str(Path(pha_path).parent)
@@ -290,10 +301,13 @@ def data_path_finder(
     return arf_path, rmf_path, bkg_path
 
 
-def find_file_or_compressed_in_dir(path: str | Path, directory: str | Path, raise_err: bool) -> str:
+def find_file_or_compressed_in_dir(
+    path: str | Path, directory: str | Path, raise_err: bool
+) -> str | None:
     """
     Try to find a file or its .gz compressed version in a given directory and return
-    the full path of the file.
+    the full path of the file. Returns ``None`` when it is missing and ``raise_err``
+    is ``False``.
     """
     path = Path(path) if isinstance(path, str) else path
     directory = Path(directory) if isinstance(directory, str) else directory
@@ -301,12 +315,15 @@ def find_file_or_compressed_in_dir(path: str | Path, directory: str | Path, rais
     if directory.joinpath(path).exists():
         return str(directory.joinpath(path))
 
-    matching_files = list(directory.glob(str(path) + "*"))
+    # Only an exact `.gz` sibling is the same file. Globbing `<name>*` and inspecting
+    # just the first hit meant an unrelated neighbour such as `PN.rmf.bak` sorted ahead
+    # of `PN.rmf.gz` made this return None *even with raise_err=True*, which surfaced
+    # later and far from the cause as `Instrument.from_ogip_file(None, ...)`.
+    compressed = directory.joinpath(str(path) + ".gz")
+    if compressed.exists():
+        return str(compressed)
 
-    if matching_files:
-        file = matching_files[0]
-        if file.suffix == ".gz":
-            return str(file)
-
-    elif raise_err:
+    if raise_err:
         raise FileNotFoundError(f"Can't find {path}(.gz) in {directory}.")
+
+    return None

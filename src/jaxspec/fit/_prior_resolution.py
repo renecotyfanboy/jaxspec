@@ -287,6 +287,15 @@ def _resolve_tied_entry(
         raise KeyError(_unmatched_key_message(path, scope, leaves))
 
     if scope is None:
+        if src_scope == "*":
+            raise ValueError(
+                f"TiedParameter {path!r} is shared across observations but its source "
+                f"{tied.tied_to!r} draws independently per observation. There is no "
+                f"single source value to tie to — the shared destination would silently "
+                f"use observation {sorted(obs for obs, _ in src_targets)[0]!r} only, so "
+                f"renaming an observation would change the fit. Either scope the "
+                f"destination per observation ('{path}[*]'), or tie to a shared source."
+            )
         # Shared dest: compute the derived value once, broadcast to every leaf,
         # register one deterministic site under the bare path.
         first_obs = dest_targets[0][0]
@@ -359,6 +368,40 @@ def _unmatched_key_message(path: str, scope: str | None, leaves: dict[str, dict[
     return f"Prior key {key!r} does not match any model parameter.{hint}"
 
 
+def _validate_no_conflicting_keys(
+    prior: dict,
+    leaves: dict[str, dict[str, str]],
+    applicable: dict[str, set[str]],
+) -> None:
+    """Raise if two prior keys resolve to the same model parameter.
+
+    Entries are sampled into a single ``{leaf: value}`` dict, so two keys claiming one
+    leaf means the last one written wins — and dict insertion order decides which. The
+    losing key still registers its own ``numpyro.sample`` site, which then influences
+    nothing: an unidentifiable free parameter that wrecks R-hat/ESS and shows up in
+    corner plots looking like a fitted quantity.
+
+    Overlap is always a mistake (a shared key plus an ``[obs]`` override for the same
+    parameter reads like it should work, but no precedence rule is implemented), so
+    refuse it rather than pick a winner.
+    """
+    owner: dict[str, str] = {}
+    for raw_key in prior:
+        path, scope = parse_prior_key(raw_key)
+        for obs, leaf in _resolve_targets(path, scope, leaves, applicable):
+            previous = owner.get(leaf)
+            if previous is not None and previous != raw_key:
+                raise ValueError(
+                    f"Prior keys {previous!r} and {raw_key!r} both set the same "
+                    f"parameter ({path!r} on observation {obs!r}). jaxspec does not "
+                    f"apply a precedence rule between overlapping keys — one draw "
+                    f"would silently be discarded. Use disjoint keys: either one "
+                    f"shared entry {path!r} for every observation, or one explicit "
+                    f"'{path}[<obs>]' entry per observation."
+                )
+            owner[leaf] = raw_key
+
+
 def _missing_prior_message(leaf_path: str, *, style: str = "inputs") -> str:
     """Build the rich error message for a leaf with no matching value.
 
@@ -424,6 +467,8 @@ def sample_prior(
         return _sample_callable_prior(forward_model, _normalise_callable_prior(prior))
 
     leaves = _enumerate_leaves(forward_model)
+    _validate_no_conflicting_keys(prior, leaves, applicable)
+
     samples: dict[str, Any] = {}
     deferred_ties: list[tuple[str, str | None, TiedParameter]] = []
 

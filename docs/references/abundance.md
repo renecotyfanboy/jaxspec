@@ -1,3 +1,5 @@
+# Abundance
+
 ::: jaxspec.util.abundance
     options:
       show_root_heading: false

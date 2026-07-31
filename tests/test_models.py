@@ -3,6 +3,8 @@ import re
 import jax.numpy as jnp
 import pytest
 
+from flax import nnx
+
 from jaxspec.model.additive import Additiveconstant, Blackbodyrad, Powerlaw
 from jaxspec.model.list import additive_components, multiplicative_components
 from jaxspec.model.multiplicative import MultiplicativeConstant, Tbabs
@@ -21,6 +23,24 @@ def test_additive_components(test_input):
     )
     out = spectral_model.flux_func(e_low, e_high)
     assert out.shape == e_low.shape
+
+
+@pytest.mark.parametrize("name", sorted({**additive_components, **multiplicative_components}))
+def test_every_component_exposes_fittable_parameters(name):
+    """Every component must expose at least one ``nnx.Param`` leaf.
+
+    ``jnp.asarray(nnx.Param(x))`` silently unwraps to a bare array via
+    ``__jax_array__``, leaving a component with zero fittable leaves: it cannot be
+    fitted and ``params=`` overrides are ignored without error. ``Lorentz`` shipped that
+    way. Shape assertions cannot see it, so assert on the parameter state directly.
+    """
+    component = {**additive_components, **multiplicative_components}[name]()
+    _, params, *_ = nnx.split(component, nnx.Param, ...)
+
+    assert len(params.flat_state()) > 0, (
+        f"{name} exposes no nnx.Param leaves — check for jnp.asarray(nnx.Param(...)), "
+        f"which unwraps the Param instead of promoting the value inside it."
+    )
 
 
 @pytest.mark.parametrize("test_input", list(multiplicative_components.keys()))

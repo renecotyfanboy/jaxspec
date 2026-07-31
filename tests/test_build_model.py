@@ -16,6 +16,7 @@ from helpers import (
     sparsify_marker,
     spectral_model,
 )
+
 from jaxspec.fit import BayesianModel, MCMCFitter
 from jaxspec.model.abc import SpectralModel
 from jaxspec.model.additive import Powerlaw

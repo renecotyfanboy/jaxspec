@@ -5,7 +5,7 @@
 This tutorial illustrates how to make generate mock observed spectra using `fakeit` - like interface
 as proposed by XSPEC.
 
-``` python
+```python
 import numpyro
 
 numpyro.enable_x64()
@@ -14,7 +14,7 @@ numpyro.set_platform("cpu")
 
 Let's build a model we want to fake and load an observation with the instrumental setup which should be applied
 
-``` python
+```python
 from jaxspec.model.additive import Powerlaw, Blackbodyrad
 from jaxspec.model.multiplicative import Tbabs
 from jaxspec.data import ObsConfiguration
@@ -25,7 +25,7 @@ model = Tbabs() * (Powerlaw() + Blackbodyrad())
 
 Let's do fakeit for a bunch of parameters
 
-``` python
+```python
 from numpy.random import default_rng
 
 rng = default_rng(42)
@@ -43,7 +43,7 @@ parameters = {
 
 And now we can fakeit!
 
-``` python
+```python
 from jaxspec.data.util import fakeit_for_multiple_parameters
 
 spectra = fakeit_for_multiple_parameters(obsconf, model, parameters)
@@ -51,7 +51,7 @@ spectra = fakeit_for_multiple_parameters(obsconf, model, parameters)
 
 Let's plot some of the resulting spectra
 
-``` python
+```python
 import matplotlib.pyplot as plt
 
 plt.figure(figsize=(5,4))
@@ -68,10 +68,10 @@ plt.loglog()
 
 ## Using only the instrument
 
-If you don't have any observation you can use as a reference, you can still build a mock [`ObsConfiguration`][jaxspec.data.ObsConfiguration]
+If you don't have any observation you can use as a reference, you can still build a mock [`ObsConfiguration`][jaxspec.data.obsconf.ObsConfiguration]
 using the instrument you want to use.
 
-``` python
+```python
 from jaxspec.data import ObsConfiguration, Instrument
 
 instrument = Instrument.from_ogip_file(
@@ -85,9 +85,9 @@ obsconf = ObsConfiguration.mock_from_instrument(
 )
 ```
 
-Then you can use this [`ObsConfiguration`][jaxspec.data.ObsConfiguration] within `fakeit_for_multiple_parameters` as before.
+Then you can use this [`ObsConfiguration`][jaxspec.data.obsconf.ObsConfiguration] within `fakeit_for_multiple_parameters` as before.
 
-``` python
+```python
 spectra = fakeit_for_multiple_parameters(obsconf, model, parameters)
 ```
 
@@ -100,7 +100,7 @@ must first declare multiple devices using one of the following codes.
 
 === "With numpyro"
 
-    ``` python
+    ```python
     import numpyro
 
     n_devices = 8
@@ -112,7 +112,7 @@ must first declare multiple devices using one of the following codes.
 
 === "With JAX"
 
-    ``` python
+    ```python
     import os
     import jax
 
@@ -126,7 +126,7 @@ must first declare multiple devices using one of the following codes.
 This must be run **before any `JAX` code is run in the process** otherwise the extra cores won't be accessible. To
 double-check, you can ensure that the available number of devices is consistent with `n_devices`
 
-``` python
+```python
 
 assert len(jax.local_devices()) == n_devices
 ```
@@ -134,7 +134,7 @@ assert len(jax.local_devices()) == n_devices
 Once it is certain that all the devices are visible, the array can be split using a [PositionalSharding](https://jax.readthedocs.io/en/latest/jax.sharding.html#jax.sharding.PositionalSharding)
 and distributed to all the devices.
 
-``` python
+```python
 import jax
 from jax.sharding import NamedSharding, PartitionSpec as P
 
@@ -150,7 +150,7 @@ sharded_parameters = jax.device_put(parameters, sharding)
 
 Then we can use these sharded parameters to compute the fakeits in parallel
 
-``` python
+```python
 fakeit_for_multiple_parameters(obsconf, model, sharded_parameters, apply_stat=False)
 ```
 

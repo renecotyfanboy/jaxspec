@@ -16,13 +16,14 @@ from helpers import (
     prior_shared_pars,
     spectral_model,
 )
+from numpyro.optim import optax_to_numpyro
+from optax import adamw
+
 from jaxspec.fit import MCMCFitter, NSFitter, TiedParameter, VIFitter
 from jaxspec.model.additive import Powerlaw
 from jaxspec.model.background import BackgroundWithError, SpectralModelBackground
 from jaxspec.model.instrument import ConstantGain, ConstantShift, InstrumentModel, PileupModel
 from jaxspec.model.multiplicative import Tbabs
-from numpyro.optim import optax_to_numpyro
-from optax import adamw
 
 
 @pytest.mark.slow
@@ -259,3 +260,52 @@ def test_sparsify_matrix_in_model(obs_model_prior):
             model, prior, obsconf, background_model=None, sparsify_matrix=True
         )
         forward_model.fit(**SHORT_MCMC_FIT)
+
+
+@pytest.mark.slow
+def test_star_scope_with_partially_applicable_leaf():
+    """A ``[*]`` prior on a parameter only some observations carry must work end to end.
+
+    ``instrument.shift.offset[*]`` with a shift on one instrument and a gain on another
+    is a first-class documented configuration, but ``input_parameters`` expanded ``[*]``
+    over every observation in the prefix while the sampler only targets observations that
+    own the leaf — so it named a site that was never sampled and died with a bare
+    ``KeyError``, taking ``spectrum_parameters``, ``photon_flux`` and ``plot_ppc`` with it.
+    """
+    import numpyro.distributions as dist
+
+    from helpers import dict_of_obsconf
+
+    from jaxspec.fit import MCMCFitter
+    from jaxspec.model.additive import Powerlaw
+    from jaxspec.model.instrument import ConstantGain, ConstantShift, InstrumentModel
+    from jaxspec.model.multiplicative import Tbabs
+
+    names = list(dict_of_obsconf)
+    prior = {
+        "spectrum.tbabs_1.nh": dist.Uniform(0, 1),
+        "spectrum.powerlaw_1.alpha": dist.Uniform(0, 5),
+        "spectrum.powerlaw_1.norm": dist.LogUniform(1e-5, 1e-2),
+        "instrument.shift.offset[*]": dist.Uniform(-0.3, 0.3),
+        "instrument.gain.factor[*]": dist.Uniform(0.5, 1.5),
+    }
+    fitter = MCMCFitter(
+        Tbabs() * Powerlaw(),
+        prior,
+        dict_of_obsconf,
+        instrument_model={
+            names[0]: None,
+            names[1]: InstrumentModel(shift=ConstantShift()),
+            names[2]: InstrumentModel(gain=ConstantGain()),
+        },
+    )
+    result = fitter.fit(
+        num_chains=1, num_warmup=30, num_samples=30, mcmc_kwargs={"progress_bar": False}
+    )
+
+    parameters = result.input_parameters
+    # Each leaf resolves only to the observation that owns it.
+    assert set(parameters["instrument.shift.offset"]) == {names[1]}
+    assert set(parameters["instrument.gain.factor"]) == {names[2]}
+    # Downstream consumers keep working.
+    assert result.photon_flux(1.0, 8.0).shape[-1] == len(names)

@@ -116,3 +116,43 @@ def test_fakeits_missing_parameter_raises(obsconfs, model, multidimensional_para
     }
     with pytest.raises(ValueError, match="blackbodyrad_1"):
         fakeit_for_multiple_parameters(obsconf, model, incomplete)
+
+
+def test_fakeit_noise_is_independent_across_observations():
+    """Each observation must get its own PRNG stream.
+
+    ``handlers.seed`` splits its key per sample site in trace order, so entering it
+    inside the per-observation loop restarted from the same key every time and gave every
+    observation *identical* Poisson noise — perfectly correlated counts across
+    instruments in a joint simulation.
+    """
+    import jax.numpy as jnp
+    import numpy as np
+
+    from jaxspec.data.util import load_example_obsconf
+    from jaxspec.model.additive import Powerlaw
+    from jaxspec.model.multiplicative import Tbabs
+
+    obsconf = next(iter(load_example_obsconf("NGC7793_ULX4_ALL").values()))
+    model = Tbabs() * Powerlaw()
+    parameters = {
+        "tbabs_1.nh": jnp.array([0.2]),
+        "powerlaw_1.alpha": jnp.array([1.7]),
+        "powerlaw_1.norm": jnp.array([1e-2]),
+    }
+
+    # The same observation twice: identical expected counts, so any correlation left in
+    # the residuals is pure PRNG reuse.
+    noisy = fakeit_for_multiple_parameters(
+        [obsconf, obsconf], model, parameters, apply_stat=True, rng_key=0
+    )
+    expected = np.asarray(
+        fakeit_for_multiple_parameters([obsconf], model, parameters, apply_stat=False)
+    ).ravel()
+
+    a, b = np.asarray(noisy[0]).ravel(), np.asarray(noisy[1]).ravel()
+    assert not np.array_equal(a, b)
+
+    scale = np.sqrt(np.maximum(expected, 1e-9))
+    correlation = np.corrcoef((a - expected) / scale, (b - expected) / scale)[0, 1]
+    assert abs(correlation) < 0.2, f"noise still correlated across observations: {correlation}"

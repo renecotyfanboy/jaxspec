@@ -139,8 +139,10 @@ def dict_prior(
                 return covered(path, shape) or _structural_defaults(path, shape)
             return prior
 
-    The dict resolution order is the same as the framework's: explicit
-    ``[obs]`` > ``[*]`` > shared > miss.
+    Scopes must be disjoint, exactly as in a framework prior dict: a given parameter is
+    covered by a shared key, by ``[*]``, or by an explicit ``[obs]`` key — never by two
+    at once. There is no precedence rule between overlapping keys, and the framework
+    rejects such a dict rather than picking a winner.
     """
     from ._prior_resolution import _split_nnx_leaf, parse_prior_key
 

@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 import arviz as az
 import jax
@@ -8,8 +11,10 @@ from jax import Array, random
 from jax.numpy import concatenate
 from numpyro.infer import Predictive
 
-from ...analysis.results import FitResult
 from .._bayesian_model import BayesianModel
+
+if TYPE_CHECKING:
+    from ...analysis.results import FitResult
 
 
 class BayesianModelFitter(BayesianModel, ABC):

@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import matplotlib.pyplot as plt
 import numpyro
 
@@ -5,8 +9,10 @@ from jax import random
 from numpyro.infer import SVI, Predictive, Trace_ELBO
 from numpyro.infer.autoguide import AutoMultivariateNormal
 
-from ...analysis.results import FitResult
 from ._base import BayesianModelFitter
+
+if TYPE_CHECKING:
+    from ...analysis.results import FitResult
 
 
 class VIFitter(BayesianModelFitter):
@@ -69,5 +75,7 @@ class VIFitter(BayesianModelFitter):
         inference_data = self.build_inference_data(
             posterior, num_chains=1, use_transformed_model=use_transformed_model
         )
+
+        from ...analysis.results import FitResult
 
         return FitResult(self, inference_data)

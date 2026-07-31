@@ -117,7 +117,10 @@ class zTbabs(MultiplicativeComponent):
         self._energy = np.asarray(table["ENERGY"], dtype=np.float64)
         self._sigma = np.asarray(table["SIGMA"], dtype=np.float64)
         self.nh = nnx.Param(1.0)
-        self.z = nnx.Param(1.0)
+        # Matches XSPEC's zTBabs and every other redshift parameter in jaxspec
+        # (Zedge.z, Zgauss.redshift, Zagauss.redshift). A default of 1.0 made
+        # `zTbabs() * Powerlaw()` differ from `Tbabs() * Powerlaw()` out of the box.
+        self.z = nnx.Param(0.0)
 
     def factor(self, energy):
         z = jnp.asarray(self.z)

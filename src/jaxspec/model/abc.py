@@ -3,7 +3,6 @@ from __future__ import annotations
 import operator
 
 from abc import ABC
-from functools import cached_property, partial
 from uuid import uuid4
 
 import flax.nnx as nnx
@@ -95,6 +94,17 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
         3) It links the operation to a new 'out' node
         """
 
+        # `*` between two additive models is meaningless in the XSPEC model algebra, and
+        # it currently evaluates identically to `+` — so a one-character typo in the most
+        # common expression in the library silently fits a different model.
+        if operation == "mul" and self.root_nodes and other.root_nodes:
+            raise ValueError(
+                f"Cannot multiply two additive models "
+                f"({'+'.join(self.branches)!r} * {'+'.join(other.branches)!r}). "
+                f"`*` applies a multiplicative component (e.g. Tbabs) to a model; use "
+                f"`+` to add two additive components together."
+            )
+
         composed_graph = compose(
             self._graph, other._graph, operation=operation, operation_func=operation_func
         )
@@ -148,10 +158,14 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
     def _iter_branches(self):
         """Yield ``(branch_name, mult_node_ids, root_node_name)`` for every additive root.
 
-        ``mult_node_ids`` is the deduplicated list of multiplicative-component
-        node ids along the path from the additive root to ``out``, in the same
-        ``list(set(...))`` order used historically to build branch names and
-        multiply absorption factors in :meth:`flux_func`.
+        ``mult_node_ids`` is the deduplicated list of multiplicative-component node ids
+        along the path from the additive root to ``out``, ordered by component name.
+
+        The ordering must be deterministic: branch names are user-facing keys
+        (``flux_func(return_branches=True)``, ``evaluate(split_branches=True)``, PPC
+        legend labels). Deduplicating with ``list(set(...))`` over uuid4 node-id strings
+        made them depend on ``PYTHONHASHSEED``, so the same model produced different keys
+        in different processes. Multiplication commutes, so only the key text changes.
         """
         for root_node_id in self.root_nodes:
             root_node_name = self._graph.nodes[root_node_id].get("name")
@@ -160,7 +174,7 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
             mult_ids: list[str] = []
             for node_id in path[::-1]:
                 mult_ids.extend(self._find_multiplicative_components(node_id))
-            mult_ids = list(set(mult_ids))
+            mult_ids = sorted(set(mult_ids), key=lambda mid: self._graph.nodes[mid]["name"])
 
             branch = (
                 "".join(f"{self._graph.nodes[mid].get('name')}*" for mid in mult_ids)
@@ -168,11 +182,26 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
             )
             yield branch, mult_ids, root_node_name
 
-    @cached_property
+    @property
     def branches(self) -> list[str]:
+        # Deliberately not cached: `cached_property` writes into `vars(self)`, and on an
+        # `nnx.Module` that mutates the graphdef — reading a public property would change
+        # `nnx.split` output and trigger recompiles depending on whether anyone had
+        # printed `.branches`. The walk is cheap and runs at trace time.
         return [branch for branch, _, _ in self._iter_branches()]
 
     def flux_func(self, e_low, e_high, energy_flux=False, n_points=2, return_branches=False):
+        # A model with no additive root emits no photons. Without this guard the sum
+        # below returns the Python int 0, which then broadcasts through folding and
+        # produces an all-zero spectrum rather than an error.
+        if not self.root_nodes:
+            raise ValueError(
+                "This model has no additive component, so it produces no flux. "
+                "A spectral model needs at least one additive component "
+                "(e.g. Powerlaw(), Blackbodyrad()) — multiplicative components such as "
+                "Tbabs only modify an existing continuum."
+            )
+
         continuum = {}
 
         ## Evaluate the expected contribution for each component
@@ -219,7 +248,7 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
         This method returns the mermaid representation of the model.
 
         Parameters:
-            file : The file to write the mermaid representation to.
+            file: The file to write the mermaid representation to.
 
         Returns:
             A string containing the mermaid representation of the model.
@@ -253,7 +282,13 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
         nnx.replace_by_pure_dict(param_state, pure)
         return nnx.merge(graphdef, param_state, other)
 
-    @partial(jax.jit, static_argnums=0, static_argnames=("n_points", "split_branches"))
+    # Deliberately not jitted. `jax.jit(static_argnums=0)` made `self` a *static*
+    # argument, so mutating a parameter in place (the nnx idiom) left the compiled
+    # trace holding the old values and this returned a stale result. `nnx.jit`
+    # instead propagates state out of the trace, which collides with numpyro's
+    # trace levels during fitting (TraceContextError). These are convenience entry
+    # points costing well under a millisecond; the hot path is `flux_func`, which is
+    # traced by the caller's enclosing jit.
     def photon_flux(
         self,
         e_low,
@@ -271,16 +306,22 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
         \quad \left[\frac{\text{photons}}{\text{cm}^2\text{s}}\right]$$
 
         Parameters:
-            params : The parameters of the model.
-            e_low : The lower bound of the energy bins.
-            e_high : The upper bound of the energy bins.
-            n_points : The number of points used to integrate the model in each bin.
+            params: The parameters of the model.
+            e_low: The lower bound of the energy bins.
+            e_high: The upper bound of the energy bins.
+            n_points: The number of points used to integrate the model in each bin.
         """
         return self._with_params(params).flux_func(
             e_low, e_high, n_points=n_points, return_branches=split_branches
         )
 
-    @partial(jax.jit, static_argnums=0, static_argnames="n_points")
+    # Deliberately not jitted. `jax.jit(static_argnums=0)` made `self` a *static*
+    # argument, so mutating a parameter in place (the nnx idiom) left the compiled
+    # trace holding the old values and this returned a stale result. `nnx.jit`
+    # instead propagates state out of the trace, which collides with numpyro's
+    # trace levels during fitting (TraceContextError). These are convenience entry
+    # points costing well under a millisecond; the hot path is `flux_func`, which is
+    # traced by the caller's enclosing jit.
     def energy_flux(self, e_low, e_high, *, params: dict | None = None, n_points: int = 2):
         r"""
         Compute the expected energy flux between $E_\min$ and $E_\max$ by integrating the model.
@@ -290,10 +331,10 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
         \quad \left[\frac{\text{keV}}{\text{cm}^2\text{s}}\right]$$
 
         Parameters:
-            params : The parameters of the model.
-            e_low : The lower bound of the energy bins.
-            e_high : The upper bound of the energy bins.
-            n_points : The number of points used to integrate the model in each bin.
+            params: The parameters of the model.
+            e_low: The lower bound of the energy bins.
+            e_high: The upper bound of the energy bins.
+            n_points: The number of points used to integrate the model in each bin.
         """
         return self._with_params(params).flux_func(
             e_low, e_high, n_points=n_points, energy_flux=True
@@ -318,14 +359,14 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
         result has the same leading shape.
 
         Parameters:
-            e_min : Lower bound of the energy band.
-            e_max : Upper bound of the energy band.
-            params : Dotted-path parameter dict. If ``None``, uses whatever
+            e_min: Lower bound of the energy band.
+            e_max: Upper bound of the energy band.
+            params: Dotted-path parameter dict. If ``None``, uses whatever
                 state is currently on the module.
-            energy : If ``True``, integrate the energy flux (keV/cm²/s);
+            energy: If ``True``, integrate the energy flux (keV/cm²/s);
                 otherwise the photon flux (photons/cm²/s).
-            n_points : Quadrature points per energy bin.
-            n_grid : Number of grid points across $[E_\min, E_\max]$.
+            n_points: Quadrature points per energy bin.
+            n_grid: Number of grid points across $[E_\min, E_\max]$.
         """
         energy_grid = jnp.linspace(e_min, e_max, n_grid)
         e_low = energy_grid[:-1]
@@ -362,7 +403,7 @@ class AdditiveComponent(ModelComponent):
         Compute the continuum of the component.
 
         Parameters:
-            energy : The energy at which to compute the continuum.
+            energy: The energy at which to compute the continuum.
         """
         return jnp.zeros_like(energy)
 
@@ -393,13 +434,25 @@ class AdditiveComponent(ModelComponent):
             + integrated_continuum * (e_high + e_low) / 2.0
         )
 
-    @partial(jax.jit, static_argnums=0, static_argnames="n_points")
+    # Deliberately not jitted. `jax.jit(static_argnums=0)` made `self` a *static*
+    # argument, so mutating a parameter in place (the nnx idiom) left the compiled
+    # trace holding the old values and this returned a stale result. `nnx.jit`
+    # instead propagates state out of the trace, which collides with numpyro's
+    # trace levels during fitting (TraceContextError). These are convenience entry
+    # points costing well under a millisecond; the hot path is `flux_func`, which is
+    # traced by the caller's enclosing jit.
     def photon_flux(self, e_low, e_high, *, params: dict | None = None, n_points: int = 2):
         return SpectralModel.from_component(self).photon_flux(
             e_low, e_high, params=params, n_points=n_points
         )
 
-    @partial(jax.jit, static_argnums=0, static_argnames="n_points")
+    # Deliberately not jitted. `jax.jit(static_argnums=0)` made `self` a *static*
+    # argument, so mutating a parameter in place (the nnx idiom) left the compiled
+    # trace holding the old values and this returned a stale result. `nnx.jit`
+    # instead propagates state out of the trace, which collides with numpyro's
+    # trace levels during fitting (TraceContextError). These are convenience entry
+    # points costing well under a millisecond; the hot path is `flux_func`, which is
+    # traced by the caller's enclosing jit.
     def energy_flux(self, e_low, e_high, *, params: dict | None = None, n_points: int = 2):
         return SpectralModel.from_component(self).energy_flux(
             e_low, e_high, params=params, n_points=n_points
@@ -424,6 +477,6 @@ class MultiplicativeComponent(ModelComponent):
         Absorption factor applied for a given energy
 
         Parameters:
-            energy : The energy at which to compute the factor.
+            energy: The energy at which to compute the factor.
         """
         return jnp.ones_like(energy)

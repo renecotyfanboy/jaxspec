@@ -1,13 +1,19 @@
+from __future__ import annotations
+
 import importlib.util
 import re
+
+from typing import TYPE_CHECKING
 
 import jax
 
 from jax import random
 from numpyro.primitives import Messenger
 
-from ...analysis.results import FitResult
 from ._base import BayesianModelFitter
+
+if TYPE_CHECKING:
+    from ...analysis.results import FitResult
 
 
 def _sanitise_name(name: str) -> str:
@@ -185,5 +191,7 @@ class NSFitter(BayesianModelFitter):
             inference_data.attrs["total_num_likelihood_evaluations"] = int(
                 results.total_num_likelihood_evaluations
             )
+
+        from ...analysis.results import FitResult
 
         return FitResult(self, inference_data)

@@ -14,6 +14,7 @@ import sparse
 
 from flax import nnx
 from helpers import single_obsconf
+
 from jaxspec.data.instrument import Instrument
 from jaxspec.data.obsconf import ObsConfiguration
 from jaxspec.fit._forward_model import ForwardModel, _build_obs_cache
@@ -119,6 +120,42 @@ def test_pileup_no_pileup_limit_matches_base():
     )
 
     mask = base_out > 1e-6  # ignore bins pinned at the base fold's clip floor
+    np.testing.assert_allclose(pileup_out[mask], base_out[mask], rtol=1e-6)
+
+
+@pytest.mark.parametrize("offset", [-0.4, 0.0, 0.4])
+def test_pileup_no_pileup_limit_matches_base_with_shift(offset):
+    """Same no-pileup limit, but with a non-zero energy shift.
+
+    Regression test for an inverted shift convention: ``PileupModel.fold`` used to shift
+    the *source* grid while ``InstrumentModel.fold`` shifts the *target* grid. That is
+    the same operation with the opposite sign, so ``PileupModel(offset=+x)`` matched
+    ``InstrumentModel(offset=-x)`` and any pileup + ``ConstantShift`` fit recovered a
+    negated offset. The offset was pinned to 0.0 everywhere, which hid it.
+    """
+    obs = _synthetic_obsconf()
+    flux = _powerlaw_flux(obs)
+    eval_energies = jnp.asarray(obs.in_energies)
+
+    def _fold(model):
+        model.shift.offset = nnx.Param(jnp.asarray(offset))
+        return np.asarray(
+            model.fold(
+                flux, _build_obs_cache(obs, model, sparse=False), eval_energies=eval_energies
+            )
+        )
+
+    pileup = PileupModel(
+        shift=ConstantShift(), frac_expo=1.0, frame_time=1e-9, num_regions=1.0, g0=1.0, npiled=5
+    )
+    pileup.alpha = nnx.Param(jnp.asarray(0.0))
+    pileup.psf_frac = nnx.Param(jnp.asarray(1.0))
+
+    pileup_out = _fold(pileup)
+    base_out = _fold(InstrumentModel(shift=ConstantShift()))
+
+    mask = base_out > 1e-6
+    assert mask.sum() > 0
     np.testing.assert_allclose(pileup_out[mask], base_out[mask], rtol=1e-6)
 
 

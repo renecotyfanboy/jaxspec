@@ -35,8 +35,19 @@ class Powerlaw(AdditiveComponent):
         self.norm = nnx.Param(1e-4)
 
     def integrated_continuum(self, e_low, e_high):
-        return (
-            self.norm / (1 - self.alpha) * (e_high ** (1 - self.alpha) - e_low ** (1 - self.alpha))
+        # alpha == 1 is a singularity whose limit is norm*log(e_high/e_low).
+        # The double `where` keeps the gradient finite: without the inner one,
+        # the unused branch still evaluates 1/0 and reverse-mode AD propagates
+        # NaN through the whole log-likelihood.
+
+        one_minus_alpha = 1 - self.alpha
+        is_pole = jnp.abs(one_minus_alpha) < 1e-8
+        safe = jnp.where(is_pole, 1.0, one_minus_alpha)
+
+        return self.norm * jnp.where(
+            is_pole,
+            jnp.log(e_high / e_low),
+            (e_high**safe - e_low**safe) / safe,
         )
 
 
@@ -70,9 +81,9 @@ class Lorentz(AdditiveComponent):
     """
 
     def __init__(self):
-        self.E_l = jnp.asarray(nnx.Param(1.0), dtype=jnp.float64)
-        self.sigma = jnp.asarray(nnx.Param(1e-3), dtype=jnp.float64)
-        self.norm = jnp.asarray(nnx.Param(1.0), dtype=jnp.float64)
+        self.E_l = nnx.Param(jnp.asarray(1.0, dtype=jnp.float64))
+        self.sigma = nnx.Param(jnp.asarray(1e-3, dtype=jnp.float64))
+        self.norm = nnx.Param(jnp.asarray(1.0, dtype=jnp.float64))
 
     def continuum(self, energy):
         return (

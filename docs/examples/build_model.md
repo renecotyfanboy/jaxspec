@@ -40,7 +40,7 @@ model_complex = Tbabs() * (Powerlaw() + Phabs() * Blackbody()) + Blackbody()
 
 This build the following model
 
-``` mermaid
+```mermaid
 graph LR
     42d43fd8-597d-4e3e-9dc7-291e4fcafb5c("Tbabs (1)")
     a7e5876d-e812-4abb-af8b-c5f73c3958fb{"**x**"}
@@ -114,7 +114,7 @@ from jaxspec.model.multiplicative import Tbabs
 model = Tbabs() * (Powerlaw() + MyComponent())
 ```
 
-``` mermaid
+```mermaid
 graph LR
     f816ddff-ba64-4022-93d2-5d772b97a31c("Tbabs (1)")
     711387a2-7d95-4c1c-af7e-ae263e8fc049{**x**}

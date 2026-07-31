@@ -9,34 +9,14 @@ version: 2
 build:
   os: ubuntu-22.04
   tools:
-    python: "3.11"
-  # These packages are needed to build docs with image optimization
+    python: "3.12"
   jobs:
     post_create_environment:
       # Install uv
       - pip install uv
     post_install:
-      # Install dependencies with 'docs' dependency group
-      - uv pip install -r pyproject.toml
-      # Using insiders versions of mkdocs-material & mkdocstrings
-      - uv pip uninstall mkdocs-material # mkdocstrings mkdocstrings-python
-      # - uv pip install git+https://$GH_TOKEN@github.com/squidfunk/mkdocs-material-insiders.git@9.5.36-insiders-4.53.13
-      - uv pip install mkdocstrings mkdocstrings-python
-      - uv pip install mkdocs-autorefs
-      - uv pip install mkdocs-jupyter # This is bugged, I enforced it manually, let's see if it works
-
-  apt_packages:
-    - libcairo2-dev
-    - libfreetype6-dev
-    - libffi-dev
-    - libjpeg-dev
-    - libpng-dev
-    - libz-dev
-    - pngquant
+      # Install jaxspec runtime deps plus the docs dependency group
+      - uv pip install --group docs -r pyproject.toml
 
 mkdocs:
   configuration: mkdocs.yml
-
-# If using Sphinx, optionally build your docs in additional formats such as PDF
-formats:
-  - pdf

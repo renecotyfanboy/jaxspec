@@ -4,7 +4,7 @@
 [`miniforge`](https://github.com/conda-forge/miniforge) (community driven) or [`miniconda`](https://docs.anaconda.com/miniconda/)
 (built by Anaconda).
 
-```
+```bash
 conda create -n jaxspec python=3.11
 conda activate jaxspec
 ```
@@ -13,7 +13,7 @@ conda activate jaxspec
 
 Once you are in an environment with a proper `Python` version, simply use pip to install `jaxspec`
 
-```
+```bash
 pip install jaxspec
 ```
 
@@ -21,7 +21,7 @@ pip install jaxspec
 
 If you want to install the development version of `jaxspec`, you can clone the repository and install it from source.
 
-```
+```bash
 git clone https://github.com/renecotyfanboy/jaxspec
 cd jaxspec
 pip install -e .
@@ -29,7 +29,7 @@ pip install -e .
 
 If you do not need to edit it, you can install it with `pip` directly
 
-```
+```bash
 pip install git+https://github.com/renecotyfanboy/jaxspec --upgrade
 ```
 
@@ -38,7 +38,7 @@ pip install git+https://github.com/renecotyfanboy/jaxspec --upgrade
 The default `JAX` dependency in `jaxspec` does not include GPU support. However, it can easily be enabled by reinstalling
 `JAX` with the proper wheels after installing `jaxspec`. In general, you should run
 
-```
+```bash
 pip install "jax[cuda12]"
 ```
 

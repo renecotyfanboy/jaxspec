@@ -21,6 +21,7 @@ numpyro.set_host_device_count(4)
 # Imported after the device setup above so the example-data load it triggers
 # sees the configured CPU device count and x64.
 from helpers import list_of_obsconf, prior_shared_pars, spectral_model
+
 from jaxspec.fit import MCMCFitter
 
 

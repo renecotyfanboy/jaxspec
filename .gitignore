@@ -12,8 +12,12 @@ _doc_notebooks/
 .ipynb_checkpoints
 tests/data/
 *.ipynb
+# ...but the documentation notebooks are tracked and rendered by mkdocs-jupyter.
+!docs/**/*.ipynb
 poetry.lock
-uv.lock
+# uv.lock is deliberately TRACKED: without it CI resolves the dependency graph fresh on
+# every run, so an upstream flax/numpyro release can turn a green branch red with no
+# local change — and there is no recorded state to bisect against.
 
 # Matplotlib user config cache (when MPLCONFIGDIR points here)
 .mplconfig/
@@ -202,6 +206,24 @@ cython_debug/
 ehthumbs.db
 Thumbs.db
 
-_*/
+# Scratch/working directories at the repo root. These MUST stay anchored with a
+# leading slash: a bare `_*/` also matches `src/jaxspec/fit/_fitter/`, silently
+# dropping newly added modules of a shipped package from commits and wheels.
+/_benchmarks/
+/_dev/
+/_doc_notebooks/
+/_old/
+/_projects/
+
+# Locally generated lookup tables (large; distributed via pooch, not the wheel).
+src/jaxspec/tables/*.npz
+
+# Assorted local scratch
+/.ai/
+/.understand-anything/
+/.complexipy_cache/
+/bvapec/
+*.db
+
 Library/
 # End of https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks

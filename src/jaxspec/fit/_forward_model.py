@@ -94,7 +94,10 @@ def _normalise_background(
         return {}
     if isinstance(background_model, BackgroundModel):
         return {name: nnx.clone(background_model) for name in obs_names}
-    return {name: bg for name, bg in background_model.items() if bg is not None}
+    # Clone here too: passing the *same* instance under two keys would otherwise give
+    # both observations one shared parameter subtree (nnx dedupes by identity), so a
+    # `[*]` prior would sample two sites and silently discard one of them.
+    return {name: nnx.clone(bg) for name, bg in background_model.items() if bg is not None}
 
 
 def _normalise_instrument(
@@ -103,7 +106,16 @@ def _normalise_instrument(
     """Drop ``None`` entries — those observations get the identity fold."""
     if instrument_model is None:
         return {}
-    return {name: m for name, m in instrument_model.items() if m is not None}
+    if isinstance(instrument_model, InstrumentModel):
+        raise TypeError(
+            "instrument_model must be a {observation_name: InstrumentModel | None} dict, "
+            "not a bare InstrumentModel. Unlike background_model, it is not broadcast: "
+            "each observation needs its own gain/shift parameters, which you then have to "
+            "scope in the prior dict. Pass e.g. "
+            "{'PN': InstrumentModel(...), 'MOS1': InstrumentModel(...)}."
+        )
+    # See `_normalise_background` — same identity-sharing hazard.
+    return {name: nnx.clone(m) for name, m in instrument_model.items() if m is not None}
 
 
 def _validate_obs_keys(user_dict: dict, obs_names: list[str], *, model_kind: str) -> None:

@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 
 from helpers import prior_shared_pars, single_obsconf, spectral_model
+
 from jaxspec.fit import BayesianModel
 
 

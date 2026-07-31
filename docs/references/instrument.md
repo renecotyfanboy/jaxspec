@@ -1,3 +1,5 @@
+# Instrument models
+
 ::: jaxspec.model.instrument
     options:
       show_root_heading: false

@@ -1,3 +1,5 @@
+# Fitting
+
 ::: jaxspec.fit.BayesianModel
     options:
       show_root_heading: true

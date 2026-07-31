@@ -25,6 +25,7 @@ from ..fit._prior_resolution import (
     _enumerate_leaves,
     _per_obs_site_name,
     _prefix_to_obs_names,
+    _resolve_targets,
     parse_prior_key,
 )
 from ._plot import (
@@ -58,6 +59,28 @@ _XLABEL_FOR_PHYSICAL_TYPE: dict[str, str] = {
     "energy": "Energy",
     "frequency": "Frequency",
 }
+
+
+def _validate_x_unit(x_unit: Unit) -> str:
+    """Return the axis label for ``x_unit``, raising if its physical type is unsupported.
+
+    Called at the top of :meth:`FitResult.plot_ppc` so a bad unit fails before any figure
+    is drawn. Units such as ``1/cm`` (physical type ``wavenumber``) convert cleanly under
+    ``u.spectral()`` and so survive every earlier step.
+    """
+    physical_type = x_unit.physical_type
+    # astropy's PhysicalType supports __eq__ with bare strings but its str() form is
+    # "energy/torque/work" for compound types, so iterate explicitly.
+    label = next(
+        (lbl for pt, lbl in _XLABEL_FOR_PHYSICAL_TYPE.items() if physical_type == pt), None
+    )
+    if label is None:
+        raise ValueError(
+            f"Unsupported physical type {str(physical_type)!r} for x_unit {x_unit}. "
+            f"It must be homogeneous to a length, an energy or a frequency."
+        )
+    return label
+
 
 _SCALE_TO_AXES: dict[str, tuple[str, str]] = {
     "linear": ("linear", "linear"),
@@ -186,7 +209,8 @@ class FitResult:
         chain_draw = (posterior.sizes["chain"], posterior.sizes["draw"])
 
         prefix_to_obs = _prefix_to_obs_names(fm)
-        needed = _needed_posterior_names(effective_prior, prefix_to_obs)
+        leaves = _enumerate_leaves(fm)
+        needed = _needed_posterior_names(effective_prior, prefix_to_obs, leaves)
         data_vars = {name: jnp.asarray(posterior[name].data) for name in needed}
 
         # Group entries by their base path so [obs] / [*] / shared get assembled together.
@@ -216,6 +240,7 @@ class FitResult:
                     data_vars,
                     chain_draw,
                     deferred_ties,
+                    owning_obs=set(leaves.get(base, {})),
                 )
                 if value is not None:
                     out[base] = value
@@ -623,6 +648,7 @@ class FitResult:
             raise ValueError("min_counts and grouping are mutually exclusive")
 
         x_unit = u.Unit(x_unit)
+        _validate_x_unit(x_unit)
         y_units = _resolve_y_units(y_type, x_unit)
         figure_list = []
 
@@ -924,14 +950,9 @@ def _style_axes(
     physical_type = getattr(x_unit, "physical_type")
     # astropy's PhysicalType supports __eq__ with bare strings but its str()
     # form is "energy/torque/work" for compound types, so iterate explicitly.
-    label = next(
-        (lbl for pt, lbl in _XLABEL_FOR_PHYSICAL_TYPE.items() if physical_type == pt), None
-    )
-    if label is None:
-        raise RuntimeError(
-            f"Unknown physical type for x_units: {x_unit}. "
-            f"Must be 'length', 'energy' or 'frequency'"
-        )
+    # Already validated by `_validate_x_unit` at the top of `plot_ppc`, so this cannot
+    # miss — the check lives there so a bad unit fails before a figure is drawn.
+    label = _validate_x_unit(x_unit)
     ax[1].set_xlabel(f"{label} \n[{x_unit:latex_inline}]")
 
     ax[1].axhline(0, color=SPECTRUM_DATA_COLOR, ls="--")
@@ -955,30 +976,32 @@ def _style_axes(
 # ---- Module-level helpers for input_parameters --------------------------------
 
 
-def _needed_posterior_names(effective_prior, prefix_to_obs) -> set[str]:
+def _needed_posterior_names(effective_prior, prefix_to_obs, leaves) -> set[str]:
     """Site names that :attr:`FitResult.input_parameters` will look up, derived
     from ``effective_prior`` alone. Shared ``dist.Distribution`` entries
     contribute the bare path; per-obs entries contribute
-    ``_per_obs_site_name(path, obs)`` for each applicable obs.
+    ``_per_obs_site_name(path, obs)`` for each obs that actually owns the leaf.
     ``TiedParameter`` and fixed values contribute nothing.
+
+    Targets are resolved with the same :func:`_resolve_targets` the sampler uses, so the
+    two cannot disagree. Expanding ``[*]`` over every obs in the prefix instead named
+    sites that were never sampled whenever a leaf exists on only some observations —
+    e.g. ``instrument.shift.offset[*]`` with a shift on one instrument and a gain on
+    another — and the lookup died with a bare ``KeyError``.
     """
     needed: set[str] = set()
-    by_base: dict[str, dict[str | None, Any]] = {}
-    for raw_key, value in effective_prior.items():
-        base, scope = parse_prior_key(raw_key)
-        by_base.setdefault(base, {})[scope] = value
+    applicable = {prefix: set(obs_names) for prefix, obs_names in prefix_to_obs.items()}
 
-    for base, scopes in by_base.items():
-        prefix = base.split(".", 1)[0]
-        obs_axis = prefix_to_obs.get(prefix, [])
-        if None in scopes:
-            if isinstance(scopes[None], dist.Distribution):
-                needed.add(base)
-        else:
-            for obs in obs_axis:
-                value = scopes.get(obs, scopes.get("*"))
-                if isinstance(value, dist.Distribution):
-                    needed.add(_per_obs_site_name(base, obs))
+    for raw_key, value in effective_prior.items():
+        if not isinstance(value, dist.Distribution):
+            continue
+        base, scope = parse_prior_key(raw_key)
+        if scope is None:
+            needed.add(base)
+            continue
+        for obs, _leaf in _resolve_targets(base, scope, leaves, applicable):
+            needed.add(_per_obs_site_name(base, obs))
+
     return needed
 
 
@@ -1002,7 +1025,7 @@ def _resolve_shared_entry(
 
 
 def _resolve_per_obs_entry(
-    scopes, base, obs_axis, data_vars, chain_draw, deferred_ties
+    scopes, base, obs_axis, data_vars, chain_draw, deferred_ties, owning_obs=None
 ) -> ArrayLike | dict | None:
     """Materialise a per-obs prior entry; stack across obs when every applicable
     obs is present with the same shape, else return a ``{obs: array}`` dict.
@@ -1012,12 +1035,23 @@ def _resolve_per_obs_entry(
     and the base stays an (uncompacted) dict until the ties fill in the
     missing obs.
 
+    ``owning_obs`` is the set of observations that actually carry this leaf. A ``[*]``
+    scope applies only to those — expanding it over every obs in the prefix names sites
+    the sampler never created (a leaf can exist on a subset, e.g. a shift on one
+    instrument and a gain on another). ``None`` means "every obs in ``obs_axis``".
+
+    ``obs_axis`` stays the *full* prefix list so :func:`_compact_per_obs` still sees a
+    partial set as partial and keeps it a ``{obs: array}`` dict — consumers index that
+    by name, whereas a compacted trailing axis is indexed against the full obs order.
+
     Returns ``None`` when there's nothing to assemble.
     """
     per_obs: dict[str, ArrayLike] = {}
     has_ties = False
     for obs in obs_axis:
-        value = scopes.get(obs, scopes.get("*"))
+        value = scopes.get(obs)
+        if value is None and (owning_obs is None or obs in owning_obs):
+            value = scopes.get("*")
         if value is None:
             continue
         if isinstance(value, TiedParameter):

@@ -5,6 +5,7 @@ import pytest
 
 from astropy.io import fits
 from helpers import curated_params, data_directory
+
 from jaxspec.data import Instrument, ObsConfiguration, Observation
 
 # Reasons a curated file can't be exercised by a given operation (wrong headers,

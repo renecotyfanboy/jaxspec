@@ -8,6 +8,7 @@ import pytest
 
 from jax.scipy.special import gamma, hyp1f1
 from jax.typing import ArrayLike
+
 from jaxspec.util.integrate import integrate_interval, integrate_positive
 
 # chex device count + x64 are configured once in conftest.py.

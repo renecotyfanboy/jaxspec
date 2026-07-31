@@ -302,9 +302,12 @@ def hybrid_prior():
     return prior
 ```
 
-`dict_prior` honours the same resolution order as the framework
-(`[obs]` > `[*]` > shared > miss) and pre-samples shared entries on first
-call, so the trace contains exactly one numpyro site per shared key.
+`dict_prior` reads the same key syntax as the framework and pre-samples shared entries
+on first call, so the trace contains exactly one numpyro site per shared key.
+
+Scopes must be **disjoint**: a parameter is covered by a shared key, by `[*]`, or by an
+explicit `[obs]` key, never by two at once. There is no precedence rule — jaxspec raises
+a `ValueError` naming both keys rather than silently discarding one of the draws.
 
 ## Site names and posterior inspection
 

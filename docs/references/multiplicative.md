@@ -1,4 +1,4 @@
-# Multiplicative components
+# Multiplicative models
 
 ::: jaxspec.model.multiplicative
     options:

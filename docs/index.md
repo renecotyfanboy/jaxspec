@@ -14,18 +14,30 @@ by combining components, and fit it to one or multiple observed spectra using Ba
 
 <div class="grid cards" markdown>
 
--   <a class="card-link" href="frontpage/installation/" target="_blank" rel="noreferrer">
-        <span class="card-title center">🛠️ Installation</span>
-    </a>
--   <a class="card-link" href="examples/fitting_example/" target="_blank" rel="noreferrer">
-    <span class="card-title center">🚀 Quickstart</span>
-    </a>
--   <a class="card-link" href="examples/" target="_blank" rel="noreferrer">
-    <span class="card-title center">📚 Examples</span>
-    </a>
--   <a class="card-link" href="contribute/" target="_blank" rel="noreferrer">
-    <span class="card-title center">🤝 Contribute</span>
-    </a>
+-   [__🛠️ Installation__](frontpage/installation.md)
+
+    ---
+
+    Install `jaxspec` with `pip` or from source.
+
+-   [__🚀 Quickstart__](examples/fitting_example.md)
+
+    ---
+
+    Fit your first spectrum in a few lines of code.
+
+-   [__📚 Examples__](examples/index.md)
+
+    ---
+
+    Work through the tutorials and advanced examples.
+
+-   [__🤝 Contribute__](contribute/index.md)
+
+    ---
+
+    Report issues and help shape `jaxspec`.
+
 </div>
 
 ## How does it work?
@@ -45,7 +57,7 @@ gives access to appropriate samplers such as the No U-Turn Sampler (NUTS) and Ha
 
 If you use `jaxspec` in your research, please consider citing the following article
 
-```
+```bibtex
 @ARTICLE{2024A&A...690A.317D,
        author = {{Dupourqu{\'e}}, S. and {Barret}, D. and {Diez}, C.~M. and {Guillot}, S. and {Quintin}, E.},
         title = "{jaxspec: A fast and robust Python library for X-ray spectral fitting}",

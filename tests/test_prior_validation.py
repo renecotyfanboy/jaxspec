@@ -12,7 +12,8 @@ from helpers import (
     single_obsconf,
     spectral_model,
 )
-from jaxspec.fit import BayesianModel
+
+from jaxspec.fit import BayesianModel, TiedParameter
 from jaxspec.model.additive import Powerlaw
 from jaxspec.model.background import BackgroundWithError, SpectralModelBackground
 from jaxspec.model.instrument import ConstantGain, ConstantShift, InstrumentModel
@@ -48,6 +49,59 @@ def test_unknown_obs_in_scope_raises_at_build_time():
 
     with pytest.raises(ValueError, match="not in the 'spectrum' applicable set"):
         BayesianModel(spectral_model, prior, list_of_obsconf)
+
+
+@pytest.mark.parametrize(
+    "winning_key",
+    ["spectrum.powerlaw_1.norm", "spectrum.powerlaw_1.norm[*]"],
+    ids=["shared-plus-obs", "star-plus-obs"],
+)
+def test_overlapping_prior_keys_raise(winning_key):
+    """Two keys claiming one parameter must raise, not let insertion order decide.
+
+    Without this check the loser still registers a numpyro sample site that influences
+    nothing — an unidentifiable free parameter in the posterior.
+    """
+    obs_name = next(iter(dict_of_obsconf))
+    prior = {
+        **{k: v for k, v in prior_shared_pars.items() if k != "spectrum.powerlaw_1.norm"},
+        winning_key: dist.LogUniform(1e-5, 1e-2),
+        f"spectrum.powerlaw_1.norm[{obs_name}]": dist.LogUniform(1e-9, 1e-6),
+    }
+
+    with pytest.raises(ValueError, match="both set the same parameter"):
+        BayesianModel(spectral_model, prior, dict_of_obsconf).prior_samples(num_samples=2)
+
+
+def test_disjoint_scoped_keys_are_still_accepted():
+    """The guard must not reject the legitimate heterogeneous-prior pattern."""
+    prior = {
+        **{k: v for k, v in prior_shared_pars.items() if k != "spectrum.powerlaw_1.norm"},
+        **{
+            f"spectrum.powerlaw_1.norm[{name}]": dist.LogUniform(1e-5, 1e-2)
+            for name in dict_of_obsconf
+        },
+    }
+
+    BayesianModel(spectral_model, prior, dict_of_obsconf).prior_samples(num_samples=2)
+
+
+def test_shared_tie_to_per_obs_source_raises():
+    """A shared tie destination fed by a ``[*]`` source has no single source value.
+
+    It previously used ``sorted(obs)[0]``'s draw, so renaming an observation silently
+    changed the fit.
+    """
+    prior = {
+        **{k: v for k, v in prior_shared_pars.items() if k != "spectrum.powerlaw_1.norm"},
+        "spectrum.powerlaw_1.norm[*]": dist.LogUniform(1e-5, 1e-2),
+        "spectrum.blackbodyrad_1.norm": TiedParameter(
+            "spectrum.powerlaw_1.norm[*]", lambda x: 0.5 * x
+        ),
+    }
+
+    with pytest.raises(ValueError, match="shared across observations but its source"):
+        BayesianModel(spectral_model, prior, dict_of_obsconf).prior_samples(num_samples=2)
 
 
 def test_instrument_scope_without_instrument_model_raises():

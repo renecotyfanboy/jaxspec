@@ -1,3 +1,5 @@
+# Data containers
+
 ## Generating mock data
 
 ::: jaxspec.data.util.fakeit_for_multiple_parameters

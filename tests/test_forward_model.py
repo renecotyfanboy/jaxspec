@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from helpers import single_obsconf
+
 from jaxspec.fit._forward_model import (
     ForwardModel,
     _normalise_background,
@@ -79,3 +80,41 @@ def test_energy_grid_shift_consistent_with_native_folding():
     gridded = build(grid).evaluate(inputs)["data"]["source"]
 
     np.testing.assert_allclose(np.asarray(gridded), np.asarray(native), rtol=1e-3)
+
+
+def test_reused_instrument_instance_is_not_shared_across_observations():
+    """Passing one model object under two keys must not share its parameters.
+
+    nnx dedupes by identity, so an aliased instance left both observations pointing at a
+    single parameter subtree: a ``[*]`` prior sampled two sites and silently discarded
+    one, leaving the second observation's posterior equal to its prior.
+    """
+    from flax import nnx
+
+    from jaxspec.fit._forward_model import _normalise_instrument
+
+    shared = InstrumentModel(shift=ConstantShift())
+    normalised = _normalise_instrument({"a": shared, "b": shared})
+
+    assert normalised["a"] is not normalised["b"]
+    assert normalised["a"].shift is not normalised["b"].shift
+
+    # Independent parameter storage, not just distinct wrappers.
+    normalised["a"].shift.offset = nnx.Param(jnp.asarray(0.25))
+    assert float(normalised["b"].shift.offset[...]) == 0.0
+
+
+def test_reused_background_instance_is_not_shared_across_observations():
+    shared = BackgroundWithError()
+    normalised = _normalise_background({"a": shared, "b": shared}, ["a", "b"])
+
+    assert normalised["a"] is not normalised["b"]
+
+
+def test_bare_instrument_model_raises_typeerror():
+    """`instrument_model=` takes a dict; a bare model used to die deep inside with
+    `AttributeError: 'InstrumentModel' object has no attribute 'items'`."""
+    from jaxspec.fit._forward_model import _normalise_instrument
+
+    with pytest.raises(TypeError, match="must be a .*dict"):
+        _normalise_instrument(InstrumentModel(shift=ConstantShift()))

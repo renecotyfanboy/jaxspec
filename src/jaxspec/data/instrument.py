@@ -20,12 +20,12 @@ class Instrument(xr.Dataset):
     """The effective area of the instrument"""
 
     __slots__ = (
-        "redistribution",
         "area",
-        "e_min_out",
+        "e_max_in",
         "e_max_out",
         "e_min_in",
-        "e_max_in",
+        "e_min_out",
+        "redistribution",
     )
 
     @classmethod
@@ -113,13 +113,13 @@ class Instrument(xr.Dataset):
         Plot the redistribution probability matrix
 
         Parameters:
-            xscale : The scale of the x-axis.
-            yscale : The scale of the y-axis.
-            cmap : The colormap to use.
-            vmin : The minimum value for the colormap.
-            vmax : The maximum value for the colormap.
-            add_labels : Whether to add labels to the plot.
-            **kwargs : `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.plot.pcolormesh.html#xarray.plot.pcolormesh
+            xscale: The scale of the x-axis.
+            yscale: The scale of the y-axis.
+            cmap: The colormap to use.
+            vmin: The minimum value for the colormap.
+            vmax: The maximum value for the colormap.
+            add_labels: Whether to add labels to the plot.
+            **kwargs: `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.plot.pcolormesh.html#xarray.plot.pcolormesh
         """
 
         import cmasher as cmr
@@ -141,10 +141,10 @@ class Instrument(xr.Dataset):
         Plot the effective area
 
         Parameters:
-            xscale : The scale of the x-axis.
-            yscale : The scale of the y-axis.
-            where : The position of the steps.
-            **kwargs : `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.line.html#xarray.DataArray.plot.line
+            xscale: The scale of the x-axis.
+            yscale: The scale of the y-axis.
+            where: The position of the steps.
+            **kwargs: `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.line.html#xarray.DataArray.plot.line
         """
 
         return self.area.plot.step(

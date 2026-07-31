@@ -1,1 +1,3 @@
+# Integration
+
 ::: jaxspec.util.integrate

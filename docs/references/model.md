@@ -1,6 +1,9 @@
+# Spectral model base
+
 ::: jaxspec.model.abc.SpectralModel
     options:
       members:
+        - from_component
         - photon_flux
         - energy_flux
         - from_string

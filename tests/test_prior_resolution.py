@@ -16,6 +16,7 @@ from helpers import (
     single_obsconf,
     spectral_model,
 )
+
 from jaxspec.analysis.results import _resolve_per_obs_entry
 from jaxspec.fit import BayesianModel, TiedParameter, dict_prior, joint_prior_factory
 from jaxspec.fit._prior_resolution import (

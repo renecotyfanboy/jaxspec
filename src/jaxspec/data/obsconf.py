@@ -168,6 +168,23 @@ class ObsConfiguration(xr.Dataset):
         row_idx = (e_min > low_energy) & (e_max < high_energy) & (grouping.sum(axis=1) > 0)
         col_idx = (e_min_unfolded > 0) & (redistribution.sum(axis=0) > 0)
 
+        # An empty selection silently yields a (0, N) transfer matrix, and a fit against
+        # it happily samples a posterior informed by zero data. Fail instead.
+        # `e_min` / `e_max` carry NaN for empty groups, so use the nan-aware reductions.
+        if not row_idx.any():
+            raise ValueError(
+                f"No channel falls inside the requested energy band "
+                f"[{low_energy}, {high_energy}] keV. This observation covers "
+                f"[{np.nanmin(e_min):.4g}, {np.nanmax(e_max):.4g}] keV after grouping "
+                f"and quality filtering."
+            )
+        if not col_idx.any():
+            raise ValueError(
+                "The response has no energy bin contributing to any channel: every "
+                "column of the redistribution matrix is empty or starts at zero energy. "
+                "Check the RMF."
+            )
+
         # Apply this reduction to all the relevant arrays.
         # Element-wise ops above may have down-converted to coo_array; re-coerce
         # to csr for slicing.

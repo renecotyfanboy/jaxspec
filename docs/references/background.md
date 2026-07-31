@@ -1,3 +1,5 @@
+# Background models
+
 ::: jaxspec.model.background
     options:
       show_root_heading: false

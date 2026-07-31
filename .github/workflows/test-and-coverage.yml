@@ -13,61 +13,84 @@ permissions:
   contents: read
 
 jobs:
+  # Single source of truth for "does this change need the test suite?". Every job below
+  # gates on `needs.changes.outputs.code`, so the answer cannot drift between jobs.
+  #
+  # `tests/**` and `.github/workflows/**` MUST stay in this list: without them a PR that
+  # only touches tests or CI itself skips every step and still reports green.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'environment-xspec.yml'
+              - '.github/workflows/**'
+
+  lint:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      # Pinned to match .pre-commit-config.yaml — an unpinned `uvx ruff` would silently
+      # track the latest release and fail on rules the local hook never runs.
+      - name: Ruff check
+        run: uvx ruff@0.8.4 check src tests
+      - name: Ruff format check
+        run: uvx ruff@0.8.4 format --check src tests
+
   fast-tests:
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    timeout-minutes: 30
 
     steps:
     - uses: actions/checkout@v4
 
-    - uses: dorny/paths-filter@v3
-      id: filter
-      with:
-        filters: |
-          src:
-            - 'src/**'
-          pyproject:
-            - 'pyproject.toml'
-
     - name: Set up Python 3.12
-      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
 
     - name: Install uv
-      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
       uses: astral-sh/setup-uv@v5
 
     - name: Install dependencies
-      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
-      run: uv sync --all-groups
+      # --frozen: install exactly what uv.lock records. Without it CI re-resolves on
+      # every run and an upstream release can redden a branch with no local change.
+      run: uv sync --all-groups --frozen
 
     - name: Run fast tests
-      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
       run: uv run pytest -m "not slow"
 
   full-tests:
     runs-on: ubuntu-latest
-    needs: fast-tests
+    needs: [changes, fast-tests]
+    if: needs.changes.outputs.code == 'true'
+    # The background-model tests alone take ~35 min; without a cap a hang burns the
+    # 6 h GitHub default.
+    timeout-minutes: 120
 
     steps:
     - uses: actions/checkout@v4
 
-    - uses: dorny/paths-filter@v3
-      id: filter
-      with:
-        filters: |
-          src:
-            - 'src/**'
-          pyproject:
-            - 'pyproject.toml'
-
     - name: Install uv
-      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
       uses: astral-sh/setup-uv@v5
 
     - name: Set up micromamba with xspec environment
-      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
       uses: mamba-org/setup-micromamba@v2
       with:
         environment-file: environment-xspec.yml
@@ -75,21 +98,18 @@ jobs:
         cache-downloads: true
 
     - name: Install jaxspec and test dependencies
-      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
       run: |
         export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-        uv sync --group test
+        uv sync --group test --frozen
       shell: micromamba-shell {0}
 
     - name: Run full test suite
-      if: steps.filter.outputs.src == 'true' || steps.filter.outputs.pyproject == 'true'
       run: |
         export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
         uv run pytest --cov jaxspec --cov-report xml:coverage-full.xml
       shell: micromamba-shell {0}
 
     - name: Upload coverage to Codecov
-      if: steps.filter.outputs.src == 'true'
       uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}

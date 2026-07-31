@@ -1,14 +1,18 @@
+from __future__ import annotations
+
 import warnings
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import jax
 
 from jax import random
 from numpyro.infer import AIES, ESS, MCMC, NUTS
 
-from ...analysis.results import FitResult
 from ._base import BayesianModelFitter
+
+if TYPE_CHECKING:
+    from ...analysis.results import FitResult
 
 
 class MCMCFitter(BayesianModelFitter):
@@ -81,8 +85,15 @@ class MCMCFitter(BayesianModelFitter):
 
         posterior = mcmc.get_samples()
 
+        # Read the chain count back out of the merged kwargs: ``mcmc_kwargs`` wins over
+        # the ``num_chains`` argument above, and feeding the stale value to
+        # ``build_inference_data`` refolds the posterior into fabricated chains.
         inference_data = self.build_inference_data(
-            posterior, num_chains=num_chains, use_transformed_model=use_transformed_model
+            posterior,
+            num_chains=mcmc_kwargs["num_chains"],
+            use_transformed_model=use_transformed_model,
         )
+
+        from ...analysis.results import FitResult
 
         return FitResult(self, inference_data)

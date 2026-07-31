@@ -55,6 +55,14 @@ def compose_with_rename(graph_1: nx.DiGraph, graph_2: nx.DiGraph):
         graph_2: The second graph to compose.
     """
 
+    # Work on a copy: the rename below writes into node attribute dicts, and `graph_2`
+    # belongs to the right-hand operand of `+` / `*`. Mutating it in place silently
+    # desynchronises that model's graph names from its nnx attribute names, so reusing
+    # a sub-model in a second composition produces wrong component names.
+    # `nx.DiGraph.copy()` gives fresh attribute dicts while still sharing the component
+    # objects by reference — the same contract `nx.compose` already applies to graph_1.
+    graph_2 = graph_2.copy()
+
     # Initialize the set of used names with names from graph_1
     used_names = get_component_names(graph_1)
 

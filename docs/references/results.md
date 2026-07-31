@@ -1,3 +1,5 @@
+# Result containers
+
 ::: jaxspec.analysis.results.FitResult
     options:
       members:

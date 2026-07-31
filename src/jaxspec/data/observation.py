@@ -25,14 +25,14 @@ class Observation(xr.Dataset):
     """The background counts, after grouping"""
 
     __slots__ = (
-        "grouping",
-        "channel",
-        "quality",
-        "exposure",
         "background",
-        "folded_background",
+        "channel",
         "counts",
+        "exposure",
+        "folded_background",
         "folded_counts",
+        "grouping",
+        "quality",
     )
 
     _default_attributes = {"description": "X-ray observation dataset"}
@@ -152,9 +152,9 @@ class Observation(xr.Dataset):
         Build an observation from a PHA file
 
         Parameters:
-            pha_path : Path to the PHA file
-            bkg_path : Path to the background file
-            metadata : Additional metadata to add to the observation
+            pha_path: Path to the PHA file
+            bkg_path: Path to the background file
+            metadata: Additional metadata to add to the observation
         """
         from .util import data_path_finder
 
@@ -183,7 +183,7 @@ class Observation(xr.Dataset):
         Plot the counts
 
         Parameters:
-            **kwargs : `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.step.html#xarray.DataArray.plot.line
+            **kwargs: `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.step.html#xarray.DataArray.plot.line
         """
 
         return self.counts.plot.step(x="instrument_channel", yscale="log", where="post", **kwargs)

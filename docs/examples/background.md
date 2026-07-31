@@ -9,7 +9,7 @@ your observation.
 To include this in your spectral fitting, you should add a `BackgroundModel` to your code as follows. The simplest
 approach is equivalent to subtract the background to the observed spectrum when performing the fit.
 
-``` python
+```python
 from jaxspec.model.background import SubtractedBackground
 
 fitter = MCMCFitter(model, prior, obs, background_model=SubtractedBackground())
@@ -25,7 +25,7 @@ is clearly bad when we want to get spectral parameters with a comprehensive erro
 it is to consider each background bin as a Poisson realisation of a counting process, which is achieved here using
 `BackgroundWithError`.
 
-``` python
+```python
 from jaxspec.model.background import BackgroundWithError
 
 fitter = MCMCFitter(model, prior, obs, background_model=BackgroundWithError())
@@ -38,7 +38,7 @@ result_bkg_with_spread.plot_ppc()
 
 This is also possible to use a spectral model that will be folded within the instrument background using a `SpectralModelBackground`.
 
-``` python
+```python
 from jaxspec.model.background import SpectralModelBackground
 
 spectral_model_background = Powerlaw()
@@ -63,7 +63,7 @@ result_bkg_spectral.plot_ppc()
 
 We can compare the results for all these background models using the `plot_corner_comparison` function.
 
-``` python
+```python
 from jaxspec.analysis.compare import plot_corner_comparison
 
 plot_corner_comparison(
