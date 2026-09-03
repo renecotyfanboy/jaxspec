@@ -99,7 +99,7 @@ jobs:
 
     - name: Download tables
       run: |
-        ftgetmodeldata modelname="apec" xspecversion="13.0.0"
+        ftgetmodeldata modelname="apec" modelversion="latest"
       shell: micromamba-shell {0}
 
     - name: Install jaxspec and test dependencies
