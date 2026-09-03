@@ -23,10 +23,10 @@ Documentation : https://jaxspec.readthedocs.io/en/latest/
 
 ## Installation
 
-We recommend the users to start from a fresh Python 3.10 [conda environment](https://conda.io/projects/conda/en/latest/user-guide/install/index.html).
+We recommend the users to start from a fresh Python 3.12 [conda environment](https://conda.io/projects/conda/en/latest/user-guide/install/index.html).
 
 ```
-conda create -n jaxspec python=3.10
+conda create -n jaxspec python=3.12
 conda activate jaxspec
 ```
 
@@ -36,9 +36,9 @@ Once the environment is set up, you can install jaxspec directly from pypi
 pip install jaxspec --upgrade
 ```
 
-## Citation 
+## Citation
 
-If you use `jaxspec` in your research, please consider citing the following article 
+If you use `jaxspec` in your research, please consider citing the following article
 
 ```
 @ARTICLE{2024A&A...690A.317D,

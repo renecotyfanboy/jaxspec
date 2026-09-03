@@ -66,5 +66,11 @@
 
     Per-observation scoping, tied parameters, joint priors, and callable priors.
 
+-   [__Table models__](table_models.md)
+
+    ---
+
+    Fit XSPEC `atable` / `mtable` / `etable` files, or build your own.
+
 
 </div>

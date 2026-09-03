@@ -4,16 +4,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from astropy import units as u
-from cycler import cycler
 from jax.typing import ArrayLike
 from scipy.integrate import trapezoid
 from scipy.stats import nbinom, norm
 
 from jaxspec.data import ObsConfiguration
 
-# Catppuccin "Latte" palette (hex), inlined to drop the runtime `catppuccin`
-# dependency, whose import-time matplotlib style registration breaks on
-# matplotlib >= 3.11 (removed matplotlib.style.core).
 _LATTE = {
     "sky": "#04a5e5",
     "teal": "#179299",
@@ -34,10 +30,6 @@ COLOR_CYCLE = [
     _LATTE[color]
     for color in ["sky", "teal", "green", "yellow", "peach", "maroon", "red", "pink", "mauve"][::-1]
 ]
-
-LINESTYLE_CYCLE = ["dashed", "dotted", "dashdot", "solid"]
-
-SPECS_CYCLE = cycler(linestyle=LINESTYLE_CYCLE) * cycler(color=COLOR_CYCLE)
 
 SPECTRUM_COLOR = _LATTE["blue"]
 SPECTRUM_DATA_COLOR = _LATTE["overlay2"]
@@ -116,7 +108,7 @@ def _plot_binned_samples_with_error(
         linestyle=linestyle,
     )
 
-    # The legend cannot handle fill_between, so we pass a fill to get a fancy icon
+    # Supply a filled legend handle for the posterior envelope.
     (envelope,) = ax.fill(np.nan, np.nan, alpha=alpha_envelope[-1], facecolor=color)
 
     if n_sigmas == 1:
@@ -161,7 +153,6 @@ def adaptive_bin_1d(counts, min_counts):
             current_bin += 1
             running_sum = 0
 
-    # Merge the last under-threshold group into its predecessor
     if running_sum < min_counts and current_bin > 0:
         bin_ids[bin_ids == current_bin] = current_bin - 1
 
@@ -198,8 +189,8 @@ def rebin_counts(data, bin_ids):
     n_groups = bin_ids.max() + 1
     if data.ndim == 1:
         return np.bincount(bin_ids, weights=data, minlength=n_groups)
-    agg = bin_ids[None, :] == np.arange(n_groups)[:, None]  # (n_groups, n_bins)
-    return data @ agg.T  # (n_samples, n_groups)
+    agg = bin_ids[None, :] == np.arange(n_groups)[:, None]
+    return data @ agg.T
 
 
 def _rebin_xbins(xbins, bin_ids):
@@ -214,7 +205,6 @@ def _rebin_xbins(xbins, bin_ids):
     group_ends = np.searchsorted(bin_ids, np.arange(n_groups), side="right") - 1
     new_lower = xbins[0][group_starts]
     new_upper = xbins[1][group_ends]
-    # np.vstack preserves astropy Quantity units
     return np.vstack([new_lower[np.newaxis], new_upper[np.newaxis]])
 
 
@@ -230,15 +220,10 @@ def _compute_effective_area(
         x_unit: The unit of the x-axis. It can be either a string (parsable by astropy.units) or an astropy unit. It must be homogeneous to either a length, a frequency or an energy.
     """
 
-    # Note to Simon : do not change xbins[1] - xbins[0] to
-    # np.diff, you already did this twice and forgot that it does not work since diff keeps the dimensions
-    # and enable weird broadcasting that makes the plot fail
-
     xbins = obsconf.out_energies * u.keV
     xbins = xbins.to(x_unit, u.spectral())
 
-    # This computes the total effective area within all bins
-    # This is a bit weird since the following computation is equivalent to ignoring the RMF
+    # Average the ARF over each output bin without applying redistribution.
     exposure = obsconf.exposure.data * u.s
     mid_bins_arf = obsconf.in_energies.mean(axis=0) * u.keV
     mid_bins_arf = mid_bins_arf.to(x_unit, u.spectral())
@@ -246,11 +231,7 @@ def _compute_effective_area(
     interpolated_arf = np.interp(e_grid.value, mid_bins_arf.value, obsconf.area)
     integrated_arf = (
         trapezoid(interpolated_arf, x=e_grid.value, axis=0)
-        / (
-            np.abs(
-                xbins[1] - xbins[0]
-            ).value  # Must fold in abs because some units reverse the ordering of the bins
-        )
+        / (np.abs(xbins[1] - xbins[0]).value)
         * u.cm**2
     )
 

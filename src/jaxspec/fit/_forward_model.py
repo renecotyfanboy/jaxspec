@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -10,20 +11,21 @@ from jax.typing import ArrayLike
 
 from ..data import ObsConfiguration
 from ..data.obsconf import to_jax_matrix
-from ..model.abc import HideUnderscoreMixin, ModelComponent, SpectralModel
+from ..model._mixin import HideUnderscore
+from ..model.abc import ModelComponent, SpectralModel
 from ..model.background import BackgroundModel
 from ..model.instrument import InstrumentModel
 
-if TYPE_CHECKING:
-    pass
 
+@dataclass(frozen=True)
+class _DerivedQuantity:
+    """A bound derived value and the metadata needed to name it later."""
 
-#: Reused per-obs identity instrument for observations the user didn't
-#: configure. ``InstrumentModel()`` with ``gain=None`` and ``shift=None`` has
-#: no ``nnx.Param`` leaves, so ``apply_shift`` / ``apply_gain`` are no-ops and
-#: ``fold(...)`` reduces to ``transfer_matrix @ spectrum``. Module-level
-#: singleton to keep allocations out of the JIT-traced obs loop.
-_IDENTITY_INSTRUMENT = InstrumentModel()
+    prefix: str
+    observation: str
+    owner_path: str
+    name: str
+    value: ArrayLike
 
 
 def _validate_energy_grid(energy_grid: ArrayLike) -> jnp.ndarray:
@@ -31,11 +33,11 @@ def _validate_energy_grid(energy_grid: ArrayLike) -> jnp.ndarray:
 
     The grid is the edges over which the spectral model gets evaluated, then
     redistributed onto each instrument's native grid by
-    :meth:`~jaxspec.model.instrument.InstrumentModel.fold`. We require:
+    [`InstrumentModel.fold`][jaxspec.model.instrument.InstrumentModel.fold]. We require:
 
     * 1-D with at least 2 edges (the model integrates over ``[edge_i, edge_{i+1}]``);
     * strictly increasing (the redistribution path uses
-      :func:`jnp.interp` which assumes a monotonic ``xp``);
+      ``interp`` which assumes a monotonic ``xp``);
     * strictly positive (energies are in keV).
     """
     arr = np.asarray(energy_grid)
@@ -70,11 +72,14 @@ def _build_obs_cache(
 
     Always builds ``"transfer_matrix"``. Additionally builds the un-merged
     components (``redistribution``, ``grouping``, ``area``, ``exposure``) when
-    the per-obs instrument declares :attr:`InstrumentModel.requires_components`.
+    the per-obs instrument declares [`InstrumentModel.requires_components`][jaxspec.model.instrument.InstrumentModel.requires_components].
     """
     cache: dict[str, Any] = {
         "transfer_matrix": to_jax_matrix(obs.transfer_matrix.data, sparse=sparse),
         "in_energies": jnp.asarray(obs.in_energies),
+        # The two edge arrays as concrete values: sliced here rather than inside a trace, so
+        # components can still read the grid (e.g. to size a static line window).
+        "in_energy_edges": (jnp.asarray(obs.in_energies[0]), jnp.asarray(obs.in_energies[1])),
     }
 
     if instrument is not None and instrument.requires_components:
@@ -94,9 +99,7 @@ def _normalise_background(
         return {}
     if isinstance(background_model, BackgroundModel):
         return {name: nnx.clone(background_model) for name in obs_names}
-    # Clone here too: passing the *same* instance under two keys would otherwise give
-    # both observations one shared parameter subtree (nnx dedupes by identity), so a
-    # `[*]` prior would sample two sites and silently discard one of them.
+    # Each observation needs an independent NNX parameter subtree.
     return {name: nnx.clone(bg) for name, bg in background_model.items() if bg is not None}
 
 
@@ -114,7 +117,7 @@ def _normalise_instrument(
             "scope in the prior dict. Pass e.g. "
             "{'PN': InstrumentModel(...), 'MOS1': InstrumentModel(...)}."
         )
-    # See `_normalise_background` — same identity-sharing hazard.
+    # Each observation needs an independent NNX parameter subtree.
     return {name: nnx.clone(m) for name, m in instrument_model.items() if m is not None}
 
 
@@ -135,7 +138,7 @@ def _validate_obs_keys(user_dict: dict, obs_names: list[str], *, model_kind: str
         )
 
 
-class ForwardModel(HideUnderscoreMixin, nnx.Module):
+class ForwardModel(HideUnderscore, nnx.Module):
     """Parametric nnx tree + per-obs caches + a deterministic ``evaluate``.
 
     Only parameters and parametric submodules live on the nnx tree.
@@ -189,17 +192,12 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
         n_points: int = 2,
         energy_grid: ArrayLike | None = None,
     ):
-        # Accept a bare component (e.g. ``Powerlaw()``) where a SpectralModel is
-        # expected — wrap it so it gains flux_func / branch topology and its params
-        # nest under the conventional ``<component>_1`` name (e.g. ``powerlaw_1``).
         if isinstance(spectral_model, ModelComponent):
             spectral_model = SpectralModel.from_component(spectral_model)
 
         obs_dict = _normalise_observations(observations)
         obs_names = list(obs_dict)
 
-        # Catch typos in user-supplied per-obs dicts before normalisation
-        # silently drops the misspelled entries.
         if isinstance(instrument_model, dict):
             _validate_obs_keys(instrument_model, obs_names, model_kind="instrument_model")
         if isinstance(background_model, dict):
@@ -214,15 +212,7 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
 
         validated_grid = _validate_energy_grid(energy_grid) if energy_grid is not None else None
 
-        # Non-parametric state lives OFF the nnx tree (plain attributes on
-        # ForwardModel itself would still be tracked; stash them on the orchestrator).
-        # These are exposed to the BayesianModel via the public accessors below.
-        #
-        # ``spectrum_shared`` is a hint set by :class:`BayesianModel` after it
-        # inspects the prior dict; ``evaluate`` reads it to decide whether a
-        # user-supplied ``energy_grid`` enables the eval-once-then-fold fast
-        # path. Defaults to ``False`` so direct ForwardModel use is correct
-        # by default (no fast path; one spectral eval per obs).
+        # Keep non-parametric objects outside NNX variable tracking.
         self._aux = _ForwardModelAux(
             observations=obs_dict,
             caches={
@@ -230,20 +220,17 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
                 for name, obs in obs_dict.items()
             },
             settings={
-                "sparse": sparsify_matrix,
                 "n_points": n_points,
                 "energy_grid": validated_grid,
+                "energy_grid_edges": (
+                    None if validated_grid is None else (validated_grid[:-1], validated_grid[1:])
+                ),
                 "spectrum_shared": False,
             },
         )
 
-        # Background models with caches (e.g. SpectralModelBackground transfer matrix,
-        # BackgroundWithError per-bin shape) need their per-obs cache before any
-        # JAX trace runs over their __call__.
         for name, bg in self.background.items():
             bg._set_obs_cache(obs_dict[name], sparse=sparsify_matrix)
-
-    # ----- Non-parametric state accessors (read-through to self._aux) -----
 
     @property
     def observations(self) -> dict[str, ObsConfiguration]:
@@ -252,15 +239,13 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
 
     @property
     def settings(self) -> dict[str, Any]:
-        """Evaluation settings (``sparse``, ``n_points``, ``energy_grid``, ``spectrum_shared``)."""
+        """Evaluation settings (``n_points``, ``energy_grid``, ``spectrum_shared``)."""
         return self._aux.settings
 
     @property
     def obs_caches(self) -> dict[str, dict[str, Any]]:
         """Per-observation JAX-typed response caches (transfer matrix and components)."""
         return self._aux.caches
-
-    # ----- Unified evaluation entry point -----
 
     def evaluate(
         self,
@@ -324,14 +309,11 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
         energy_grid = settings["energy_grid"]
         spectrum_shared = settings.get("spectrum_shared", False)
 
-        # Slice the user grid once — it is identical for every obs. Fast path:
-        # when the spectrum is also shared across every obs, evaluate the
-        # spectral model once and reuse the result.
         shared_flux = None
         eval_energies = None
         if energy_grid is not None:
-            e_low = energy_grid[:-1]
-            e_high = energy_grid[1:]
+            # Concrete edges (sliced at construction), not a traced slice of the grid.
+            e_low, e_high = settings["energy_grid_edges"]
             eval_energies = jnp.stack([e_low, e_high])
             if spectrum_shared:
                 any_replica = next(iter(bound.spectrum.values()))
@@ -340,9 +322,10 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
                 )
 
         predictions: dict[str, dict[str, Any]] = {}
+        identity_instrument = InstrumentModel()
         for obs_name, obs in self.observations.items():
             cache = self.obs_caches[obs_name]
-            inst = bound.instrument.get(obs_name, _IDENTITY_INSTRUMENT)
+            inst = bound.instrument.get(obs_name, identity_instrument)
 
             if eval_energies is not None:
                 if shared_flux is not None:
@@ -352,14 +335,18 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
                     flux = spec.flux_func(
                         e_low, e_high, n_points=n_points, return_branches=split_branches
                     )
-                # Shift is applied *inside* fold when eval_energies is provided
-                # (see InstrumentModel.fold's contract).
                 source_flux = inst.fold(flux, cache, eval_energies=eval_energies)
             else:
                 spec = bound.spectrum[obs_name]
-                shifted = inst.apply_shift(cache["in_energies"])
+                if inst.shift is None:
+                    # Pass the concrete grid through untouched (indexing the stacked array
+                    # inside a trace would turn it into a tracer).
+                    e_low_obs, e_high_obs = cache["in_energy_edges"]
+                else:
+                    shifted = inst.apply_shift(cache["in_energies"])
+                    e_low_obs, e_high_obs = shifted[0], shifted[1]
                 flux = spec.flux_func(
-                    shifted[0], shifted[1], n_points=n_points, return_branches=split_branches
+                    e_low_obs, e_high_obs, n_points=n_points, return_branches=split_branches
                 )
                 source_flux = inst.fold(flux, cache)
 
@@ -372,14 +359,57 @@ class ForwardModel(HideUnderscoreMixin, nnx.Module):
 
         return predictions
 
+    def derived_quantities(self, inputs: dict[str, ArrayLike]) -> tuple[_DerivedQuantity, ...]:
+        """Collect bound derived values as deterministically ordered records.
+
+        Background owner paths are normalized to their public prior-key form. This
+        layer validates hook names but creates no NumPyro sites.
+
+        Parameters:
+            inputs: Fully resolved parameter paths to values, as for ``evaluate``.
+
+        Returns:
+            Records containing the model prefix, observation, public owner path,
+            quantity name, and traceable value.
+        """
+        from ._prior_resolution import _KNOWN_PREFIXES, bind_inputs
+
+        bound = bind_inputs(self, inputs)
+        quantities: list[_DerivedQuantity] = []
+
+        for path, node in nnx.iter_graph(bound):
+            hook = getattr(node, "derived_quantities", None)
+            if hook is None or len(path) < 2 or path[0] not in _KNOWN_PREFIXES:
+                continue
+
+            prefix, obs_name, *rest = (str(part) for part in path)
+            owner_path = ".".join(rest)
+            if prefix == "background" and owner_path:
+                owner_path = self.background[obs_name].user_path(owner_path)
+
+            for name, value in hook().items():
+                if not isinstance(name, str) or not name or "." in name:
+                    raise ValueError(
+                        f"{type(node).__name__}.derived_quantities returned the name "
+                        f"{name!r}; names must be non-empty strings, free of dots."
+                    )
+                quantities.append(_DerivedQuantity(prefix, obs_name, owner_path, name, value))
+
+        return tuple(
+            sorted(
+                quantities,
+                key=lambda item: (
+                    item.prefix,
+                    item.observation,
+                    item.owner_path,
+                    item.name,
+                ),
+            )
+        )
+
 
 class _ForwardModelAux:
-    """Non-pytree container for the per-observation Python objects that don't
-    belong on the nnx tree (xarray datasets, pre-built caches, plain dicts).
-
-    Stashing them here instead of as direct ``ForwardModel`` attributes keeps
-    them out of nnx's Variable tracking.
-    """
+    """Hold non-parametric observation state outside the NNX tree."""
 
     __slots__ = ("caches", "observations", "settings")
 

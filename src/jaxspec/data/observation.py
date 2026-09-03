@@ -115,9 +115,7 @@ class Observation(xr.Dataset):
                     {"description": "Channel number"},
                 ),
             },
-            attrs=cls._default_attributes
-            if attributes is None
-            else attributes | cls._default_attributes,
+            attrs=attributes | cls._default_attributes,
         )
 
     @classmethod

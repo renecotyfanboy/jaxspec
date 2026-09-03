@@ -76,3 +76,49 @@ def test_external_sampler_style_interfaces():
     )
 
     assert batched_log_posterior.shape == (2,)
+
+
+def test_parameter_names_excludes_tied_destinations():
+    """A tied parameter is *derived*, not free — it must not be a sampler coordinate.
+
+    numpyro's ``sample_dist`` covers both ``sample`` and ``deterministic`` site types, so
+    without an explicit filter a ``TiedParameter`` destination was reported as a free
+    parameter and ``dict_to_array`` built a vector one entry too long.
+    """
+    from jaxspec.fit import TiedParameter
+
+    prior = {
+        **{k: v for k, v in prior_shared_pars.items() if k != "spectrum.blackbodyrad_1.norm"},
+        "spectrum.blackbodyrad_1.norm": TiedParameter(
+            "spectrum.powerlaw_1.norm", lambda x: 0.5 * x
+        ),
+    }
+    bayesian_model = BayesianModel(spectral_model, prior, single_obsconf)
+
+    assert "spectrum.blackbodyrad_1.norm" not in bayesian_model.parameter_names
+    assert set(bayesian_model.parameter_names) == set(prior) - {"spectrum.blackbodyrad_1.norm"}
+
+
+def test_parameter_names_excludes_non_stochastic_background_rate():
+    """A non-stochastic background registers a per-bin ``deterministic`` vector.
+
+    Left in ``parameter_names`` it made ``dict_to_array`` try to write an ``n_bins``
+    vector into a scalar slot of the flat parameter array.
+    """
+    from jaxspec.model.background import SubtractedBackground
+
+    bayesian_model = BayesianModel(
+        spectral_model,
+        prior_shared_pars,
+        single_obsconf,
+        background_model=SubtractedBackground(),
+    )
+
+    assert not any(
+        name.startswith("observed_background") for name in bayesian_model.parameter_names
+    )
+    assert set(bayesian_model.parameter_names) == set(prior_shared_pars)
+
+    # The round trip an external sampler performs must stay consistent.
+    theta = bayesian_model.dict_to_array(_example_parameter_dict())
+    assert theta.shape == (len(prior_shared_pars),)

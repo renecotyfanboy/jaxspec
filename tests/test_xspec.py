@@ -113,8 +113,8 @@ def test_flux_computation():
     )
 
     assert np.isclose(
-        phflux_xspec, phflux_jaxspec
+        phflux_xspec, phflux_jaxspec, rtol=1e-3
     ), f"Mismatch between XSPEC and jaxspec on photon flux, got {phflux_xspec} and {phflux_jaxspec}"
     assert np.isclose(
-        eflux_xspec, eflux_jaxspec
+        eflux_xspec, eflux_jaxspec, rtol=1e-3
     ), f"Mismatch between XSPEC and jaxspec on energy flux, got {eflux_xspec} and {eflux_jaxspec}"

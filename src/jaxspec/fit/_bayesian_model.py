@@ -38,11 +38,14 @@ from ..model.instrument import InstrumentModel
 from ._forward_model import ForwardModel
 from ._parameter import TiedParameter
 from ._prior_resolution import (
+    _DERIVED_PREFIX,
     _KNOWN_PREFIXES,
     _enumerate_leaves,
+    _per_obs_site_name,
     _prefix_to_obs_names,
     _resolve_targets,
     _unmatched_key_message,
+    _validate_no_conflicting_keys,
     parse_prior_key,
     sample_prior,
 )
@@ -55,9 +58,9 @@ class BayesianModel:
 
     Parameters:
         model: The spectral model to fit (cloned per observation inside the
-            internal :class:`~jaxspec.fit._forward_model.ForwardModel`). A single
+            internal [`ForwardModel`][jaxspec.fit._forward_model.ForwardModel]). A single
             bare component (e.g. ``Powerlaw()``) is accepted and auto-wrapped via
-            :meth:`~jaxspec.model.abc.SpectralModel.from_component`.
+            [`SpectralModel.from_component`][jaxspec.model.abc.SpectralModel.from_component].
         prior: Either a unified prior dict using the ``[obs]`` / ``[*]``
             scoping syntax (see module docs), or a factory callable
             ``() -> ((leaf_path, shape) -> Distribution)``. The factory form
@@ -71,6 +74,11 @@ class BayesianModel:
             apply the identity fold (no instrument calibration).
         sparsify_matrix: Whether to use sparse transfer matrices.
         n_points: Number of quadrature points per energy bin.
+        energy_grid: Optional shared grid of energy **bin edges** in keV (``N`` edges
+            define ``N - 1`` bins). When given, the spectral model is evaluated once on
+            this grid and redistributed onto each observation's native grid, instead of
+            being evaluated separately per observation. Must be 1-D, strictly increasing
+            and strictly positive.
     """
 
     def __init__(
@@ -98,12 +106,6 @@ class BayesianModel:
         self._effective_prior = self._build_prior_dict()
         self._validate_prior_dict()
 
-        # Tell the ForwardModel whether the eval-once-then-fold fast path is
-        # safe for this fit. Only safe when an explicit energy_grid is set AND
-        # every spectral prior entry is shared (no [obs] / [*] scopes), since
-        # any per-obs spectral param means each replica produces a different
-        # flux on the grid. Callable priors are conservatively treated as
-        # non-shared (we can't statically inspect them).
         self.forward_model.settings["spectrum_shared"] = self._spectrum_is_shared()
 
     @property
@@ -111,7 +113,7 @@ class BayesianModel:
         """A representative spectral model replica (PN's, or whichever obs is first).
 
         All per-obs replicas share the same structure; this is provided for
-        callers (e.g. :class:`~jaxspec.analysis.results.FitResult`) that want
+        callers (e.g. [`FitResult`][jaxspec.analysis.results.FitResult]) that want
         a single ``SpectralModel`` to introspect topology or compute fluxes.
         Per-obs *parameter values* live on the bound replicas after sampling.
         """
@@ -134,8 +136,6 @@ class BayesianModel:
     def settings(self) -> dict[str, Any]:
         return self.forward_model.settings
 
-    # ----- Prior dict validation + default-merge -----
-
     def _build_prior_dict(self) -> dict | Callable:
         """Merge per-obs background and instrument defaults into the user prior
         (user wins). For callable priors, pass through unchanged."""
@@ -150,8 +150,59 @@ class BayesianModel:
                     prior.setdefault(key, value)
         return prior
 
-    def _applicable_obs(self, prefix: str) -> set[str]:
-        return set(_prefix_to_obs_names(self.forward_model).get(prefix, []))
+    @cached_property
+    def _applicable(self) -> dict[str, set[str]]:
+        """Prefix → set of observations it applies to. Frozen after ``__init__``."""
+        obs_by_prefix = _prefix_to_obs_names(self.forward_model)
+        return {prefix: set(obs_by_prefix.get(prefix, [])) for prefix in _KNOWN_PREFIXES}
+
+    @cached_property
+    def _leaves(self) -> dict[str, dict[str, str]]:
+        """``{user_path: {obs: nnx_leaf_path}}``. Frozen after ``__init__``."""
+        return _enumerate_leaves(self.forward_model)
+
+    @cached_property
+    def _shared_user_paths(self) -> frozenset[str]:
+        """User paths fed by a bare (unscoped) prior entry, hence one value for all obs.
+
+        A callable prior binds every leaf per observation, so it yields the empty set.
+        """
+        if not isinstance(self._effective_prior, dict):
+            return frozenset()
+        parsed = (parse_prior_key(raw_key) for raw_key in self._effective_prior)
+        return frozenset(path for path, scope in parsed if scope is None)
+
+    def _component_is_shared(self, component_path: str) -> bool:
+        """Whether a spectral owner has parameters supplied only by bare priors.
+
+        Instrument and background owners are never shared: their module state can
+        differ even when their parameters share a prior.
+        """
+        if not component_path.startswith("spectrum."):
+            return False
+
+        prefix = f"{component_path}."
+        own_leaves = [path for path in self._leaves if path.startswith(prefix)]
+        return bool(own_leaves) and all(path in self._shared_user_paths for path in own_leaves)
+
+    def _derived_sites(self, forward_model: ForwardModel, inputs: dict) -> dict[str, Any]:
+        """Map derived quantities onto site names: one bare site for a shared owner,
+        one ``forward.`` site per observation otherwise."""
+        sites: dict[str, Any] = {}
+
+        for quantity in forward_model.derived_quantities(inputs):
+            owner_path = quantity.prefix
+            if quantity.owner_path:
+                owner_path = f"{owner_path}.{quantity.owner_path}"
+            user_path = f"{owner_path}.{quantity.name}"
+
+            if self._component_is_shared(owner_path):
+                sites.setdefault(f"{_DERIVED_PREFIX}{user_path}", quantity.value)
+            else:
+                site = _per_obs_site_name(user_path, quantity.observation)
+                sites[f"{_DERIVED_PREFIX}{site}"] = quantity.value
+
+        return sites
 
     def _validate_prior_dict(self) -> None:
         """Validate the (effective) prior dict against the forward model.
@@ -161,14 +212,11 @@ class BayesianModel:
         """
         if not isinstance(self._effective_prior, dict):
             return
-        leaves = _enumerate_leaves(self.forward_model)
-        applicable = {prefix: self._applicable_obs(prefix) for prefix in _KNOWN_PREFIXES}
         for raw_key, value in self._effective_prior.items():
-            self._validate_prior_entry(raw_key, value, leaves, applicable)
+            self._validate_prior_entry(raw_key, value, self._leaves, self._applicable)
+        _validate_no_conflicting_keys(self._effective_prior, self._leaves, self._applicable)
 
     def _validate_prior_entry(self, raw_key, value, leaves, applicable_by_prefix) -> None:
-        # Catch flat keys like "tbabs_1_nh" before parse_prior_key — the
-        # regex would accept them but downstream errors would be cryptic.
         if "." not in raw_key.split("[", 1)[0]:
             raise ValueError(
                 f"Prior key {raw_key!r} has no module prefix. Expected a "
@@ -205,8 +253,6 @@ class BayesianModel:
                 f"Prior key {raw_key!r} references observation {scope!r} which is "
                 f"not in the {prefix!r} applicable set {sorted(applicable)}."
             )
-        # Strict leaf-existence check: a key that resolves to zero leaves is a
-        # typo'd parameter path — surface it at build time, not silently drop it.
         if not _resolve_targets(path, scope, leaves, applicable_by_prefix):
             raise KeyError(_unmatched_key_message(path, scope, leaves))
         if isinstance(value, dist.Distribution | TiedParameter):
@@ -216,12 +262,10 @@ class BayesianModel:
         except Exception as exc:
             raise TypeError(f"Invalid fixed prior value for {raw_key!r}: {value!r}") from exc
 
-    # ----- numpyro model wiring -----
-
     def numpyro_model(self, observed: bool = True):
         """Sample the prior, evaluate the forward model, register likelihoods.
 
-        Thin wrapper around :meth:`ForwardModel.evaluate`: this method owns
+        Thin wrapper around [`ForwardModel.evaluate`][jaxspec.fit._forward_model.ForwardModel.evaluate]: this method owns
         only the numpyro-specific concerns (sample sites + Poisson
         likelihoods on the observed counts). The deterministic forward pass
         — spectral evaluation, instrument folding, background — lives on
@@ -230,12 +274,13 @@ class BayesianModel:
         """
         inputs = self._sample_inputs()
 
-        # Clone the forward_model per call so each evaluate sees a fresh tree
-        # (the original module's Variables would otherwise accumulate tracers
-        # across MCMC's repeated traces, surfacing as UnexpectedTracerError).
-        # ``evaluate`` itself does NOT clone — that would break ``jax.vmap``.
+        # Avoid retaining tracers on the model's NNX variables between calls.
         fresh_forward = nnx.clone(self.forward_model)
         predictions = fresh_forward.evaluate(inputs, missing_key_style="prior")
+
+        # Registered here, not in the site-free forward pass that fakeit and the PPC reuse.
+        for site_name, value in self._derived_sites(fresh_forward, inputs).items():
+            numpyro.deterministic(site_name, value)
 
         fm = self.forward_model
         for obs_name, obs in fm.observations.items():
@@ -273,25 +318,23 @@ class BayesianModel:
                     obs=obs.folded_counts.data if observed else None,
                 )
 
-    # ----- Prior sampling -----
-
     def _sample_inputs(self) -> dict[str, Any]:
         """Sample the (effective) prior into the leaf-path inputs dict that
-        :meth:`ForwardModel.evaluate` consumes.
+        [`ForwardModel.evaluate`][jaxspec.fit._forward_model.ForwardModel.evaluate] consumes.
 
         Creates the per-leaf numpyro sample sites along the way. Thin wrapper
-        around :func:`~jaxspec.fit._prior_resolution.sample_prior` that
-        provides the prefix → applicable-obs table built from
-        :meth:`_applicable_obs`.
+        around [`sample_prior`][jaxspec.fit._prior_resolution.sample_prior] that
+        provides the prefix → applicable-obs table and the leaf map, both cached.
         """
-        applicable = {prefix: self._applicable_obs(prefix) for prefix in _KNOWN_PREFIXES}
-        return sample_prior(self.forward_model, self._effective_prior, applicable)
+        return sample_prior(
+            self.forward_model, self._effective_prior, self._applicable, leaves=self._leaves
+        )
 
     def _spectrum_is_shared(self) -> bool:
         """Whether every spectral prior entry is shared across obs.
 
-        Used at construction time to set :attr:`ForwardModel.settings`'s
-        ``"spectrum_shared"`` flag, which lets :meth:`ForwardModel.evaluate`
+        Used at construction time to set [`ForwardModel.settings`][jaxspec.fit._forward_model.ForwardModel.settings]'s
+        ``"spectrum_shared"`` flag, which lets [`ForwardModel.evaluate`][jaxspec.fit._forward_model.ForwardModel.evaluate]
         evaluate the spectrum **once** when a user energy grid is set
         (otherwise each obs's per-obs replica must be evaluated separately,
         e.g. when any spectral param has a ``[*]`` / ``[obs]`` scope).
@@ -307,16 +350,13 @@ class BayesianModel:
                 return False
         return True
 
-    # ----- Cached properties for fitter machinery -----
-
     @cached_property
     def transformed_numpyro_model(self) -> Callable:
         transform_dict = {}
 
-        relations = get_model_relations(self.numpyro_model)
         distributions = {
             parameter: getattr(numpyro.distributions, value, None)
-            for parameter, value in relations["sample_dist"].items()
+            for parameter, value in self._model_relations["sample_dist"].items()
         }
 
         for parameter, distribution in distributions.items():
@@ -353,19 +393,8 @@ class BayesianModel:
     def log_posterior_prob(self) -> Callable:
         """Build the posterior probability function.
 
-        Enables distribution validation only during this trace so that
-        out-of-support parameter values produce ``-inf`` log-probabilities
-        (instead of silently bogus finite values), letting external samplers
-        such as AIES / ESS / MH correctly reject them.
-
-        We don't use ``numpyro.validation_enabled()`` because that context
-        manager has an upstream bug: it saves ``_VALIDATION_ENABLED`` (a
-        module-global) but restores via ``enable_validation`` which writes
-        to *both* that global *and* ``Distribution._validate_args`` — and
-        those two can be out of sync (they are at fresh import). The
-        manual save/restore below targets ``Distribution._validate_args``
-        directly, which is the attribute every ``Distribution`` instance
-        actually reads at construction time.
+        Distribution validation makes out-of-support values produce ``-inf``, allowing
+        external samplers such as AIES, ESS, and MH to reject them.
         """
 
         @jax.jit
@@ -380,37 +409,85 @@ class BayesianModel:
         return log_posterior_prob
 
     @cached_property
+    def _model_relations(self) -> dict:
+        """Cached ``get_model_relations`` output.
+
+        Each call runs its own ``jax.eval_shape`` trace of the whole model, and three
+        properties below need the result, so compute it once.
+        """
+        return get_model_relations(self.numpyro_model)
+
+    @cached_property
+    def _deterministic_site_names(self) -> set[str]:
+        """Sites registered with ``deterministic`` rather than sampled.
+
+        Model-relation discovery covers tied parameters, fixed background rates, and
+        published quantities. The set drives free-parameter filtering, predictive
+        reconstruction, and result display.
+        """
+        return {
+            site
+            for site, fn_name in self._model_relations["sample_dist"].items()
+            if fn_name == "Deterministic"
+        }
+
+    @cached_property
     def parameter_names(self) -> list[str]:
-        """List of parameter names for the model."""
-        relations = get_model_relations(self.numpyro_model)
-        all_sites = relations["sample_sample"].keys()
-        observed_sites = relations["observed"]
-        return sorted(site for site in all_sites if site not in observed_sites)
+        """List of the free parameter names for the model.
+
+        Excludes deterministic sites: numpyro's ``sample_dist`` covers both ``sample``
+        and ``deterministic`` site types, so without the filter a tied parameter — or the
+        per-bin ``observed_background.<obs>`` vector of a non-stochastic background —
+        would be reported as a free coordinate, and ``dict_to_array`` /
+        ``array_to_dict`` would build the wrong shape for external samplers.
+        """
+        observed_sites = set(self._model_relations["observed"])
+        return sorted(
+            site
+            for site in self._model_relations["sample_sample"]
+            if site not in observed_sites and site not in self._deterministic_site_names
+        )
 
     @cached_property
     def observation_names(self) -> list[str]:
         """List of the observations."""
-        relations = get_model_relations(self.numpyro_model)
-        all_sites = relations["sample_sample"].keys()
-        observed_sites = relations["observed"]
-        return sorted(site for site in all_sites if site in observed_sites)
+        observed_sites = set(self._model_relations["observed"])
+        return sorted(
+            site for site in self._model_relations["sample_sample"] if site in observed_sites
+        )
 
     def array_to_dict(self, theta):
+        """Turn a flat parameter vector into a ``{name: value}`` dict.
+
+        ``theta`` must be ordered by ``parameter_names``, which is **sorted** and lists
+        only *free* sites — tied parameters and the per-bin rate of a non-stochastic
+        background are derived, so they are absent. Build the vector from
+        ``parameter_names`` rather than from your prior dict's declaration order.
+        """
         return {name: theta[i] for i, name in enumerate(self.parameter_names)}
 
     def dict_to_array(self, dict_of_params):
+        """Inverse of ``array_to_dict``: pack a ``{name: value}`` dict into a vector
+        ordered by ``parameter_names``."""
         theta = jnp.zeros(len(self.parameter_names))
         for index, parameter_key in enumerate(self.parameter_names):
             theta = theta.at[index].set(dict_of_params[parameter_key])
         return theta
 
     def prior_samples(self, key: Array = rng_key(0), num_samples: int = 100):
-        """Sample from the prior distribution."""
+        """Sample from the prior distribution.
+
+        Returns the free parameters *and* the deterministic sites. Unlike
+        ``parameter_names`` — which feeds ``dict_to_array`` and external samplers,
+        and so must list only free coordinates — a prior predictive check wants to see
+        derived quantities such as [`TiedParameter`][jaxspec.fit.TiedParameter] destinations.
+        """
+        return_sites = [*self.parameter_names, *sorted(self._deterministic_site_names)]
 
         @jax.jit
         def prior_sample(key):
             return Predictive(
-                self.numpyro_model, return_sites=self.parameter_names, num_samples=num_samples
+                self.numpyro_model, return_sites=return_sites, num_samples=num_samples
             )(key, observed=False)
 
         return prior_sample(key)
@@ -442,7 +519,7 @@ class BayesianModel:
         posterior_observations = self.mock_observations(prior_params, key=key_posterior)
 
         for key, value in self.forward_model.observations.items():
-            fig, ax = plt.subplots(
+            _fig, ax = plt.subplots(
                 nrows=2, ncols=1, sharex=True, figsize=(5, 6), height_ratios=[3, 1]
             )
 

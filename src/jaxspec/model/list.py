@@ -1,6 +1,10 @@
 import inspect
 
-from .abc import ModelComponent
+from .abc import AdditiveComponent, ModelComponent, MultiplicativeComponent
+
+# Imported for their side effect: defining the classes is what registers them as
+# subclasses for the sweep below. ``additive`` declares ``__all__``, so the base
+# classes above no longer come through the star import.
 from .additive import *  # noqa: F403
 from .multiplicative import *  # noqa: F403
 
@@ -16,13 +20,6 @@ def all_models(cls: ModelComponent) -> list[ModelComponent]:
     return [s for s in subclasses if not inspect.isabstract(s)]
 
 
-# I want to put all the existent models in the namespace to build them in the good ol' XSPEC way
 model_components = {cls.__name__: cls for cls in all_models(ModelComponent)}
-additive_components = {
-    cls.__name__: cls
-    for cls in all_models(AdditiveComponent)  # noqa: F405
-}
-multiplicative_components = {
-    cls.__name__: cls
-    for cls in all_models(MultiplicativeComponent)  # noqa: F405
-}
+additive_components = {cls.__name__: cls for cls in all_models(AdditiveComponent)}
+multiplicative_components = {cls.__name__: cls for cls in all_models(MultiplicativeComponent)}

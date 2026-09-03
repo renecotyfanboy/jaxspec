@@ -30,7 +30,21 @@
       show_root_toc_entry: true
       heading_level: 3
 
+::: jaxspec.fit.NSFitter
+    options:
+      show_root_heading: true
+      show_root_full_path: false
+      show_root_toc_entry: true
+      heading_level: 3
+
 ## Prior helpers
+
+::: jaxspec.fit.TiedParameter
+    options:
+      show_root_heading: true
+      show_root_full_path: false
+      show_root_toc_entry: true
+      heading_level: 3
 
 ::: jaxspec.fit.joint_prior_factory
     options:

@@ -1,11 +1,11 @@
 # Installation
 
-`jaxspec` requires `Python > 3.9` to be installed. We recommend to start from a fresh `conda` environment using either
+`jaxspec` requires Python 3.11 or 3.12. We recommend to start from a fresh `conda` environment using either
 [`miniforge`](https://github.com/conda-forge/miniforge) (community driven) or [`miniconda`](https://docs.anaconda.com/miniconda/)
 (built by Anaconda).
 
 ```bash
-conda create -n jaxspec python=3.11
+conda create -n jaxspec python=3.12
 conda activate jaxspec
 ```
 

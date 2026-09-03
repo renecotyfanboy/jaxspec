@@ -6,8 +6,7 @@
         - from_component
         - photon_flux
         - energy_flux
-        - from_string
-        - to_string
+        - integrated_flux
       show_root_heading: true
       show_root_toc_entry: false
 
@@ -23,5 +22,12 @@
     options:
       members:
         - factor
+      show_root_heading: true
+      show_root_toc_entry: false
+
+::: jaxspec.model.abc.HasDerivedQuantities
+    options:
+      members:
+        - derived_quantities
       show_root_heading: true
       show_root_toc_entry: false

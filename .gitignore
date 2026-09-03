@@ -216,7 +216,7 @@ Thumbs.db
 /_projects/
 
 # Locally generated lookup tables (large; distributed via pooch, not the wheel).
-src/jaxspec/tables/*.npz
+*.npz
 
 # Assorted local scratch
 /.ai/
@@ -226,4 +226,5 @@ src/jaxspec/tables/*.npz
 *.db
 
 Library/
+_dev/
 # End of https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks

@@ -206,7 +206,9 @@ def test_scoped_tied_parameters_fit_and_extraction():
     np.testing.assert_allclose(norm[..., obs_order.index("PN")], 0.25 * mos1, rtol=1e-6)
 
     result.photon_flux(0.7, 1.2, register=True)
-    [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
+    from jaxspec.analysis._ppc import folded_branches
+
+    [folded_branches(result, obs_id) for obs_id in result.obsconfs.keys()]
     result.to_chain("test")
 
 

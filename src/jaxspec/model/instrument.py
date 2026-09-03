@@ -10,18 +10,20 @@ import numpy as np
 from flax import nnx
 from jax.typing import ArrayLike
 
+from ._mixin import HasDerivedQuantities
+
 if TYPE_CHECKING:
     from ..data import ObsConfiguration
 
 
 def redistribute(integrated_spectrum, old_e_low, old_e_high, e_low, e_high):
-    # Suppose old_e_high[i] == old_e_low[i+1]
+    # Reconstruct the contiguous source-bin edges.
     edges = jnp.concatenate([old_e_low[:1], old_e_high])
     cumflux = jnp.concatenate([jnp.zeros(1), jnp.cumsum(integrated_spectrum)])
     return jnp.interp(e_high, edges, cumflux) - jnp.interp(e_low, edges, cumflux)
 
 
-class GainModel(nnx.Module):
+class GainModel(HasDerivedQuantities, nnx.Module):
     """Generic gain model. ``__call__(energies)`` returns the per-energy gain factor."""
 
     @abstractmethod
@@ -31,7 +33,7 @@ class GainModel(nnx.Module):
 class ConstantGain(GainModel):
     """A scalar gain factor, independent of energy.
 
-    The factor lives as :attr:`factor` (an ``nnx.Param``). Its prior is provided
+    The factor lives as ``factor`` (an ``nnx.Param``). Its prior is provided
     via the unified prior dict under the key ``"instrument.gain.factor"``
     (shared across instrumented obs) or ``"instrument.gain.factor[*]"`` /
     ``"instrument.gain.factor[obs_name]"`` (per-obs).
@@ -44,7 +46,7 @@ class ConstantGain(GainModel):
         return self.factor[...]
 
 
-class ShiftModel(nnx.Module):
+class ShiftModel(HasDerivedQuantities, nnx.Module):
     """Generic shift model. ``__call__(energies)`` returns shifted energies."""
 
     @abstractmethod
@@ -54,7 +56,7 @@ class ShiftModel(nnx.Module):
 class ConstantShift(ShiftModel):
     """An additive energy shift, constant across the spectrum.
 
-    The offset lives as :attr:`offset` (an ``nnx.Param``). Its prior is provided
+    The offset lives as ``offset`` (an ``nnx.Param``). Its prior is provided
     via the unified prior dict under the key ``"instrument.shift.offset"``
     (shared) or ``"instrument.shift.offset[*]"`` / ``"instrument.shift.offset[obs_name]"``
     (per-obs).
@@ -67,7 +69,7 @@ class ConstantShift(ShiftModel):
         return energies + self.offset[...]
 
 
-class InstrumentModel(nnx.Module):
+class InstrumentModel(HasDerivedQuantities, nnx.Module):
     """Per-observation instrument response.
 
     Pass as a dict to [`BayesianModel`][jaxspec.fit.BayesianModel]
@@ -76,28 +78,24 @@ class InstrumentModel(nnx.Module):
     BayesianModel(
         spectral_model, prior, observations,
         instrument_model={
-            "PN": None, # explicit reference
+            "PN": None,
             "MOS1": InstrumentModel(gain=ConstantGain(), shift=ConstantShift()),
             "MOS2": InstrumentModel(gain=ConstantGain(), shift=ConstantShift()),
         },
     )
     ```
 
-    ``None`` entries (or simply omitting an observation) apply the identity
-    fold (``transfer_matrix @ flux``), this allows to specify the reference instruments.
+    ``None`` entries and omitted observations apply the identity fold
+    (``transfer_matrix @ flux``), allowing one instrument to serve as the reference.
 
     Parameters:
-        gain: Optional :class:`GainModel` (e.g. :class:`ConstantGain`). When
+        gain: Optional [`GainModel`][jaxspec.model.instrument.GainModel] (e.g. [`ConstantGain`][jaxspec.model.instrument.ConstantGain]). When
             ``None``, no flux scaling is applied.
-        shift: Optional :class:`ShiftModel` (e.g. :class:`ConstantShift`). When
+        shift: Optional [`ShiftModel`][jaxspec.model.instrument.ShiftModel] (e.g. [`ConstantShift`][jaxspec.model.instrument.ConstantShift]). When
             ``None``, the input energies pass through unchanged.
     """
 
-    #: When ``True``, :class:`~jaxspec.fit._forward_model.ForwardModel` builds
-    #: the un-merged response components (``redistribution``, ``grouping``,
-    #: ``area``, ``exposure``) into the per-observation cache passed to
-    #: :meth:`fold`. Subclasses set this to ``True`` when their math needs the
-    #: components separately (e.g. pileup, RMF calibration).
+    #: Whether ``fold`` requires separate response components in its cache.
     requires_components = False
 
     def __init__(self, gain: GainModel | None = None, shift: ShiftModel | None = None):
@@ -107,7 +105,7 @@ class InstrumentModel(nnx.Module):
     def default_prior(self, observation: ObsConfiguration, obs_name: str) -> dict:
         """Return data-dependent default priors scoped to this obs.
 
-        Mirrors :meth:`~jaxspec.model.background.BackgroundModel.default_prior`:
+        Mirrors [`BackgroundModel.default_prior`][jaxspec.model.background.BackgroundModel.default_prior]:
         subclasses (e.g. pileup models with per-obs dead-time / grade-fraction
         parameters) override this to inject ``[obs_name]``-scoped defaults.
         User prior entries override these defaults.
@@ -115,13 +113,13 @@ class InstrumentModel(nnx.Module):
         return {}
 
     def apply_shift(self, energies: ArrayLike) -> ArrayLike:
-        """Apply :attr:`shift` to ``energies`` and clip away non-positive values."""
+        """Apply ``shift`` to ``energies`` and clip away non-positive values."""
         if self.shift is None:
             return energies
         return jnp.clip(self.shift(energies), min=1e-6)
 
     def apply_gain(self, flux, energies: ArrayLike):
-        """Multiply ``flux`` (or each branch in a pytree) by :attr:`gain`'s factor."""
+        """Multiply ``flux`` (or each branch in a pytree) by ``gain``'s factor."""
         if self.gain is None:
             return flux
         factor = jnp.clip(self.gain(energies), min=0.0)
@@ -152,8 +150,6 @@ class InstrumentModel(nnx.Module):
         Fold the input spectrum (or branches of a pytree) into the instrument using the pre-computed transfer matrix.
         """
 
-        # Contract: the shift is applied here if a grid is provided, else in the forward
-        # model (which evaluates flux_func on the shifted native energies directly).
         if eval_energies is not None:
             spectrum = self._redistribute_to_native(spectrum, cache, eval_energies)
 
@@ -225,15 +221,19 @@ class PileupModel(InstrumentModel):
         shift: Optional energy shift, as for
             [`InstrumentModel`][jaxspec.model.instrument.InstrumentModel] (e.g.
             [`ConstantShift`][jaxspec.model.instrument.ConstantShift]).
-        alpha: Grade-morphing parameter : the fraction of piled events that keep a good grade,
-            with the good-grade fraction of an order-``p`` pile-up taken
-            proportional to ``alpha ** (p - 1)``.
-        psf_frac: PSF fraction: only this fraction of the extracted counts is treated for pile-up.
         frame_time: CCD frame (readout) time in seconds (``EXPTIME`` keyword).
         frac_expo: Fractional exposure per frame in ``(0, 1]`` (``FRACEXPO`` keyword).
         g0: Grade correction for single-photon detection.
         npiled: Maximum number of photons piled up in a single frame
         num_regions: Number of regions over which the piled counts are distributed, `1` for a point source.
+
+    Attributes:
+        alpha: Grade-morphing parameter — the fraction of piled events that keep a good
+            grade, with the good-grade fraction of an order-``p`` pile-up taken
+            proportional to ``alpha ** (p - 1)``. Fitted; give it a prior under
+            ``"instrument.alpha"``.
+        psf_frac: PSF fraction — only this fraction of the extracted counts is treated for
+            pile-up. Fitted; give it a prior under ``"instrument.psf_frac"``.
     """
 
     requires_components = True
@@ -285,21 +285,15 @@ class PileupModel(InstrumentModel):
         npiled = self._constants["npiled"]
 
         in_energies = cache["in_energies"]
-        # Offset required in case the energy grid does not start at zero
-        # (the energy grid is assumed uniform, so the first bin width sets the offset).
+        # Align FFT indices when the uniform energy grid starts above zero.
         bin_width = in_energies[0, 1] - in_energies[0, 0]
         ioff = -jnp.array(in_energies[0, 0] // bin_width, jnp.int_)
         n_orig = in_energies.shape[1]
         shift_idx = jnp.arange(n_orig) + ioff
 
         def pileup_fold(s):
-            # The pileup math operates on a single spectrum; ``jax.tree.map``
-            # below applies it per branch when the forward model requests a
-            # split-branch fold (e.g. posterior-predictive overlays), mirroring
-            # the base ``InstrumentModel.fold`` pytree contract.
             arf_s = s * cache["area"]
 
-            # Calculate pileup following original algorithm
             psf_frac = self.psf_frac / num_regions / fracexpo
             arf_s_tmp = arf_s * psf_frac
             integ_arf_s = jnp.sum(arf_s_tmp)

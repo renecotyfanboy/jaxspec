@@ -52,14 +52,13 @@ def integrate_interval(integrand: Callable, n: int = 51) -> Callable:
     F(a, b, \pmb{\theta}) = \int_a^b f(x,\pmb{\theta}) \text{d}x
     $$
 
-    # Example usage
-
+    Examples:
     ``` python
     pi = 4*integrate_interval(lambda x: 1/(1+x**2))(0, 1)
     print(pi) # 3.1415927
     ```
 
-    # Example where the limits of the integral are parameters
+    The integration limits may also be parameters:
     ``` python
     def erf(x):
 
@@ -119,8 +118,7 @@ def integrate_positive(integrand: Callable, n: int = 51) -> Callable:
     F(\pmb{\theta}) = \int_0^\infty f(x,\pmb{\theta}) \text{d}x
     $$
 
-    # Example usage
-
+    Example:
     ``` python
     gamma = integrate_positive(lambda t, z: t**(z-1) * jnp.exp(-t))
     print(gamma(1/2)) # 1.7716383

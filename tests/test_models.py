@@ -1,6 +1,8 @@
+import inspect
 import re
 
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 from flax import nnx
@@ -8,6 +10,29 @@ from flax import nnx
 from jaxspec.model.additive import Additiveconstant, Blackbodyrad, Powerlaw
 from jaxspec.model.list import additive_components, multiplicative_components
 from jaxspec.model.multiplicative import MultiplicativeConstant, Tbabs
+
+
+def _no_args_constructible(cls) -> bool:
+    """Whether the sweep below can instantiate ``cls()``.
+
+    Components driven by an external file (e.g. the OGIP table models in
+    ``jaxspec.model.tabulated``) require constructor arguments; they land in the
+    registry whenever their module was imported before ``jaxspec.model.list`` and
+    would break the no-args sweeps, so they are covered by their own test module
+    instead.
+    """
+    return all(
+        parameter.default is not parameter.empty
+        or parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)
+        for name, parameter in inspect.signature(cls.__init__).parameters.items()
+        if name != "self"
+    )
+
+
+additive_components = {k: v for k, v in additive_components.items() if _no_args_constructible(v)}
+multiplicative_components = {
+    k: v for k, v in multiplicative_components.items() if _no_args_constructible(v)
+}
 
 
 @pytest.mark.parametrize("test_input", list(additive_components.keys()))
@@ -106,3 +131,33 @@ def test_mermaid_representation():
         (add_id, mul_id),
         (mul_id, out_id),
     }
+
+
+def test_tbpcf_at_full_covering_fraction_matches_tbabs():
+    """At `f=1` a partial-covering absorber is a plain absorber.
+
+    The two read the same Wilms cross-section table, but `Tbpcf` used to interpolate it
+    against *linear* energy while `Tbabs` uses log-log, so identical physics gave slightly
+    different transmission.
+    """
+    from jaxspec.model.multiplicative import Tbpcf
+
+    energy = jnp.geomspace(0.3, 12.0, 500)
+    tbabs, tbpcf = Tbabs(), Tbpcf()
+    tbpcf.f.value = jnp.asarray(1.0)
+
+    np.testing.assert_allclose(
+        np.asarray(tbpcf.factor(energy)), np.asarray(tbabs.factor(energy)), rtol=1e-12
+    )
+
+
+def test_cross_section_tables_are_shared_between_components():
+    """The cached loader must hand out the same array object, not a fresh copy.
+
+    `nnx.clone` then shares the table across per-observation replicas instead of
+    deep-copying it, which is the whole point of the plain-ndarray table convention.
+    """
+    from jaxspec.model.multiplicative import Tbpcf
+
+    assert Tbabs()._sigma is Tbpcf()._sigma
+    assert Tbabs()._energy is Tbabs()._energy

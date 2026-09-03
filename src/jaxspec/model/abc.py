@@ -1,82 +1,20 @@
 from __future__ import annotations
 
-import operator
-
 from abc import ABC
 from uuid import uuid4
 
-import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 import networkx as nx
 
+from flax import nnx
+
 from ._graph_util import compose, export_to_mermaid
+from ._mixin import Composable, HasDerivedQuantities, HideUnderscore
 
 
-class HideUnderscoreMixin:
-    """Hide underscore-prefixed attributes from ``nnx.display`` and ``repr``.
-
-    Flax NNX shows any attribute classified as pytree data even when its name
-    starts with ``_`` (only *static* underscore attributes are hidden by
-    default). For jaxspec models we want the ``_name`` convention to mean
-    "implementation detail, don't show" regardless of whether the value is an
-    array / :class:`nnx.Variable`.
-
-    Place this mixin **before** :class:`nnx.Module` in the MRO.
-    """
-
-    def __treescope_repr__(self, path, subtree_renderer):
-        import treescope
-
-        from flax.nnx import visualization
-
-        children = {n: v for n, v in vars(self).items() if not n.startswith("_")}
-        return visualization.render_object_constructor(
-            object_type=type(self),
-            attributes=children,
-            path=path,
-            subtree_renderer=subtree_renderer,
-            color=treescope.formatting_util.color_from_string(type(self).__qualname__),
-        )
-
-    def __nnx_repr__(self):
-        from flax.nnx import reprlib
-
-        yield reprlib.Object(type=type(self))
-        for name, value in vars(self).items():
-            if not name.startswith("_"):
-                yield reprlib.Attr(name, value)
-
-
-class ComposableMixin:
-    """
-    Defines the set of operations between model components and spectral models
-    """
-
-    def sanitize_inputs(self, other):
-        if isinstance(self, ModelComponent):
-            model_1 = SpectralModel.from_component(self)
-        else:
-            model_1 = self
-
-        if isinstance(other, ModelComponent):
-            model_2 = SpectralModel.from_component(other)
-        else:
-            model_2 = other
-
-        return model_1, model_2
-
-    def __add__(self, other):
-        model_1, model_2 = self.sanitize_inputs(other)
-        return model_1.compose(model_2, operation="add", operation_func=operator.add)
-
-    def __mul__(self, other):
-        model_1, model_2 = self.sanitize_inputs(other)
-        return model_1.compose(model_2, operation="mul", operation_func=operator.mul)
-
-
-class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
+class SpectralModel(HideUnderscore, Composable, nnx.Module):
     _graph: nx.DiGraph
 
     def __init__(self, graph: nx.DiGraph):
@@ -86,17 +24,9 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
             if "component" in data["type"]:
                 setattr(self, data["name"], data["component"])
 
-    def compose(self, other, operation=None, operation_func=None):
-        """
-        This function operates a composition between the operation graph of two models
-        1) It fuses the two graphs using which joins at the 'out' nodes and change components name to unique identifiers
-        2) It relabels the 'out' node with a unique identifier and labels it with the operation
-        3) It links the operation to a new 'out' node
-        """
+    def compose(self, other, operation=None):
+        """Combine two spectral models with an addition or multiplication node."""
 
-        # `*` between two additive models is meaningless in the XSPEC model algebra, and
-        # it currently evaluates identically to `+` — so a one-character typo in the most
-        # common expression in the library silently fits a different model.
         if operation == "mul" and self.root_nodes and other.root_nodes:
             raise ValueError(
                 f"Cannot multiply two additive models "
@@ -105,9 +35,7 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
                 f"`+` to add two additive components together."
             )
 
-        composed_graph = compose(
-            self._graph, other._graph, operation=operation, operation_func=operation_func
-        )
+        composed_graph = compose(self._graph, other._graph, operation=operation)
 
         return SpectralModel(composed_graph)
 
@@ -120,11 +48,10 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
             "type": f"{component.type}_component",
             "name": f"{component.__class__.__name__}_1".lower(),
             "component": component,
-            "depth": 0,
         }
 
         _graph.add_node(node_id, **node_properties)
-        _graph.add_node("out", type="out", depth=1)
+        _graph.add_node("out", type="out")
         _graph.add_edge(node_id, "out")
 
         return cls(_graph)
@@ -137,7 +64,6 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
         multiplicative_nodes = []
 
         if node.get("type") == "mul_operation":
-            # Recursively find all the multiplicative components using the predecessors
             predecessors = self._graph.pred[node_id]
             for node_id in predecessors:
                 if "multiplicative_component" == self._graph.nodes[node_id].get("type"):
@@ -159,13 +85,8 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
         """Yield ``(branch_name, mult_node_ids, root_node_name)`` for every additive root.
 
         ``mult_node_ids`` is the deduplicated list of multiplicative-component node ids
-        along the path from the additive root to ``out``, ordered by component name.
-
-        The ordering must be deterministic: branch names are user-facing keys
-        (``flux_func(return_branches=True)``, ``evaluate(split_branches=True)``, PPC
-        legend labels). Deduplicating with ``list(set(...))`` over uuid4 node-id strings
-        made them depend on ``PYTHONHASHSEED``, so the same model produced different keys
-        in different processes. Multiplication commutes, so only the key text changes.
+        along the path from the additive root to ``out``. They are ordered by component
+        name so user-facing branch names are deterministic across processes.
         """
         for root_node_id in self.root_nodes:
             root_node_name = self._graph.nodes[root_node_id].get("name")
@@ -184,16 +105,11 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
 
     @property
     def branches(self) -> list[str]:
-        # Deliberately not cached: `cached_property` writes into `vars(self)`, and on an
-        # `nnx.Module` that mutates the graphdef — reading a public property would change
-        # `nnx.split` output and trigger recompiles depending on whether anyone had
-        # printed `.branches`. The walk is cheap and runs at trace time.
+        # Caching on an nnx.Module would mutate its graph definition.
         return [branch for branch, _, _ in self._iter_branches()]
 
     def flux_func(self, e_low, e_high, energy_flux=False, n_points=2, return_branches=False):
-        # A model with no additive root emits no photons. Without this guard the sum
-        # below returns the Python int 0, which then broadcasts through folding and
-        # produces an all-zero spectrum rather than an error.
+        # Reject models without an emitting component before folding.
         if not self.root_nodes:
             raise ValueError(
                 "This model has no additive component, so it produces no flux. "
@@ -204,7 +120,6 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
 
         continuum = {}
 
-        ## Evaluate the expected contribution for each component
         for node_id in nx.dag.topological_sort(self._graph):
             node = self._graph.nodes[node_id]
 
@@ -230,7 +145,6 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
             else:
                 pass
 
-        ## Propagate the absorption for each branch
         branches = {}
         for branch_name, mult_ids, root_node_name in self._iter_branches():
             flux = continuum[root_node_name]
@@ -282,13 +196,6 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
         nnx.replace_by_pure_dict(param_state, pure)
         return nnx.merge(graphdef, param_state, other)
 
-    # Deliberately not jitted. `jax.jit(static_argnums=0)` made `self` a *static*
-    # argument, so mutating a parameter in place (the nnx idiom) left the compiled
-    # trace holding the old values and this returned a stale result. `nnx.jit`
-    # instead propagates state out of the trace, which collides with numpyro's
-    # trace levels during fitting (TraceContextError). These are convenience entry
-    # points costing well under a millisecond; the hot path is `flux_func`, which is
-    # traced by the caller's enclosing jit.
     def photon_flux(
         self,
         e_low,
@@ -315,13 +222,6 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
             e_low, e_high, n_points=n_points, return_branches=split_branches
         )
 
-    # Deliberately not jitted. `jax.jit(static_argnums=0)` made `self` a *static*
-    # argument, so mutating a parameter in place (the nnx idiom) left the compiled
-    # trace holding the old values and this returned a stale result. `nnx.jit`
-    # instead propagates state out of the trace, which collides with numpyro's
-    # trace levels during fitting (TraceContextError). These are convenience entry
-    # points costing well under a millisecond; the hot path is `flux_func`, which is
-    # traced by the caller's enclosing jit.
     def energy_flux(self, e_low, e_high, *, params: dict | None = None, n_points: int = 2):
         r"""
         Compute the expected energy flux between $E_\min$ and $E_\max$ by integrating the model.
@@ -387,7 +287,7 @@ class SpectralModel(HideUnderscoreMixin, ComposableMixin, nnx.Module):
         return vectorized_flux(*flat_tree).sum(axis=-1)
 
 
-class ModelComponent(HideUnderscoreMixin, nnx.Module, ComposableMixin, ABC):
+class ModelComponent(HideUnderscore, HasDerivedQuantities, nnx.Module, Composable, ABC):
     """
     Abstract class for model components
     """
@@ -434,25 +334,11 @@ class AdditiveComponent(ModelComponent):
             + integrated_continuum * (e_high + e_low) / 2.0
         )
 
-    # Deliberately not jitted. `jax.jit(static_argnums=0)` made `self` a *static*
-    # argument, so mutating a parameter in place (the nnx idiom) left the compiled
-    # trace holding the old values and this returned a stale result. `nnx.jit`
-    # instead propagates state out of the trace, which collides with numpyro's
-    # trace levels during fitting (TraceContextError). These are convenience entry
-    # points costing well under a millisecond; the hot path is `flux_func`, which is
-    # traced by the caller's enclosing jit.
     def photon_flux(self, e_low, e_high, *, params: dict | None = None, n_points: int = 2):
         return SpectralModel.from_component(self).photon_flux(
             e_low, e_high, params=params, n_points=n_points
         )
 
-    # Deliberately not jitted. `jax.jit(static_argnums=0)` made `self` a *static*
-    # argument, so mutating a parameter in place (the nnx idiom) left the compiled
-    # trace holding the old values and this returned a stale result. `nnx.jit`
-    # instead propagates state out of the trace, which collides with numpyro's
-    # trace levels during fitting (TraceContextError). These are convenience entry
-    # points costing well under a millisecond; the hot path is `flux_func`, which is
-    # traced by the caller's enclosing jit.
     def energy_flux(self, e_low, e_high, *, params: dict | None = None, n_points: int = 2):
         return SpectralModel.from_component(self).energy_flux(
             e_low, e_high, params=params, n_points=n_points
@@ -466,8 +352,7 @@ class MultiplicativeComponent(ModelComponent):
         energy = jnp.linspace(e_low, e_high, n_points, axis=-1)
         factor = self.factor(energy)
         bin_width = e_high - e_low
-        # Guard against collapsed bins (can happen when an InstrumentModel
-        # shift pushes both endpoints below the _apply_shift clip floor):
+        # Shift clipping can collapse a bin; avoid division by zero.
         safe_width = jnp.where(bin_width > 0, bin_width, 1.0)
         avg = jsp.integrate.trapezoid(factor * energy, jnp.log(energy), axis=-1) / safe_width
         return jnp.where(bin_width > 0, avg, 0.0)

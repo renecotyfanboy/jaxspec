@@ -127,6 +127,7 @@ This must be run **before any `JAX` code is run in the process** otherwise the e
 double-check, you can ensure that the available number of devices is consistent with `n_devices`
 
 ```python
+import jax
 
 assert len(jax.local_devices()) == n_devices
 ```

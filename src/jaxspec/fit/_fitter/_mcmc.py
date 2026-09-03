@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 class MCMCFitter(BayesianModelFitter):
     """Fit a spectral model via MCMC sampling (NUTS, AIES, or ESS).
 
-    Inherits from :class:`BayesianModel` and accepts the same constructor
+    Inherits from [`BayesianModel`][jaxspec.fit.BayesianModel] and accepts the same constructor
     arguments (spectral model, prior dict with dotted-path keys, observations,
     optional background/instrument models).
     """
@@ -85,9 +85,7 @@ class MCMCFitter(BayesianModelFitter):
 
         posterior = mcmc.get_samples()
 
-        # Read the chain count back out of the merged kwargs: ``mcmc_kwargs`` wins over
-        # the ``num_chains`` argument above, and feeding the stale value to
-        # ``build_inference_data`` refolds the posterior into fabricated chains.
+        # Use the effective chain count after applying keyword overrides.
         inference_data = self.build_inference_data(
             posterior,
             num_chains=mcmc_kwargs["num_chains"],

@@ -7,7 +7,7 @@ from .online_storage import table_manager
 
 abundance_table: pd.DataFrame = ascii.read(table_manager.fetch("abundances.dat")).to_pandas()
 element_data: pd.DataFrame = fetch_table("elements")[0:30][
-    ["symbol", "atomic_number", "atomic_radius", "atomic_volume", "atomic_weight"]
+    ["symbol", "atomic_number", "atomic_radius", "atomic_weight"]
 ].rename(columns={"symbol": "Element"})
 
 abundance_table: pd.DataFrame
@@ -77,37 +77,37 @@ element_data: pd.DataFrame
 Dataframe containing various properties of the 30 first elements. It is adapted from
 [`mendeleev`](https://mendeleev.readthedocs.io/en/stable/). The full table is displayed below:
 
-| Element   |   atomic_number |   atomic_radius |   atomic_volume |   atomic_weight |
-|:----------|----------------:|----------------:|----------------:|----------------:|
-| H         |               1 |              25 |           14.1  |         1.008   |
-| He        |               2 |             120 |           31.8  |         4.0026  |
-| Li        |               3 |             145 |           13.1  |         6.94    |
-| Be        |               4 |             105 |            5    |         9.01218 |
-| B         |               5 |              85 |            4.6  |        10.81    |
-| C         |               6 |              70 |            5.3  |        12.011   |
-| N         |               7 |              65 |           17.3  |        14.007   |
-| O         |               8 |              60 |           14    |        15.999   |
-| F         |               9 |              50 |           17.1  |        18.9984  |
-| Ne        |              10 |             160 |           16.8  |        20.1797  |
-| Na        |              11 |             180 |           23.7  |        22.9898  |
-| Mg        |              12 |             150 |           14    |        24.305   |
-| Al        |              13 |             125 |           10    |        26.9815  |
-| Si        |              14 |             110 |           12.1  |        28.085   |
-| P         |              15 |             100 |           17    |        30.9738  |
-| S         |              16 |             100 |           15.5  |        32.06    |
-| Cl        |              17 |             100 |           18.7  |        35.45    |
-| Ar        |              18 |              71 |           24.2  |        39.948   |
-| K         |              19 |             220 |           45.3  |        39.0983  |
-| Ca        |              20 |             180 |           29.9  |        40.078   |
-| Sc        |              21 |             160 |           15    |        44.9559  |
-| Ti        |              22 |             140 |           10.6  |        47.867   |
-| V         |              23 |             135 |            8.35 |        50.9415  |
-| Cr        |              24 |             140 |            7.23 |        51.9961  |
-| Mn        |              25 |             140 |            7.39 |        54.938   |
-| Fe        |              26 |             140 |            7.1  |        55.845   |
-| Co        |              27 |             135 |            6.7  |        58.9332  |
-| Ni        |              28 |             135 |            6.6  |        58.6934  |
-| Cu        |              29 |             135 |            7.1  |        63.546   |
-| Zn        |              30 |             135 |            9.2  |        65.38    |
+| Element   |   atomic_number |   atomic_radius |   atomic_weight |
+|:----------|----------------:|----------------:|----------------:|
+| H         |               1 |              25 |         1.008   |
+| He        |               2 |             120 |         4.0026  |
+| Li        |               3 |             145 |         6.94    |
+| Be        |               4 |             105 |         9.01218 |
+| B         |               5 |              85 |        10.81    |
+| C         |               6 |              70 |        12.011   |
+| N         |               7 |              65 |        14.007   |
+| O         |               8 |              60 |        15.999   |
+| F         |               9 |              50 |        18.9984  |
+| Ne        |              10 |             160 |        20.1797  |
+| Na        |              11 |             180 |        22.9898  |
+| Mg        |              12 |             150 |        24.305   |
+| Al        |              13 |             125 |        26.9815  |
+| Si        |              14 |             110 |        28.085   |
+| P         |              15 |             100 |        30.9738  |
+| S         |              16 |             100 |        32.06    |
+| Cl        |              17 |             100 |        35.45    |
+| Ar        |              18 |              71 |        39.948   |
+| K         |              19 |             220 |        39.0983  |
+| Ca        |              20 |             180 |        40.078   |
+| Sc        |              21 |             160 |        44.9559  |
+| Ti        |              22 |             140 |        47.867   |
+| V         |              23 |             135 |        50.9415  |
+| Cr        |              24 |             140 |        51.9961  |
+| Mn        |              25 |             140 |        54.938   |
+| Fe        |              26 |             140 |        55.845   |
+| Co        |              27 |             135 |        58.9332  |
+| Ni        |              28 |             135 |        58.6934  |
+| Cu        |              29 |             135 |        63.546   |
+| Zn        |              30 |             135 |        65.38    |
 
 """

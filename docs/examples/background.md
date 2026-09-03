@@ -41,8 +41,9 @@ This is also possible to use a spectral model that will be folded within the ins
 ```python
 from jaxspec.model.background import SpectralModelBackground
 
-spectral_model_background = Powerlaw()
+spectral_model_background = Tbabs() * Powerlaw()
 background_prior = {
+    "background.tbabs_1.nh": dist.Uniform(0, 1),
     "background.powerlaw_1.alpha": dist.Uniform(0, 5),
     "background.powerlaw_1.norm": dist.LogUniform(1e-8, 1e-3),
 }

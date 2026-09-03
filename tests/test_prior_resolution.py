@@ -1,6 +1,6 @@
 """Unit tests for the prior-resolution machinery in ``jaxspec.fit._prior_resolution``
 (plus the ``joint_prior_factory`` / ``dict_prior`` leaf callables and
-``results._resolve_per_obs_entry``). These exercise the resolution helpers and
+``_posterior_params._resolve_per_obs_entry``). These exercise the resolution helpers and
 prior-sampling behaviour directly, without running inference."""
 
 import jax
@@ -17,7 +17,7 @@ from helpers import (
     spectral_model,
 )
 
-from jaxspec.analysis.results import _resolve_per_obs_entry
+from jaxspec.analysis._posterior_params import _resolve_per_obs_entry
 from jaxspec.fit import BayesianModel, TiedParameter, dict_prior, joint_prior_factory
 from jaxspec.fit._prior_resolution import (
     _KNOWN_PREFIXES,
@@ -62,7 +62,7 @@ def test_split_nnx_leaf_too_short_raises():
 
 
 def test_joint_prior_factory_matches_components():
-    """joint_prior_factory returns Delta for matching paths, None for misses."""
+    """joint_prior_factory returns a pre-sampled component for matching paths, None for misses."""
     captured = {}
 
     def model():
@@ -185,7 +185,7 @@ def test_dict_prior_short_path_returns_none():
 def test_resolve_per_obs_entry_partial_coverage_stays_dict():
     """Regression: a per-obs entry covering only a subset of the applicable obs
     must NOT be collapsed into a compacted trailing axis — otherwise
-    ``_leaf_inputs_from_input_parameters`` misindexes it by full-obs-order
+    ``_posterior_params.leaf_inputs`` misindexes it by full-obs-order
     position and a leaf silently gets another obs's parameters. Partial coverage
     must stay a ``{obs: array}`` dict; full coverage still stacks."""
     obs_axis = ["A", "B", "C"]

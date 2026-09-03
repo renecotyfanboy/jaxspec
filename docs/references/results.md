@@ -4,8 +4,11 @@
     options:
       members:
         - converged
-        - samples_haiku
-        - samples_flat
+        - input_parameters
+        - spectrum_parameters
+        - to_chain
+        - log_likelihood
+        - c_stat
         - photon_flux
         - energy_flux
         - luminosity
@@ -13,3 +16,12 @@
         - plot_corner
         - table
       show_root_heading: true
+
+## Comparing fits
+
+::: jaxspec.analysis.compare.plot_corner_comparison
+    options:
+      show_root_heading: true
+      show_root_full_path: false
+      show_root_toc_entry: true
+      heading_level: 3

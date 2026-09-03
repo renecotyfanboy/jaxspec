@@ -19,6 +19,16 @@ If you want to check that `jaxspec` gives correct values compared to `xspec`, yo
 both solutions are comparable. To do this, make sure you do a blind fit with `xspec` and use `Cstat` as the fit statistic.
 Also with `jaxspec`, make sure that you explicitly use a uniform prior for each of your parameters.
 
+Beware that a few models deliberately depart from the `xspec` parameter conventions, so their fitted values are not
+directly comparable. The multicolor disk models ([`Diskbb`][jaxspec.model._additive.disk.Diskbb] and
+[`Diskpbb`][jaxspec.model._additive.disk.Diskpbb]) normalize by the photon flux over a band rather than by
+$\cos i (r_{\text{in}}/d)^2$. Their `norm` is therefore the unabsorbed photon flux in the configured `flux_band`
+(0.5--10 keV by default), and should not be compared directly with XSPEC's fitted normalization. The equivalent
+XSPEC value is recorded for every draw as `norm_xspec`: fully shared components appear in inference data as
+`derived.spectrum.<component>.norm_xspec`, while observation-scoped components appear as
+`derived.forward.spectrum.<observation>.<component>.norm_xspec`. The chain table and plots display the same value
+as `<component>.norm_xspec`, with an observation label when scoped.
+
 ## Why is there no $\chi^2$ statistic ?
 
 When it comes to define the fitting statistic, the question of either using $\chi^2$ or C-stat arises

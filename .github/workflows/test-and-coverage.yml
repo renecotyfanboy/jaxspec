@@ -24,7 +24,6 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -74,7 +73,9 @@ jobs:
       run: uv sync --all-groups --frozen
 
     - name: Run fast tests
-      run: uv run pytest -m "not slow"
+      # tests/test_apec.py is excluded CI-wide: its XSPEC side needs the 1.2 GB apec
+      # model-data tables. Run it locally.
+      run: uv run pytest -m "not slow" --ignore=tests/test_apec.py
 
   full-tests:
     runs-on: ubuntu-latest
@@ -85,10 +86,10 @@ jobs:
     timeout-minutes: 120
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v6
 
     - name: Set up micromamba with xspec environment
       uses: mamba-org/setup-micromamba@v2
@@ -98,15 +99,18 @@ jobs:
         cache-downloads: true
 
     - name: Install jaxspec and test dependencies
+      # --inexact: prevent uv from uninstalling HEASOFT / XSPEC's packaages
       run: |
         export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-        uv sync --group test --frozen
+        uv sync --group test --frozen --inexact
       shell: micromamba-shell {0}
 
     - name: Run full test suite
+      # --no-sync: the environment was fully synced by the step above
       run: |
         export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-        uv run pytest --cov jaxspec --cov-report xml:coverage-full.xml
+        uv run --no-sync pytest --cov jaxspec --cov-report xml:coverage-full.xml \
+          --ignore=tests/test_apec.py
       shell: micromamba-shell {0}
 
     - name: Upload coverage to Codecov

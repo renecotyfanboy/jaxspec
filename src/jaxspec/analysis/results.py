@@ -6,11 +6,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import arviz as az
 import astropy.cosmology.units as cu
 import astropy.units as u
-import jax
-import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-import numpyro.distributions as dist
 import pandas as pd
 import xarray as xr
 
@@ -20,74 +17,24 @@ from chainconsumer import Chain, ChainConsumer, PlotConfig
 from jax.typing import ArrayLike
 from scipy.special import gammaln
 
-from ..fit._parameter import TiedParameter
 from ..fit._prior_resolution import (
-    _enumerate_leaves,
-    _per_obs_site_name,
-    _prefix_to_obs_names,
-    _resolve_targets,
-    parse_prior_key,
+    _DERIVED_PREFIX,
+    _KNOWN_PREFIXES,
+    _SITE_PREFIX,
+    _parse_per_obs_site_name,
 )
-from ._plot import (
-    BACKGROUND_COLOR,
-    BACKGROUND_DATA_COLOR,
-    COLOR_CYCLE,
-    SPECTRUM_COLOR,
-    SPECTRUM_DATA_COLOR,
-    _compute_bin_ids,
-    _compute_effective_area,
-    _error_bars_for_observed_data,
-    _plot_binned_samples_with_error,
-    _plot_poisson_data_with_error,
-    _rebin_xbins,
-    rebin_counts,
-)
+from . import _ppc
+from ._posterior_params import build_input_parameters
 
 if TYPE_CHECKING:
     from ..fit import BayesianModel
 
 
-_Y_UNITS_FOR_TYPE: dict[str, Any] = {
-    "counts": u.ct,
-    "countrate": u.ct / u.s,
-    "photon_flux": u.ct / u.cm**2 / u.s,
-    # "photon_flux_density" is xunit-dependent; handled inline.
-}
-
-_XLABEL_FOR_PHYSICAL_TYPE: dict[str, str] = {
-    "length": "Wavelength",
-    "energy": "Energy",
-    "frequency": "Frequency",
-}
-
-
-def _validate_x_unit(x_unit: Unit) -> str:
-    """Return the axis label for ``x_unit``, raising if its physical type is unsupported.
-
-    Called at the top of :meth:`FitResult.plot_ppc` so a bad unit fails before any figure
-    is drawn. Units such as ``1/cm`` (physical type ``wavenumber``) convert cleanly under
-    ``u.spectral()`` and so survive every earlier step.
-    """
-    physical_type = x_unit.physical_type
-    # astropy's PhysicalType supports __eq__ with bare strings but its str() form is
-    # "energy/torque/work" for compound types, so iterate explicitly.
-    label = next(
-        (lbl for pt, lbl in _XLABEL_FOR_PHYSICAL_TYPE.items() if physical_type == pt), None
-    )
-    if label is None:
-        raise ValueError(
-            f"Unsupported physical type {str(physical_type)!r} for x_unit {x_unit}. "
-            f"It must be homogeneous to a length, an energy or a frequency."
-        )
-    return label
-
-
-_SCALE_TO_AXES: dict[str, tuple[str, str]] = {
-    "linear": ("linear", "linear"),
-    "semilogx": ("log", "linear"),
-    "semilogy": ("linear", "log"),
-    "loglog": ("log", "log"),
-}
+_CHAIN_KEEP_PREFIXES: tuple[str, ...] = (
+    _DERIVED_PREFIX,
+    *(f"{prefix}." for prefix in _KNOWN_PREFIXES),
+    *(f"{_SITE_PREFIX}{prefix}." for prefix in _KNOWN_PREFIXES),
+)
 
 
 class FitResult:
@@ -95,7 +42,6 @@ class FitResult:
     Container for the result of a fit using any ModelFitter class.
     """
 
-    # TODO : Add type hints
     def __init__(
         self,
         bayesian_fitter: BayesianModel,
@@ -106,13 +52,6 @@ class FitResult:
         self.inference_data = inference_data
         self.obsconfs = bayesian_fitter.forward_model.observations
 
-        # Add the model used in fit to the metadata
-        for group in self.inference_data.groups():
-            group_name = group.split("/")[-1]
-            metadata = getattr(self.inference_data, group_name).attrs
-            # metadata["model"] = str(self.model)
-            # TODO : Store metadata about observations used in the fitting process
-
     @property
     def converged(self) -> bool:
         r"""
@@ -121,70 +60,6 @@ class FitResult:
         rhat = az.rhat(self.inference_data)
 
         return bool((rhat.to_array() < 1.01).all())
-
-    def _ppc_folded_branches(self, obs_id):
-        """Per-branch posterior-predictive counts for ``obs_id``.
-
-        Returns ``{branch_name: (n_chains, n_draws, n_bins)}`` count arrays
-        suitable for component overlays (each branch is one
-        ``additive * multiplicative*…`` path in the spectral model). Routes
-        through :meth:`ForwardModel.evaluate` so the same spectral + folding
-        path used for inference is used here, and the per-obs instrument
-        gain/shift is honored (the old in-`results` reimplementation skipped
-        the instrument model — this is the intended correctness improvement
-        from the migration).
-        """
-        fm = self.bayesian_fitter.forward_model
-        inputs = self._leaf_inputs_from_input_parameters()
-        if not inputs:
-            raise ValueError(
-                "Per-component PPC overlay is unavailable for callable priors "
-                "(no static parameter set to enumerate)."
-            )
-
-        @jax.jit
-        @jax.vmap
-        @jax.vmap
-        def evaluate_one(inp):
-            return fm.evaluate(inp, split_branches=True, with_background=False)[obs_id]["source"]
-
-        folded = evaluate_one(inputs)  # {branch: (chain, draw, n_bins)}
-        return jax.tree.map(lambda flux: np.random.poisson(np.asarray(flux)), folded)
-
-    def _leaf_inputs_from_input_parameters(self) -> dict[str, ArrayLike]:
-        """Convert user-path :attr:`input_parameters` into the flat leaf-path
-        inputs dict that :meth:`ForwardModel.evaluate` consumes.
-
-        Inverts the broadcasting :attr:`input_parameters` applies: shared
-        params (broadcast to ``(..., n_obs)``) get sliced per obs, ``[*]``
-        stacks (same shape) get sliced per obs by index, and ragged
-        ``{obs: array}`` entries get looked up by name. The result is keyed
-        by nnx leaf paths (``"<prefix>.<obs>.<rest>"``) and every
-        ``nnx.Param`` leaf of the forward model is covered — missing keys
-        would surface as a :func:`bind_inputs` ``KeyError``.
-        """
-        fm = self.bayesian_fitter.forward_model
-        leaves = _enumerate_leaves(fm)  # {user_path: {obs_name: leaf_path}}
-        prefix_to_obs = _prefix_to_obs_names(fm)
-
-        params = self.input_parameters
-        inputs: dict[str, ArrayLike] = {}
-        for user_path, by_obs in leaves.items():
-            value = params.get(user_path)
-            if value is None:
-                continue
-            prefix = user_path.split(".", 1)[0]
-            obs_order = prefix_to_obs[prefix]
-            for obs_name, leaf_path in by_obs.items():
-                if isinstance(value, dict):
-                    # Ragged per-obs ``{obs: arr}``: pick by name.
-                    if obs_name in value:
-                        inputs[leaf_path] = value[obs_name]
-                else:
-                    # Trailing obs axis (shared broadcast OR stacked [*]).
-                    obs_idx = obs_order.index(obs_name)
-                    inputs[leaf_path] = value[..., obs_idx]
-        return inputs
 
     @cached_property
     def input_parameters(self) -> dict[str, ArrayLike]:
@@ -202,82 +77,57 @@ class FitResult:
         Returns an empty dict when the user passed a callable prior — there's
         no static key set to enumerate.
         """
-        fm = self.bayesian_fitter.forward_model
-        effective_prior = self.bayesian_fitter._effective_prior
-
-        posterior = az.extract(self.inference_data, combined=False)
-        chain_draw = (posterior.sizes["chain"], posterior.sizes["draw"])
-
-        prefix_to_obs = _prefix_to_obs_names(fm)
-        leaves = _enumerate_leaves(fm)
-        needed = _needed_posterior_names(effective_prior, prefix_to_obs, leaves)
-        data_vars = {name: jnp.asarray(posterior[name].data) for name in needed}
-
-        # Group entries by their base path so [obs] / [*] / shared get assembled together.
-        by_base: dict[str, dict[str | None, Any]] = {}
-        for raw_key, value in effective_prior.items():
-            base, scope = parse_prior_key(raw_key)
-            by_base.setdefault(base, {})[scope] = value
-
-        out: dict[str, ArrayLike] = {}
-        deferred_ties: list[tuple[str, str | None, TiedParameter, list[str]]] = []
-
-        for base, scopes in by_base.items():
-            prefix = base.split(".", 1)[0]
-            obs_axis = prefix_to_obs.get(prefix, [])
-
-            if None in scopes:
-                value = _resolve_shared_entry(
-                    scopes[None], base, obs_axis, data_vars, chain_draw, deferred_ties
-                )
-                if value is not None:
-                    out[base] = value
-            else:
-                value = _resolve_per_obs_entry(
-                    scopes,
-                    base,
-                    obs_axis,
-                    data_vars,
-                    chain_draw,
-                    deferred_ties,
-                    owning_obs=set(leaves.get(base, {})),
-                )
-                if value is not None:
-                    out[base] = value
-
-        _apply_tied_resolutions(out, deferred_ties, prefix_to_obs)
-        return out
+        return build_input_parameters(self.bayesian_fitter, self.inference_data)
 
     @cached_property
     def spectrum_parameters(self) -> dict[str, ArrayLike]:
-        """Subset of :attr:`input_parameters` belonging to the spectral model."""
+        """Subset of ``input_parameters`` belonging to the spectral model."""
         return {k: v for k, v in self.input_parameters.items() if k.startswith("spectrum.")}
 
-    def _register_derived_parameter(
-        self, name: str, value: ArrayLike, prefix: str | None = None
-    ) -> None:
-        posterior = self.inference_data.posterior
+    def _register_derived_parameter(self, name: str, value: ArrayLike) -> None:
+        """Store a derived quantity (flux, luminosity) alongside the posterior.
+
+        ``value`` must start with ``(chain, draw)`` axes. Each remaining axis is stored
+        under a generated ``derived_dim_<index>`` dimension name.
+        """
         value = np.asarray(value)
+        extra_dims = tuple(f"derived_dim_{i}" for i in range(value.ndim - 2))
 
-        if prefix is None:
-            prefix = "spectrum."
+        self.inference_data.posterior[name] = (("chain", "draw", *extra_dims), value)
 
-        dims = ("chain", "draw")
-        if value.ndim > 2:
-            for var_name, data_array in posterior.data_vars.items():
-                if not var_name.startswith(prefix):
-                    continue
-                if data_array.shape == value.shape:
-                    dims = data_array.dims
-                    break
-                if data_array.ndim == value.ndim and data_array.shape[2:] == value.shape[2:]:
-                    dims = data_array.dims
-                    break
-            else:
-                extra_dims = tuple(f"derived_dim_{i}" for i in range(value.ndim - 2))
-                dims = ("chain", "draw", *extra_dims)
+    def _band_flux(
+        self,
+        e_min: float,
+        e_max: float,
+        *,
+        energy: bool,
+        base_unit: Unit,
+        unit: Unit,
+        kind: str,
+        register: bool,
+        n_points: int,
+        n_grid: int,
+    ) -> ArrayLike:
+        """Integrate the unfolded model over ``[e_min, e_max]`` and convert to ``unit``.
 
-        posterior[name] = (dims, value)
+        Shared by ``photon_flux``, ``energy_flux`` and ``luminosity``, which
+        differ only in ``energy``, the unit the integral comes out in, and the name the
+        result is registered under.
+        """
+        flux = self.model.integrated_flux(
+            e_min,
+            e_max,
+            params=self.spectrum_parameters,
+            energy=energy,
+            n_points=n_points,
+            n_grid=n_grid,
+        )
+        value = np.asarray(flux * float(base_unit.to(unit)))
+
+        if register:
+            self._register_derived_parameter(f"derived.{kind}_{e_min:.1f}_{e_max:.1f}", value)
+
+        return value
 
     def photon_flux(
         self,
@@ -300,23 +150,17 @@ class FitResult:
             n_points: The number of points per bin to use for computing the unfolded spectrum.
             n_grid: The number of grid points to use for computing the unfolded spectrum.
         """
-        flux = self.model.integrated_flux(
+        return self._band_flux(
             e_min,
             e_max,
-            params=self.spectrum_parameters,
             energy=False,
+            base_unit=u.photon / u.cm**2 / u.s,
+            unit=unit,
+            kind="photon_flux",
+            register=register,
             n_points=n_points,
             n_grid=n_grid,
         )
-        value = np.asarray(flux * float((u.photon / u.cm**2 / u.s).to(unit)))
-
-        if register:
-            self._register_derived_parameter(
-                f"derived.photon_flux_{e_min:.1f}_{e_max:.1f}",
-                value,
-            )
-
-        return value
 
     def energy_flux(
         self,
@@ -339,23 +183,17 @@ class FitResult:
             n_points: The number of points per bin to use for computing the unfolded spectrum.
             n_grid: The number of grid points to use for computing the unfolded spectrum.
         """
-        flux = self.model.integrated_flux(
+        return self._band_flux(
             e_min,
             e_max,
-            params=self.spectrum_parameters,
             energy=True,
+            base_unit=u.keV / u.cm**2 / u.s,
+            unit=unit,
+            kind="energy_flux",
+            register=register,
             n_points=n_points,
             n_grid=n_grid,
         )
-        value = np.asarray(flux * float((u.keV / u.cm**2 / u.s).to(unit)))
-
-        if register:
-            self._register_derived_parameter(
-                f"derived.energy_flux_{e_min:.1f}_{e_max:.1f}",
-                value,
-            )
-
-        return value
 
     def luminosity(
         self,
@@ -419,40 +257,6 @@ class FitResult:
 
         return value
 
-    def _tied_destination_site_names(self) -> set[str]:
-        """Site names of every ``TiedParameter`` destination in the effective prior.
-
-        These show up in the posterior as ``numpyro.deterministic`` sites and
-        carry no independent posterior info, so they're excluded from the
-        corner plot. Mirrors the site-naming convention used by
-        :func:`~jaxspec.fit._bayesian_model._resolve_tied_entry`.
-        """
-        names: set[str] = set()
-        effective_prior = self.bayesian_fitter._effective_prior
-        if not isinstance(effective_prior, dict):
-            return names
-        applicable = {
-            prefix: set(obs_names)
-            for prefix, obs_names in _prefix_to_obs_names(
-                self.bayesian_fitter.forward_model
-            ).items()
-        }
-        for raw_key, value in effective_prior.items():
-            if not isinstance(value, TiedParameter):
-                continue
-            path, scope = parse_prior_key(raw_key)
-            if scope is None:
-                names.add(path)
-                continue
-            prefix = path.split(".", 1)[0]
-            obs_set = applicable.get(prefix, set())
-            if scope == "*":
-                for obs in obs_set:
-                    names.add(_per_obs_site_name(path, obs))
-            elif scope in obs_set:
-                names.add(_per_obs_site_name(path, scope))
-        return names
-
     def _var_to_dataframes(self, var, array, obs_ids) -> list[pd.DataFrame]:
         """Convert a single posterior data_var into one or more named DataFrames.
 
@@ -465,16 +269,17 @@ class FitResult:
         varname = str(var)
         extra_dims = [dim for dim in array.dims if dim != "sample"]
 
-        if varname.startswith("forward."):
+        # ``derived.`` prefixes the ordinary grammar; strip it before parsing.
+        per_obs = _parse_per_obs_site_name(varname.removeprefix(_DERIVED_PREFIX))
+        if per_obs is not None:
             if extra_dims:
                 return []
-            _, _prefix_seg, obs_seg, *rest = varname.split(".")
+            user_path, obs_seg = per_obs
             df = array.to_pandas()
-            df.name = f"{'.'.join(rest)}\n[{obs_seg}]"
+            df.name = f"{user_path.split('.', 1)[1]}\n[{obs_seg}]"
             return [df]
 
         if extra_dims:
-            # We only support the case where the extra dimension comes from the observations
             dim = extra_dims[0]
             dfs = []
             for coord, obs_id in zip(array.coords[dim], obs_ids):
@@ -483,7 +288,14 @@ class FitResult:
                 dfs.append(df)
             return dfs
 
-        return [array.to_pandas()]
+        df = array.to_pandas()
+        # Drop ``derived.`` from a component's quantity so the caller's one-segment
+        # strip lands on the component. Post-fit ``derived.photon_flux_*`` names have
+        # no model prefix and keep theirs.
+        remainder = varname.removeprefix(_DERIVED_PREFIX)
+        if varname != remainder and remainder.startswith(tuple(f"{p}." for p in _KNOWN_PREFIXES)):
+            df.name = remainder
+        return [df]
 
     def to_chain(self, name: str) -> Chain:
         """
@@ -492,24 +304,16 @@ class FitResult:
         Parameters:
             name: The name of the chain.
         """
-        tied_site_names = self._tied_destination_site_names()
+        deterministic_sites = self.bayesian_fitter._deterministic_site_names
 
-        # Keep shared / derived sites (no "forward." prefix) and per-obs
-        # parameter sites (under "forward.spectrum." / "forward.instrument." /
-        # "forward.background."). Drop tied-destination sites and observed-data
-        # / likelihood sites.
-        keep_prefixes = (
-            "spectrum.",
-            "derived.",
-            "forward.spectrum.",
-            "forward.instrument.",
-            "forward.background.",
-        )
-        keys_to_drop = [
-            key
-            for key in self.inference_data.posterior.keys()
-            if str(key) in tied_site_names or not any(str(key).startswith(p) for p in keep_prefixes)
-        ]
+        def is_dropped(key: str) -> bool:
+            if not key.startswith(_CHAIN_KEEP_PREFIXES):
+                return True
+            # Deterministic sites are functions of the free parameters; keep only
+            # the ones a model publishes on purpose under ``derived.``.
+            return key in deterministic_sites and not key.startswith(_DERIVED_PREFIX)
+
+        keys_to_drop = [key for key in self.inference_data.posterior.keys() if is_dropped(str(key))]
 
         reduced_id = az.extract(
             self.inference_data,
@@ -526,8 +330,6 @@ class FitResult:
 
         df = pd.concat(df_list, axis=1)
 
-        # Strip the structural prefix from shared / derived columns. Per-obs
-        # columns already display "<rest>\n[<obs>]" with no prefix to strip.
         df = df.rename(
             columns=lambda col: (
                 col.split(".", maxsplit=1)[1] if "." in col and "\n[" not in col else col
@@ -560,7 +362,6 @@ class FitResult:
         for bins with no counts
 
         """
-        # TODO : add a test against XSPEC to check for this. There will be a hard time handling and determining wether or not the background should be accounted for here
         observed_data = self.inference_data.observed_data
         log_likelihood = self.log_likelihood
         c_stat_data_vars: dict[str, xr.DataArray] = {}
@@ -644,219 +445,23 @@ class FitResult:
             A list of matplotlib figures for each observation in the model.
         """
 
-        if min_counts is not None and grouping is not None:
-            raise ValueError("min_counts and grouping are mutually exclusive")
-
-        x_unit = u.Unit(x_unit)
-        _validate_x_unit(x_unit)
-        y_units = _resolve_y_units(y_type, x_unit)
-        figure_list = []
-
-        with plt.style.context(style):
-            for obs_id, obsconf in self.obsconfs.items():
-                fig, ax = plt.subplots(
-                    2, 1, figsize=figsize, sharex="col", height_ratios=[0.7, 0.3]
-                )
-
-                count = az.extract(
-                    self.inference_data,
-                    var_names=f"observed.{obs_id}",
-                    group="posterior_predictive",
-                ).values.T
-                xbins, exposure, integrated_arf = _compute_effective_area(obsconf, x_unit)
-                observed_counts = obsconf.folded_counts.data
-                bin_ids = _compute_bin_ids(observed_counts, min_counts, grouping)
-
-                count, observed_counts, xbins, integrated_arf = _apply_binning(
-                    bin_ids, count, observed_counts, xbins, integrated_arf
-                )
-
-                denominator = _compute_denominator(y_type, exposure, integrated_arf, xbins)
-                y_samples = (count * u.ct / denominator).to(y_units)
-                y_observed, y_observed_low, y_observed_high = _error_bars_for_observed_data(
-                    observed_counts, denominator, y_units
-                )
-
-                model_plot = _plot_binned_samples_with_error(
-                    ax[0],
-                    xbins.value,
-                    y_samples.value,
-                    color=SPECTRUM_COLOR,
-                    n_sigmas=n_sigmas,
-                    alpha_envelope=alpha_envelope,
-                )
-                true_data_plot = _plot_poisson_data_with_error(
-                    ax[0],
-                    xbins.value,
-                    y_observed.value,
-                    y_observed_low.value,
-                    y_observed_high.value,
-                    color=SPECTRUM_DATA_COLOR,
-                    alpha=0.7,
-                )
-
-                legend_plots = [(true_data_plot,), *model_plot]
-                legend_labels = ["Observed", "Model"]
-
-                residual_samples = (observed_counts - count) / np.diff(
-                    np.percentile(count, [16, 84], axis=0), axis=0
-                )
-                _plot_binned_samples_with_error(
-                    ax[1],
-                    xbins.value,
-                    residual_samples,
-                    color=SPECTRUM_COLOR,
-                    n_sigmas=n_sigmas,
-                    alpha_envelope=alpha_envelope,
-                )
-
-                if plot_components:
-                    extra_plots, extra_labels = self._plot_components_overlay(
-                        ax[0],
-                        obs_id,
-                        denominator,
-                        y_units,
-                        bin_ids,
-                        xbins,
-                        n_sigmas,
-                        alpha_envelope,
-                    )
-                    legend_plots += extra_plots
-                    legend_labels += extra_labels
-
-                if (
-                    self.bayesian_fitter.forward_model.background.get(obs_id) is not None
-                    and plot_background
-                ):
-                    extra_plots, extra_labels = self._plot_background_overlay(
-                        ax[0],
-                        obsconf,
-                        obs_id,
-                        denominator,
-                        y_units,
-                        bin_ids,
-                        xbins,
-                        rescale_background,
-                        n_sigmas,
-                        alpha_envelope,
-                    )
-                    legend_plots += extra_plots
-                    legend_labels += extra_labels
-
-                _style_axes(
-                    ax,
-                    x_unit,
-                    scale,
-                    x_lims,
-                    residual_samples,
-                    y_units,
-                    xbins,
-                    np.nanmin(y_observed),
-                    np.nanmax(y_observed),
-                    legend_plots,
-                    legend_labels,
-                )
-
-                fig.align_ylabels()
-                plt.subplots_adjust(hspace=0.0)
-                fig.suptitle(f"Posterior predictive - {obs_id}" if title is None else title)
-                fig.tight_layout()
-                figure_list.append(fig)
-
-        plt.tight_layout()
-        plt.show()
-
-        return figure_list
-
-    def _plot_components_overlay(
-        self,
-        ax,
-        obs_id,
-        denominator,
-        y_units,
-        bin_ids,
-        xbins,
-        n_sigmas,
-        alpha_envelope,
-    ) -> tuple[list, list]:
-        """Overlay per-component posterior bands; return legend entries to append."""
-        extra_plots: list = []
-        extra_labels: list = []
-        for (component_name, comp_count), color in zip(
-            self._ppc_folded_branches(obs_id).items(), COLOR_CYCLE
-        ):
-            # _ppc_folded_branches returns (n_chains, n_draws, n_bins) — flatten chains/draws.
-            comp_flat = comp_count.reshape((comp_count.shape[0] * comp_count.shape[1], -1))
-            if bin_ids is not None:
-                comp_flat = rebin_counts(comp_flat, bin_ids)
-            y_samples = (comp_flat * u.ct / denominator).to(y_units)
-            component_plot = _plot_binned_samples_with_error(
-                ax,
-                xbins.value,
-                y_samples.value,
-                color=color,
-                linestyle="dashdot",
-                n_sigmas=n_sigmas,
-                alpha_envelope=alpha_envelope,
-            )
-            extra_plots += component_plot
-            extra_labels.append(component_name.split("*")[-1])
-        return extra_plots, extra_labels
-
-    def _plot_background_overlay(
-        self,
-        ax,
-        obsconf,
-        obs_id,
-        denominator,
-        y_units,
-        bin_ids,
-        xbins,
-        rescale_background,
-        n_sigmas,
-        alpha_envelope,
-    ) -> tuple[list, list]:
-        """Overlay the background model/data; return legend entries to append."""
-        bkg_count = az.extract(
-            self.inference_data,
-            var_names=f"observed_background.{obs_id}",
-            group="posterior_predictive",
-        ).values.T
-        bkg_observed = obsconf.folded_background.data
-
-        if bin_ids is not None:
-            bkg_count = rebin_counts(bkg_count, bin_ids)
-            bkg_observed = rebin_counts(bkg_observed, bin_ids)
-            rescale_background_factor = (
-                rebin_counts(obsconf.folded_backratio.data, bin_ids) / np.bincount(bin_ids)
-                if rescale_background
-                else 1.0
-            )
-        else:
-            rescale_background_factor = obsconf.folded_backratio.data if rescale_background else 1.0
-
-        y_samples_bkg = (bkg_count * u.ct / denominator).to(y_units)
-        y_observed_bkg, y_observed_bkg_low, y_observed_bkg_high = _error_bars_for_observed_data(
-            bkg_observed, denominator, y_units
-        )
-        model_bkg_plot = _plot_binned_samples_with_error(
-            ax,
-            xbins.value,
-            y_samples_bkg.value * rescale_background_factor,
-            color=BACKGROUND_COLOR,
-            alpha_envelope=alpha_envelope,
+        return _ppc.plot_ppc(
+            self,
             n_sigmas=n_sigmas,
+            x_unit=x_unit,
+            y_type=y_type,
+            plot_background=plot_background,
+            plot_components=plot_components,
+            scale=scale,
+            alpha_envelope=alpha_envelope,
+            style=style,
+            title=title,
+            figsize=figsize,
+            x_lims=x_lims,
+            rescale_background=rescale_background,
+            min_counts=min_counts,
+            grouping=grouping,
         )
-        true_bkg_plot = _plot_poisson_data_with_error(
-            ax,
-            xbins.value,
-            y_observed_bkg.value * rescale_background_factor,
-            y_observed_bkg_low.value * rescale_background_factor,
-            y_observed_bkg_high.value * rescale_background_factor,
-            color=BACKGROUND_DATA_COLOR,
-            alpha=0.7,
-        )
-        return [(true_bkg_plot,), *model_bkg_plot], ["Observed (bkg)", "Model (bkg)"]
 
     def table(self) -> str:
         r"""
@@ -886,266 +491,5 @@ class FitResult:
         consumer.add_chain(self.to_chain("Results"))
         consumer.set_plot_config(config)
 
-        # Context for default mpl style
         with plt.style.context("default"):
             return consumer.plotter.plot(**kwargs)
-
-
-# ---- Module-level helpers for plot_ppc ----------------------------------------
-
-
-def _resolve_y_units(y_type, x_unit):
-    if y_type == "photon_flux_density":
-        return u.ct / u.cm**2 / u.s / x_unit
-    units = _Y_UNITS_FOR_TYPE.get(y_type)
-    if units is None:
-        raise ValueError(
-            f"Unknown y_type: {y_type}. Must be 'counts', 'countrate', 'photon_flux' "
-            f"or 'photon_flux_density'"
-        )
-    return units
-
-
-def _apply_binning(bin_ids, count, observed_counts, xbins, integrated_arf):
-    if bin_ids is None:
-        return count, observed_counts, xbins, integrated_arf
-    count = rebin_counts(count, bin_ids)
-    observed_counts = rebin_counts(observed_counts, bin_ids)
-    xbins = _rebin_xbins(xbins, bin_ids)
-    integrated_arf = rebin_counts(integrated_arf.value, bin_ids) * integrated_arf.unit
-    return count, observed_counts, xbins, integrated_arf
-
-
-def _compute_denominator(y_type, exposure, integrated_arf, xbins):
-    if y_type == "counts":
-        return 1
-    if y_type == "countrate":
-        return exposure
-    if y_type == "photon_flux":
-        return integrated_arf * exposure
-    if y_type == "photon_flux_density":
-        return (xbins[1] - xbins[0]) * integrated_arf * exposure
-    raise ValueError(f"Unknown y_type: {y_type}")
-
-
-def _style_axes(
-    ax,
-    x_unit,
-    scale,
-    x_lims,
-    residual_samples,
-    y_units,
-    xbins,
-    lowest_y,
-    highest_y,
-    legend_plots,
-    legend_labels,
-):
-    max_residuals = min(3.5, np.nanmax(np.abs(residual_samples)))
-    ax[0].loglog()
-    ax[1].set_ylim(-np.nanmax([3.5, max_residuals]), +np.nanmax([3.5, max_residuals]))
-    ax[0].set_ylabel(f"Folded spectrum\n [{y_units:latex_inline}]")
-    ax[1].set_ylabel("Residuals \n" + r"[$\sigma$]")
-
-    physical_type = getattr(x_unit, "physical_type")
-    # astropy's PhysicalType supports __eq__ with bare strings but its str()
-    # form is "energy/torque/work" for compound types, so iterate explicitly.
-    # Already validated by `_validate_x_unit` at the top of `plot_ppc`, so this cannot
-    # miss — the check lives there so a bad unit fails before a figure is drawn.
-    label = _validate_x_unit(x_unit)
-    ax[1].set_xlabel(f"{label} \n[{x_unit:latex_inline}]")
-
-    ax[1].axhline(0, color=SPECTRUM_DATA_COLOR, ls="--")
-    ax[1].axhline(-3, color=SPECTRUM_DATA_COLOR, ls=":")
-    ax[1].axhline(3, color=SPECTRUM_DATA_COLOR, ls=":")
-    ax[1].set_yticks([-3, 0, 3], labels=[-3, 0, 3])
-    ax[1].set_yticks(range(-3, 4), minor=True)
-
-    ax[0].set_xlim(xbins.value.min(), xbins.value.max())
-    ax[0].set_ylim(lowest_y.value * 0.8, highest_y.value * 1.2)
-    ax[0].legend(legend_plots, legend_labels)
-
-    xscale, yscale = _SCALE_TO_AXES[scale]
-    ax[0].set_xscale(xscale)
-    ax[0].set_yscale(yscale)
-
-    if x_lims is not None:
-        ax[0].set_xlim(*x_lims)
-
-
-# ---- Module-level helpers for input_parameters --------------------------------
-
-
-def _needed_posterior_names(effective_prior, prefix_to_obs, leaves) -> set[str]:
-    """Site names that :attr:`FitResult.input_parameters` will look up, derived
-    from ``effective_prior`` alone. Shared ``dist.Distribution`` entries
-    contribute the bare path; per-obs entries contribute
-    ``_per_obs_site_name(path, obs)`` for each obs that actually owns the leaf.
-    ``TiedParameter`` and fixed values contribute nothing.
-
-    Targets are resolved with the same :func:`_resolve_targets` the sampler uses, so the
-    two cannot disagree. Expanding ``[*]`` over every obs in the prefix instead named
-    sites that were never sampled whenever a leaf exists on only some observations —
-    e.g. ``instrument.shift.offset[*]`` with a shift on one instrument and a gain on
-    another — and the lookup died with a bare ``KeyError``.
-    """
-    needed: set[str] = set()
-    applicable = {prefix: set(obs_names) for prefix, obs_names in prefix_to_obs.items()}
-
-    for raw_key, value in effective_prior.items():
-        if not isinstance(value, dist.Distribution):
-            continue
-        base, scope = parse_prior_key(raw_key)
-        if scope is None:
-            needed.add(base)
-            continue
-        for obs, _leaf in _resolve_targets(base, scope, leaves, applicable):
-            needed.add(_per_obs_site_name(base, obs))
-
-    return needed
-
-
-def _resolve_shared_entry(
-    value, base, obs_axis, data_vars, chain_draw, deferred_ties
-) -> ArrayLike | None:
-    """Materialise a shared (unscoped) prior entry as an obs-broadcast array.
-
-    Returns ``None`` and appends to ``deferred_ties`` when the entry is a
-    ``TiedParameter`` — the caller should skip this base for now.
-    """
-    if isinstance(value, TiedParameter):
-        deferred_ties.append((base, None, value, obs_axis))
-        return None
-    if isinstance(value, dist.Distribution):
-        arr = data_vars[base]
-    else:
-        fixed = jnp.asarray(value)
-        arr = jnp.broadcast_to(fixed, (*chain_draw, *fixed.shape))
-    return jnp.broadcast_to(arr[..., None], (*arr.shape, len(obs_axis)))
-
-
-def _resolve_per_obs_entry(
-    scopes, base, obs_axis, data_vars, chain_draw, deferred_ties, owning_obs=None
-) -> ArrayLike | dict | None:
-    """Materialise a per-obs prior entry; stack across obs when every applicable
-    obs is present with the same shape, else return a ``{obs: array}`` dict.
-
-    ``TiedParameter`` scopes are deferred per obs to
-    :func:`_apply_tied_resolutions`; the direct scopes still materialise here,
-    and the base stays an (uncompacted) dict until the ties fill in the
-    missing obs.
-
-    ``owning_obs`` is the set of observations that actually carry this leaf. A ``[*]``
-    scope applies only to those — expanding it over every obs in the prefix names sites
-    the sampler never created (a leaf can exist on a subset, e.g. a shift on one
-    instrument and a gain on another). ``None`` means "every obs in ``obs_axis``".
-
-    ``obs_axis`` stays the *full* prefix list so :func:`_compact_per_obs` still sees a
-    partial set as partial and keeps it a ``{obs: array}`` dict — consumers index that
-    by name, whereas a compacted trailing axis is indexed against the full obs order.
-
-    Returns ``None`` when there's nothing to assemble.
-    """
-    per_obs: dict[str, ArrayLike] = {}
-    has_ties = False
-    for obs in obs_axis:
-        value = scopes.get(obs)
-        if value is None and (owning_obs is None or obs in owning_obs):
-            value = scopes.get("*")
-        if value is None:
-            continue
-        if isinstance(value, TiedParameter):
-            deferred_ties.append((base, obs, value, obs_axis))
-            has_ties = True
-            continue
-        if isinstance(value, dist.Distribution):
-            per_obs[obs] = data_vars[_per_obs_site_name(base, obs)]
-        else:
-            fixed = jnp.asarray(value)
-            per_obs[obs] = jnp.broadcast_to(fixed, (*chain_draw, *fixed.shape))
-
-    if has_ties:
-        return per_obs
-    if not per_obs:
-        return None
-    return _compact_per_obs(per_obs, obs_axis)
-
-
-def _compact_per_obs(per_obs: dict, obs_axis: list[str]) -> ArrayLike | dict:
-    """Collapse ``{obs: array}`` into a trailing obs axis when every applicable
-    obs is present with the same shape. A partial set (a leaf that exists on
-    only some obs) or a ragged set stays a ``{obs: array}`` dict so consumers
-    (e.g. ``_leaf_inputs_from_input_parameters``) select by name rather than by
-    full-obs-order position — otherwise the compacted axis misaligns.
-    """
-    shapes = {arr.shape for arr in per_obs.values()}
-    if len(shapes) == 1 and len(per_obs) == len(obs_axis):
-        return jnp.stack([per_obs[obs] for obs in obs_axis], axis=-1)
-    return per_obs
-
-
-def _apply_tied_resolutions(out, deferred_ties, prefix_to_obs) -> None:
-    """Resolve every deferred TiedParameter once all direct entries are in ``out``.
-
-    Mirrors the sampling-time semantics of
-    :func:`~jaxspec.fit._prior_resolution._resolve_tied_entry`: a bare or
-    ``[obs]``-scoped source provides one value for every destination, a
-    ``[*]`` source pairs each destination obs with its same-obs draw. Per-obs
-    tied values are merged into the base's ``{obs: array}`` staging dict (next
-    to its direct entries) and compacted afterwards.
-    """
-    touched: set[str] = set()
-    for dest_base, dest_obs, tied, obs_axis in deferred_ties:
-        src_base, src_scope = parse_prior_key(tied.tied_to)
-        entry = out.get(src_base)
-        if entry is None:
-            raise ValueError(
-                f"TiedParameter {dest_base!r} references unknown source {tied.tied_to!r}"
-            )
-        src_axis = prefix_to_obs.get(src_base.split(".", 1)[0], [])
-
-        def pick(obs, entry=entry, src_axis=src_axis):
-            if isinstance(entry, dict):
-                value = entry.get(obs)
-            elif obs in src_axis:
-                value = entry[..., src_axis.index(obs)]
-            else:
-                value = None
-            if value is None:
-                raise ValueError(
-                    f"TiedParameter {dest_base!r} cannot match a source value for "
-                    f"observation {obs!r}: tied_to={tied.tied_to!r}."
-                )
-            return value
-
-        if dest_obs is None:
-            # Shared destination — one derived value broadcast along the obs
-            # axis (mirroring _resolve_shared_entry's layout).
-            if src_scope is None:
-                if isinstance(entry, dict):
-                    out[dest_base] = {obs: tied.func(v) for obs, v in entry.items()}
-                else:
-                    out[dest_base] = tied.func(entry)
-            else:
-                anchor = src_scope if src_scope != "*" else sorted(obs_axis)[0]
-                value = tied.func(pick(anchor))
-                out[dest_base] = jnp.broadcast_to(value[..., None], (*value.shape, len(obs_axis)))
-            continue
-
-        # Per-obs destination — same-obs pairing for [*] sources, single value
-        # for bare / [obs]-scoped sources.
-        if src_scope == "*":
-            source = pick(dest_obs)
-        elif src_scope is None:
-            source = pick(dest_obs) if isinstance(entry, dict) else entry[..., 0]
-        else:
-            source = pick(src_scope)
-        staged = out.setdefault(dest_base, {})
-        staged[dest_obs] = tied.func(source)
-        touched.add(dest_base)
-
-    for base in touched:
-        value = out[base]
-        if isinstance(value, dict):
-            obs_axis = prefix_to_obs.get(base.split(".", 1)[0], [])
-            out[base] = _compact_per_obs(value, obs_axis)

@@ -1,5 +1,9 @@
 site_name: jaxspec
 
+# Excluded from the build, stale doc.
+exclude_docs: |
+  theory/
+
 nav:
   - Home:
     - Welcome : index.md
@@ -20,10 +24,12 @@ nav:
     - Interface with other frameworks : examples/external_samplers.ipynb
     - Cross calibration : examples/calibration.ipynb
     - Flexible prior setting : examples/flexible_priors.md
+    - Table models : examples/table_models.md
   - API Reference:
     - Spectral model base: references/model.md
     - Additive models: references/additive.md
     - Multiplicative models: references/multiplicative.md
+    - Table models: references/tabulated.md
     - Background models: references/background.md
     - Instrument models: references/instrument.md
     - Data containers: references/data.md

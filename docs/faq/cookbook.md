@@ -31,7 +31,7 @@ prior = {
     "spectrum.tbabs_1.nh": 0.2,
 }
 
-ulx_observations = load_example_obsconf()
+ulx_observations = load_example_obsconf("NGC7793_ULX4_ALL")
 fitter = MCMCFitter(spectral_model, prior, ulx_observations)
 result = fitter.fit(num_samples=1_000)
 ```
