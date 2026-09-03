@@ -25,16 +25,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            code:
-              - 'src/**'
-              - 'tests/**'
-              - 'pyproject.toml'
-              - 'environment-xspec.yml'
-              - '.github/workflows/**'
+      #- uses: dorny/paths-filter@v3
+      #  id: filter
+      #  with:
+      #    filters: |
+      #      code:
+      #        - 'src/**'
+      #        - 'tests/**'
+      #        - 'pyproject.toml'
+      #        - 'environment-xspec.yml'
+      #        - '.github/workflows/**'
 
   lint:
     runs-on: ubuntu-latest
@@ -85,10 +85,10 @@ jobs:
     timeout-minutes: 120
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v6
 
     - name: Set up micromamba with xspec environment
       uses: mamba-org/setup-micromamba@v2
@@ -97,17 +97,20 @@ jobs:
         cache-environment: true
         cache-downloads: true
 
+    - name: Cache XSPEC model data
+      id: modeldata
+      uses: actions/cache@v4
+      with:
+        path: ~/xspec-modeldata
+        key: xspec-modeldata-apec-${{ hashFiles('environment-xspec.yml') }}-v1
+
     - name: Download tables
-      # HEASoft tools open /dev/tty for their parameter prompts at startup, whether or
-      # not anything is actually queried. A GitHub runner has no controlling terminal,
-      # so that open() returns ENXIO and the task dies with status 6 before it does any
-      # work. HEADASPROMPT points the prompt stream somewhere that exists; redirecting
-      # stdin or passing mode=h does NOT help, the /dev/tty open happens regardless.
       run: |
         export HEADASPROMPT=/dev/null
-        ftgetmodeldata modelname="apec" modelversion="latest"
+        ftgetmodeldata modelname="apec" modelversion="latest" localdir="$HOME/xspec-modeldata"
+        mkdir -p "$HEADAS/spectral/modelData"
+        cp -n "$HOME"/xspec-modeldata/*.fits "$HEADAS/spectral/modelData/"
       shell: micromamba-shell {0}
-
     - name: Install jaxspec and test dependencies
       run: |
         export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
