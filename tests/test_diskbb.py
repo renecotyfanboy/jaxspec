@@ -34,6 +34,8 @@ from jaxspec.model._additive.disk import (
 )
 from jaxspec.model.additive import Diskbb, Diskpbb
 
+pytestmark = pytest.mark.slow
+
 E_REF = np.array(
     [
         2.0000000000e-01,
