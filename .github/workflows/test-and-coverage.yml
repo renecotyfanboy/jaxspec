@@ -24,17 +24,16 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v4
-
-      #- uses: dorny/paths-filter@v3
-      #  id: filter
-      #  with:
-      #    filters: |
-      #      code:
-      #        - 'src/**'
-      #        - 'tests/**'
-      #        - 'pyproject.toml'
-      #        - 'environment-xspec.yml'
-      #        - '.github/workflows/**'
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'environment-xspec.yml'
+              - '.github/workflows/**'
 
   lint:
     runs-on: ubuntu-latest
