@@ -98,15 +98,17 @@ jobs:
         cache-downloads: true
 
     - name: Install jaxspec and test dependencies
+      # --inexact: prevent uv from uninstalling HEASOFT / XSPEC's packaages
       run: |
         export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-        uv sync --group test --frozen
+        uv sync --group test --frozen --inexact
       shell: micromamba-shell {0}
 
     - name: Run full test suite
+      # --no-sync: the environment was fully synced by the step above
       run: |
         export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-        uv run pytest --cov jaxspec --cov-report xml:coverage-full.xml \
+        uv run --no-sync pytest --cov jaxspec --cov-report xml:coverage-full.xml \
           --ignore=tests/test_apec.py
       shell: micromamba-shell {0}
 
