@@ -97,6 +97,11 @@ jobs:
         cache-environment: true
         cache-downloads: true
 
+    - name: Download tables
+      run: |
+        ftgetmodeldata modelname="apec" modelversion="3.1.3"
+      shell: micromamba-shell {0}
+
     - name: Install jaxspec and test dependencies
       run: |
         export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
