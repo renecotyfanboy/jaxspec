@@ -6,10 +6,10 @@ log-energy grid and conservatively rebinned. The runtime supports JIT, batching 
 
 from __future__ import annotations
 
-import importlib.resources
 import warnings
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 import flax.nnx as nnx
@@ -19,6 +19,7 @@ import numpy as np
 
 from scipy.fft import next_fast_len
 
+from ...util.online_storage import table_manager
 from ..abc import AdditiveComponent
 
 C_KMS = 299792.458
@@ -47,23 +48,22 @@ METAL_MASK = np.isin(
 
 
 def table_is_available() -> bool:
-    """Return whether the packaged AtomDB table is available."""
-    return importlib.resources.files("jaxspec.tables").joinpath(TABLE_RESOURCE).is_file()
+    """Return whether the AtomDB table is usable: already cached, or fetchable."""
+    if (Path(table_manager.abspath) / TABLE_RESOURCE).is_file():
+        return True
+
+    try:
+        return table_manager.is_available(TABLE_RESOURCE)
+    except Exception:  # no network, proxy, DNS failure...
+        return False
 
 
 @lru_cache(maxsize=1)
 def load_apec_table() -> dict[str, np.ndarray]:
-    """Load and cache the packaged AtomDB table as NumPy arrays."""
-    resource = importlib.resources.files("jaxspec.tables").joinpath(TABLE_RESOURCE)
+    """Load and cache the AtomDB table as NumPy arrays, downloading it on first use."""
+    path = table_manager.fetch(TABLE_RESOURCE, progressbar=True)
 
-    if not resource.is_file():
-        raise FileNotFoundError(
-            f"APEC table {TABLE_RESOURCE!r} is missing from the jaxspec.tables package. "
-            "Build it with `bash bvapec/run_env.sh scripts/build_apec_table.py` "
-            "(requires pyatomdb and the AtomDB v3.1.3 FITS files)."
-        )
-
-    with importlib.resources.as_file(resource) as path, np.load(path) as data:
+    with np.load(path) as data:
         return {
             "E0": np.asarray(data["E0"], np.float64),
             "Zidx": np.asarray(data["Zidx"], np.int32),

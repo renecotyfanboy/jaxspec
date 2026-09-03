@@ -216,7 +216,7 @@ Thumbs.db
 /_projects/
 
 # Locally generated lookup tables (large; distributed via pooch, not the wheel).
-src/jaxspec/tables/*.npz
+*.npz
 
 # Assorted local scratch
 /.ai/

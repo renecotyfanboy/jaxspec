@@ -8,11 +8,11 @@ import pytest
 from numpy.testing import assert_allclose, assert_array_equal
 from xspec_utils import APEC_CASES, as_pytest_params
 
-# The APEC table is an optional large artifact.
+# The APEC table is a large artifact downloaded on first use.
 from jaxspec.model._additive import apec as _apec
 
 if not _apec.table_is_available():
-    pytest.skip("packaged APEC table is not present", allow_module_level=True)
+    pytest.skip("APEC table is neither cached nor reachable", allow_module_level=True)
 
 from jaxspec.model._additive.apec import ELEMENT_SYMBOLS, VAPEC_SYMBOLS
 from jaxspec.model.additive import APEC
