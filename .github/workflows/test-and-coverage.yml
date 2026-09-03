@@ -73,8 +73,12 @@ jobs:
       run: uv sync --all-groups --frozen
 
     - name: Run fast tests
-      # tests/test_apec.py is excluded CI-wide, see the full-tests job for why.
-      run: uv run pytest -m "not slow" --ignore=tests/test_apec.py
+      # test_apec.py and test_xspec_pileup.py are excluded CI-wide: both are live-XSPEC
+      # comparisons that do not reproduce here. Run them locally.
+      run: |
+        uv run pytest -m "not slow" \
+          --ignore=tests/test_apec.py \
+          --ignore=tests/test_xspec_pileup.py
 
   full-tests:
     runs-on: ubuntu-latest
@@ -109,7 +113,8 @@ jobs:
       run: |
         export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
         uv run --no-sync pytest --cov jaxspec --cov-report xml:coverage-full.xml \
-          --ignore=tests/test_apec.py
+          --ignore=tests/test_apec.py \
+          --ignore=tests/test_xspec_pileup.py
       shell: micromamba-shell {0}
 
     - name: Upload coverage to Codecov

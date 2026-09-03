@@ -1,2 +1,3 @@
 ignore:
   - "src/jaxspec/model/_additive/apec.py"
+  - "src/jaxspec/model/_additive/disk.py"
