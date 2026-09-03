@@ -45,17 +45,21 @@ class BayesianModelFitter(BayesianModel, ABC):
             self.transformed_numpyro_model if use_transformed_model else self.numpyro_model
         )
 
-        # Multi-chain MCMC returns samples sharded across every device (num_chains defaults to
-        # len(jax.devices())). The post-processing passes below do not benefit from that
-        # sharding, and mapping over a sharded leading axis inflates peak memory (XLA
-        # materializes per-device temporaries). Gather onto a single device — a no-op when
-        # already single-device, and numerically identical either way.
+        # Predictive post-processing uses less memory with samples on one device.
         if consolidate_samples:
             posterior_samples = jax.device_put(posterior_samples, jax.devices()[0])
 
         keys = random.split(key, 3)
 
         posterior_predictive = Predictive(numpyro_model, posterior_samples)(keys[0], observed=False)
+
+        # VI samples the guide, which has no deterministic sites; the predictive pass
+        # just recomputed them from these samples. MCMC and NS already carry theirs.
+        posterior_samples = posterior_samples | {
+            site: posterior_predictive[site]
+            for site in self._deterministic_site_names
+            if site not in posterior_samples and site in posterior_predictive
+        }
 
         prior = Predictive(numpyro_model, num_samples=num_predictive_samples * num_chains)(
             keys[1], observed=False
@@ -68,7 +72,6 @@ class BayesianModelFitter(BayesianModel, ABC):
                 [ll for k, ll in log_likelihood.items() if k.startswith("observed.")], axis=1
             )
 
-            # TODO : should we really track the likelihood on the background model?
             has_stochastic_bg = any(
                 bg.is_stochastic for bg in self.forward_model.background.values()
             )

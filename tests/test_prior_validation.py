@@ -87,11 +87,7 @@ def test_disjoint_scoped_keys_are_still_accepted():
 
 
 def test_shared_tie_to_per_obs_source_raises():
-    """A shared tie destination fed by a ``[*]`` source has no single source value.
-
-    It previously used ``sorted(obs)[0]``'s draw, so renaming an observation silently
-    changed the fit.
-    """
+    """A shared tie destination cannot select one value from a ``[*]`` source."""
     prior = {
         **{k: v for k, v in prior_shared_pars.items() if k != "spectrum.powerlaw_1.norm"},
         "spectrum.powerlaw_1.norm[*]": dist.LogUniform(1e-5, 1e-2),
@@ -100,7 +96,9 @@ def test_shared_tie_to_per_obs_source_raises():
         ),
     }
 
-    with pytest.raises(ValueError, match="shared across observations but its source"):
+    with pytest.raises(
+        ValueError, match=r"source .* provides a different value for each observation"
+    ):
         BayesianModel(spectral_model, prior, dict_of_obsconf).prior_samples(num_samples=2)
 
 

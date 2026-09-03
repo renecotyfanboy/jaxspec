@@ -226,4 +226,5 @@ src/jaxspec/tables/*.npz
 *.db
 
 Library/
+_dev/
 # End of https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks

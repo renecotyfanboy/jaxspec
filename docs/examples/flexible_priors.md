@@ -18,21 +18,22 @@ bracketed suffix:
 
 | Key form | Semantics | Numpyro sites |
 |---|---|---|
-| `"prefix.path"` (bare) | Shared across every applicable observation: one draw, broadcast to each per-obs replica via `Delta`. | 1 |
+| `"prefix.path"` (bare) | Shared across every applicable observation: one draw, reused by identity for each per-obs replica. | 1 |
 | `"prefix.path[*]"` | Independent draw per applicable observation. | N |
 | `"prefix.path[obs_name]"` | Single draw scoped to that observation. Use multiple `[obs_name]` entries for heterogeneous priors or for parameters that exist only on some observations. | 1 each |
 
 A typical multi-observation fit mixes all three:
 
 ```python
+import numpyro
 import numpyro.distributions as dist
 from jaxspec.fit import MCMCFitter, TiedParameter
 from jaxspec.model.additive import Powerlaw, Blackbodyrad
 from jaxspec.model.multiplicative import Tbabs
-from jaxspec.model.background import BackgroundWithError
+from jaxspec.model.background import BackgroundWithError, SpectralModelBackground
 from jaxspec.model.instrument import InstrumentModel, ConstantGain, ConstantShift
 
-spectral_model = Tbabs() * (Powerlaw() + Blackbodyrad())
+spectral_model = Tbabs() * (Powerlaw() + Powerlaw() + Blackbodyrad())
 
 prior = {
     "spectrum.tbabs_1.nh":          dist.Uniform(0, 1),
@@ -40,6 +41,7 @@ prior = {
     "spectrum.blackbodyrad_1.kT":   dist.Uniform(0, 5),
     "spectrum.blackbodyrad_1.norm": dist.LogUniform(1e-2, 1e2),
     "spectrum.powerlaw_1.norm[*]":  dist.LogUniform(1e-5, 1e-2),
+    "spectrum.powerlaw_2.norm":     dist.LogUniform(1e-5, 1e-2),
     "instrument.gain.factor[*]":    dist.Uniform(0.5, 1.5),
     "instrument.shift.offset[*]":   dist.Uniform(-0.3, 0.3),
     "spectrum.powerlaw_2.alpha":    TiedParameter("spectrum.powerlaw_1.alpha", lambda x: 0.5 * x),
@@ -48,9 +50,9 @@ prior = {
 
 Bare keys are the most common: they reproduce the familiar flat-prior
 behaviour. The bracketed suffix only enters when you want per-observation
-scoping. In the example above, the first four keys are shared, the `[*]`
-entries are per-observation, and `powerlaw_2.alpha` is tied to
-`powerlaw_1.alpha`.
+scoping. In the example above, the first four spectral keys and `powerlaw_2.norm` are
+shared, the `[*]` entries are per-observation, and `powerlaw_2.alpha` is tied
+to `powerlaw_1.alpha`.
 
 ## Applicable observations per prefix
 
@@ -147,6 +149,10 @@ prior keys, which unlocks three more patterns:
 1. Specific-obs to specific-obs: MOS2's gain mirrors MOS1's draw.
 
 ```python
+# Replaces the shared `instrument.gain.factor[*]` entry above — the scopes must stay
+# disjoint, so drop it first.
+del prior["instrument.gain.factor[*]"]
+prior["instrument.gain.factor[MOS1]"] = dist.Uniform(0.5, 1.5)
 prior["instrument.gain.factor[MOS2]"] = TiedParameter("instrument.gain.factor[MOS1]", lambda x: x)
 ```
 
@@ -154,6 +160,7 @@ prior["instrument.gain.factor[MOS2]"] = TiedParameter("instrument.gain.factor[MO
    `blackbodyrad_1.norm` is 2x the corresponding per-obs `powerlaw_1.norm`.
 
 ```python
+del prior["spectrum.blackbodyrad_1.norm"]  # replaced by the per-obs tie below
 prior["spectrum.blackbodyrad_1.norm[*]"] = TiedParameter("spectrum.powerlaw_1.norm[*]", lambda x: 2.0 * x)
 ```
 
@@ -164,8 +171,10 @@ prior["background.powerlaw_1.alpha[MOS1]"] = TiedParameter("spectrum.powerlaw_1.
 ```
 
 Resolved ties register as `numpyro.deterministic` sites, so they appear in
-`result.inference_data.posterior` just like sampled sites &mdash; you can
-trace them through your corner plots without any extra work.
+`result.inference_data.posterior` alongside the sampled sites and you can read
+their posteriors directly. They are deliberately **excluded** from `to_chain`,
+and therefore from `plot_corner` and `table`: a tied parameter is a deterministic
+function of its source, so plotting it as a free dimension would be misleading.
 
 ## Callable priors: when the dict isn't enough
 
@@ -187,8 +196,16 @@ auto-detected by argument count:
   `numpyro.sample` first to draw shared / joint / hierarchical parameters,
   then return the per-leaf lookup function.
 
-The dict form is internally compiled to a leaf callable, so both paths
-share the same downstream sampling code.
+!!! warning "A leaf callable draws *per observation*"
+
+    The dict form and the callable form are **not** the same code path. A dict entry
+    with a bare key emits one site shared across observations; a leaf callable is
+    invoked once per per-observation parameter, so the equivalent-looking callable
+    gives each observation its **own** draw and names every site
+    `forward.<prefix>.<obs>.<path>`. Replacing a shared dict with a leaf callable
+    silently increases the number of free parameters. To share a value from a
+    callable, sample it once in a *factory* and return that value from the leaf
+    lookup.
 
 ### Example 1: structural prior
 
@@ -219,8 +236,9 @@ the parameter suffix or the observation segment.
 ### Example 2: joint / covariant priors via `joint_prior_factory`
 
 `jaxspec` ships [`joint_prior_factory`][jaxspec.fit.joint_prior_factory] for
-multivariate draws. It samples one multivariate site and returns a per-leaf
-`Delta` lookup, which you can chain with structural defaults:
+multivariate draws. It samples one multivariate site once and returns a per-leaf
+lookup of the already-drawn components, which you can chain with structural
+defaults:
 
 ```python
 import jax.numpy as jnp
@@ -250,10 +268,10 @@ instrument but independent across instruments), call the factory once per
 observation inside the outer factory and chain the lookups.
 
 The reason this needs the callable form is that the per-leaf prior contract
-(used by both the dict adapter and the leaf callable) returns one
-`Distribution` per leaf. Multivariate sampling has to happen once,
-externally, and then bind each component back to its leaf via `Delta`.
-`joint_prior_factory` is just a convenient packaging of that pattern.
+returns one `Distribution` per leaf. Multivariate sampling has to happen once,
+outside that loop; each leaf then receives its already-sampled component as a
+plain array, which the binder writes straight through without creating a second
+site. `joint_prior_factory` is just a convenient packaging of that pattern.
 
 ### Example 3: hierarchical / partial-pooling prior
 
@@ -298,16 +316,27 @@ def hybrid_prior():
     })
     def prior(path, shape):
         # Try the dict first; fall back to your custom logic for the rest.
-        return covered(path, shape) or hierarchical_norm(path, shape)
+        # Test against None explicitly: a pre-sampled value is a traced array, and
+        # `or` would force `bool()` on it (TracerBoolConversionError).
+        d = covered(path, shape)
+        return d if d is not None else structural_prior(path, shape)
     return prior
 ```
 
 `dict_prior` reads the same key syntax as the framework and pre-samples shared entries
 on first call, so the trace contains exactly one numpyro site per shared key.
 
-Scopes must be **disjoint**: a parameter is covered by a shared key, by `[*]`, or by an
-explicit `[obs]` key, never by two at once. There is no precedence rule — jaxspec raises
-a `ValueError` naming both keys rather than silently discarding one of the draws.
+Keep the scopes **disjoint**: a parameter should be covered by a shared key, by `[*]`,
+or by an explicit `[obs]` key, never by two at once.
+
+!!! warning "`dict_prior` is not validated"
+
+    A *framework* prior dict is checked when the `BayesianModel` is constructed, and
+    overlapping keys raise a `ValueError` naming both. A dict handed to `dict_prior`
+    gets no such check — passing a callable skips validation entirely. On an overlap
+    the lookup silently applies the precedence `[obs]` > `[*]` > shared, and the losing
+    shared key has *already been sampled*, leaving a free site in the trace that
+    influences nothing.
 
 ## Site names and posterior inspection
 

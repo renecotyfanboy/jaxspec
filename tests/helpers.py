@@ -135,11 +135,13 @@ def assert_result_smoke(result, *, redshift=0.01, e_min=0.7, e_max=1.2):
     per-obs PPC branch, and serialises to a chain. Returns the chain so callers
     can make additional assertions on its columns.
     """
+    from jaxspec.analysis._ppc import folded_branches
+
     result.photon_flux(e_min, e_max, register=True)
     result.energy_flux(e_min, e_max, register=True)
     result.luminosity(e_min, e_max, redshift=redshift, register=True)
     result.c_stat
-    [result._ppc_folded_branches(obs_id) for obs_id in result.obsconfs.keys()]
+    [folded_branches(result, obs_id) for obs_id in result.obsconfs.keys()]
     return result.to_chain("test")
 
 

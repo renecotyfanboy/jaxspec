@@ -31,8 +31,14 @@ def pytest_collection_modifyitems(items):
     Keeps the marker split exhaustive without sprinkling ``@pytest.mark.fast``
     everywhere, and auto-classifies future tests. CI's ``-m "not slow"`` selector
     is unaffected.
+
+    ``xspec`` tests are promoted to ``slow`` first: they shell out to a live PyXSPEC and
+    take minutes, so on a machine that *has* HEASOFT they would otherwise be pulled into
+    ``-m fast`` / ``-m "not slow"``.
     """
     for item in items:
+        if "xspec" in item.keywords:
+            item.add_marker(pytest.mark.slow)
         if "slow" not in item.keywords:
             item.add_marker(pytest.mark.fast)
 
@@ -75,6 +81,55 @@ def curated_data_dir():
 @pytest.fixture(scope="session")
 def obs_model_prior(obsconfs):
     return obsconfs, spectral_model, prior_shared_pars
+
+
+# --- Fast fixtures for the structural smoke test -----------------------------
+#
+# A 20-warmup / 20-sample / 1-chain fit produces a fully functional FitResult in
+# ~11-14 s. That is the whole point: the suites that exercise the numpyro trace
+# path (test_inference / test_results) take ~23 minutes, and `-m "not slow"` does
+# not cover that path at all — a change can pass the fast suite and still break
+# every fit. These fixtures give the refactor work a ~30 s regression net.
+
+
+def _quick_fit(model, prior, obsconf, **kwargs):
+    return MCMCFitter(model, prior, obsconf, **kwargs).fit(
+        num_warmup=20, num_samples=20, num_chains=1, mcmc_kwargs={"progress_bar": False}
+    )
+
+
+@pytest.fixture(scope="session")
+def quick_result(obs_model_prior):
+    """One observation, all-shared prior — the simplest complete FitResult."""
+    obsconfs, model, prior = obs_model_prior
+    return _quick_fit(model, prior, obsconfs[0])
+
+
+@pytest.fixture(scope="session")
+def quick_joint_result(obs_model_prior):
+    """Three observations, all-shared prior — exercises the trailing obs axis."""
+    obsconfs, model, prior = obs_model_prior
+    return _quick_fit(model, prior, obsconfs)
+
+
+@pytest.fixture(scope="session")
+def quick_disk_result(obsconfs):
+    """A fit whose model publishes a derived quantity (``Diskbb`` is the shipped one).
+
+    Separate from ``quick_result``, whose exact chain-column set pins that models
+    publishing nothing are unaffected.
+    """
+    import numpyro.distributions as dist
+
+    from jaxspec.model.additive import Diskbb
+    from jaxspec.model.multiplicative import Tbabs
+
+    prior = {
+        "spectrum.tbabs_1.nh": dist.Uniform(0.0, 1.0),
+        "spectrum.diskbb_1.Tin": dist.Uniform(0.1, 5.0),
+        "spectrum.diskbb_1.norm": dist.LogUniform(1e-6, 1e-2),
+    }
+    return _quick_fit(Tbabs() * Diskbb(), prior, obsconfs[0])
 
 
 @pytest.fixture(scope="session")

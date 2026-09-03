@@ -2,8 +2,8 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 import pytest
 
+from jaxspec.analysis._ppc import _compute_denominator, _resolve_y_units
 from jaxspec.analysis.compare import plot_corner_comparison
-from jaxspec.analysis.results import _compute_denominator, _resolve_y_units
 
 
 def test_resolve_y_units_unknown_type_raises():

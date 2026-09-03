@@ -4,7 +4,6 @@ import importlib.metadata
 import platform
 import sys
 
-# Reported in this order: jaxspec first, then the stack it sits on.
 _PACKAGES = (
     "jaxspec",
     "jax",

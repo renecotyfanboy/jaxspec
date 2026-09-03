@@ -13,9 +13,31 @@ import numpy as np
 
 from astropy.table import Table
 
-from ..util.integrate import integrate_interval
 from ..util.online_storage import table_manager
+from ._additive import APEC, Diskbb, Diskpbb
 from .abc import AdditiveComponent
+
+# Explicit, because griffe treats an imported name as private unless it is listed
+# here: without this the components implemented under ``_additive`` (APEC, Diskbb,
+# Diskpbb) silently vanish from the rendered API reference.
+__all__ = [
+    "APEC",
+    "Additiveconstant",
+    "Agauss",
+    "Band",
+    "Blackbody",
+    "Blackbodyrad",
+    "Cutoffpl",
+    "Diskbb",
+    "Diskpbb",
+    "Gauss",
+    "Logparabola",
+    "Lorentz",
+    "NSatmos",
+    "Powerlaw",
+    "Zagauss",
+    "Zgauss",
+]
 
 
 class Powerlaw(AdditiveComponent):
@@ -35,11 +57,7 @@ class Powerlaw(AdditiveComponent):
         self.norm = nnx.Param(1e-4)
 
     def integrated_continuum(self, e_low, e_high):
-        # alpha == 1 is a singularity whose limit is norm*log(e_high/e_low).
-        # The double `where` keeps the gradient finite: without the inner one,
-        # the unused branch still evaluates 1/0 and reverse-mode AD propagates
-        # NaN through the whole log-likelihood.
-
+        # Mask the pole before evaluating either branch to keep gradients finite.
         one_minus_alpha = 1 - self.alpha
         is_pole = jnp.abs(one_minus_alpha) < 1e-8
         safe = jnp.where(is_pole, 1.0, one_minus_alpha)
@@ -219,42 +237,6 @@ class Cutoffpl(AdditiveComponent):
         return self.norm * energy ** (-self.alpha) * jnp.exp(-energy / self.beta)
 
 
-class Diskbb(AdditiveComponent):
-    r"""
-    `Diskpbb` with $p=0.75$
-
-    !!! abstract "Parameters"
-        * $T_{\text{in}}$ (`Tin`) $\left[ \mathrm{keV}\right]$: Temperature at inner disk radius
-        * $\text{norm}$ (`norm`) $\left[\text{dimensionless}\right]$ : $\cos i(r_{\text{in}}/d)^{2}$,
-        where $r_{\text{in}}$ is an apparent inner disk radius $\left[\text{km}\right]$,
-        $d$ the distance to the source [$10 \text{kpc}$], $i$ the angle of the disk ($i=0$ is face-on)
-    """
-
-    def __init__(self):
-        self.Tin = nnx.Param(1.0)
-        self.norm = nnx.Param(1e-4)
-
-    def continuum(self, energy):
-        p = 0.75
-        tout = 0.0
-
-        # Tout is set to 0 as it is evaluated at R=infinity
-        def integrand(kT, e, tin, p):
-            return e**2 * (kT / tin) ** (-2 / p - 1) / (jnp.exp(e / kT) - 1)
-
-        integral = integrate_interval(integrand)
-        norm = jnp.asarray(self.norm)
-        Tin = jnp.asarray(self.Tin)
-
-        return (
-            norm
-            * 2.78e-3
-            * (0.75 / p)
-            / jnp.asarray(Tin)
-            * jnp.vectorize(lambda e: integral(tout, Tin, e, Tin, p))(energy)
-        )
-
-
 class Agauss(AdditiveComponent):
     r"""
     A simple Gaussian line profile in wavelength space.
@@ -374,7 +356,6 @@ class NSatmos(AdditiveComponent):
 
         entry_table = Table.read(table_manager.fetch("nsatmosdata.fits"), 1)
 
-        # Extract the table values. All this code could be summarized in two lines if we reformat the nsatmosdata.fits table
         tab_temperature = np.asarray(entry_table["TEMP"][0], dtype=float)  # Logarithmic value
         tab_gravity = np.asarray(entry_table["GRAVITY"][0], dtype=float)  # Logarithmic value
         tab_mucrit = np.asarray(entry_table["MUCRIT"][0], dtype=float)
@@ -514,37 +495,3 @@ class Band(AdditiveComponent):
         )
 
         return self.norm * spectrum
-
-
-'''
-class Diskpbb(AdditiveComponent):
-    r"""
-    A multiple blackbody disk model where local disk temperature T(r) is proportional to $$r^{(-p)}$$,
-    where $$p$$ is a free parameter. The standard disk model, diskbb, is recovered if $$p=0.75$$.
-    If radial advection is important then $$p<0.75$$.
-
-    $$\\mathcal{M}\\left( E \right) = \frac{2\\pi(\\cos i)r^{2}_{\text{in}}}{pd^2} \\int_{T_{\text{in}}}^{T_{\text{out}}}
-    \\left( \frac{T}{T_{\text{in}}} \right)^{-2/p-1} \text{bbody}(E,T) \frac{dT}{T_{\text{in}}}$$
-
-    ??? abstract "Parameters"
-        * $\text{norm}$ : $\\cos i(r_{\text{in}}/d)^{2}$,
-        where $r_{\text{in}}$ is "an apparent" inner disk radius $\\left[\text{km}\right]$,
-        $d$ the distance to the source in units of $10 \text{kpc}$,
-        $i$ the angle of the disk ($i=0$ is face-on)
-        * $p$ : Exponent of the radial dependence of the disk temperature $\\left[\text{dimensionless}\right]$
-        * $T_{\text{in}}$ : Temperature at inner disk radius $\\left[ \\mathrm{keV}\right]$
-    """
-
-    def continuum(self, energy):
-        norm = hk.get_parameter("norm", [], float, init=HaikuConstant(1))
-        p = hk.get_parameter("p", [], float, init=HaikuConstant(0.75))
-        tin = hk.get_parameter("Tin", [], float, init=HaikuConstant(1))
-
-        # Tout is set to 0 as it is evaluated at R=infinity
-        def integrand(kT, energy):
-            return 2.78e-3 * energy**2 * (kT / tin) ** (-2 / p - 1) / (jnp.exp(energy / kT) - 1)
-
-        func_vmapped = jax.vmap(lambda e: integrate_interval(lambda kT: integrand(kT, e), 0, tin, n=51))
-
-        return norm * (0.75 / p) * func_vmapped(energy)
-'''

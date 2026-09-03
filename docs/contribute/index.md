@@ -12,24 +12,37 @@ cd jaxspec
 
 ## Set up a clean environment
 
-`jaxspec` uses [Poetry](https://python-poetry.org/) to manage its dependencies. We recommand to start from a fresh
-Python environment, and install Poetry. If you use conda, you can create a new environment with
+`jaxspec` uses [uv](https://docs.astral.sh/uv/) to manage its dependencies and lock file.
+We recommend starting from a fresh Python environment. `jaxspec` supports Python 3.11 and
+3.12; if you use conda, create the environment with
 
 ```bash
-conda create -n jaxspec python=3.10
+conda create -n jaxspec python=3.12
 conda activate jaxspec
 ```
 
-To install Poetry, run the following in the (`jaxspec`) environment:
+To install uv, run the following in the (`jaxspec`) environment:
 
 ```bash
-pip install poetry
+pip install uv
 ```
 
-Then, to install `jaxspec`'s dependencies, run the following command in the directory where you cloned the repository:
+Then install `jaxspec` and every dependency group, from the directory where you cloned the
+repository:
 
 ```bash
-poetry install
+uv sync --all-groups --frozen
+```
+
+`--frozen` installs exactly the versions recorded in the tracked `uv.lock`, which is what
+CI does — so your environment reproduces CI's. Drop the flag (and commit the updated lock)
+only when you intend to change a dependency.
+
+## Running the tests
+
+```bash
+uv run pytest -m "not slow"     # fast subset, about a minute
+uv run pytest                   # everything, including the multi-minute inference suites
 ```
 
 ## Code quality
@@ -43,11 +56,17 @@ We use [pre-commit](https://pre-commit.com/) to run the linter and formatter aut
 All the hooks are defined in `.pre-commit-config.yaml` and can be run manually with
 
 ```bash
-poetry run pre-commit run --all-files
+uv run pre-commit run --all-files
 ```
 
 If you want to install the pre-commit hooks so they run automatically, use
 
 ```bash
-poetry run pre-commit install
+uv run pre-commit install
+```
+
+## Building the documentation
+
+```bash
+uv run mkdocs serve
 ```

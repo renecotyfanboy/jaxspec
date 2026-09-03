@@ -4,13 +4,11 @@ from .results import FitResult
 
 
 def plot_corner_comparison(obs_dict: dict[str, FitResult], **kwargs):
-    """
-    Plot the correlation plot of parameters from different fitted observations. Observations are passed in as a
-    dictionary. Each observation is named according to its key. It shall be used to compare the same model independently
-    fitted to different observations.
+    """Compare posterior correlations from several fitted observations.
 
     Parameters:
-        obs_dict: a dictionary containing the observations to plot. The keys are the names of the observations.
+        obs_dict: Fit results keyed by the labels used in the comparison plot.
+        **kwargs: Additional arguments passed to ``ChainConsumer.plotter.plot``.
     """
 
     c = ChainConsumer()

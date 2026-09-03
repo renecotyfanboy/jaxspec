@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from functools import cache
+
 import flax.nnx as nnx
 import jax.numpy as jnp
 import jax.scipy.special as jsp
@@ -9,6 +11,26 @@ from astropy.table import Table
 
 from ..util.online_storage import table_manager
 from .abc import MultiplicativeComponent
+
+
+@cache
+def _load_xsect(filename: str) -> tuple[np.ndarray, np.ndarray]:
+    """Load a photoelectric cross-section table as ``(energy, sigma)``.
+
+    Cached because several components read the same file — ``Tbabs``, ``zTbabs`` and
+    ``Tbpcf`` all use the Wilms table — and the FITS was otherwise re-read and re-parsed
+    on *every* component instantiation.
+
+    Returns plain ``np.ndarray``s, per the lookup-table convention: they must not become
+    ``nnx.Variable`` state. Sharing one array by identity across instances is exactly what
+    that convention wants, since ``nnx.clone`` then shares it across per-observation
+    replicas instead of deep-copying.
+    """
+    table = Table.read(table_manager.fetch(filename))
+    return (
+        np.asarray(table["ENERGY"], dtype=np.float64),
+        np.asarray(table["SIGMA"], dtype=np.float64),
+    )
 
 
 class MultiplicativeConstant(MultiplicativeComponent):
@@ -72,9 +94,7 @@ class Tbabs(MultiplicativeComponent):
     """
 
     def __init__(self):
-        table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-        self._energy = np.asarray(table["ENERGY"], dtype=np.float64)
-        self._sigma = np.asarray(table["SIGMA"], dtype=np.float64)
+        self._energy, self._sigma = _load_xsect("xsect_tbabs_wilm.fits")
         self.nh = nnx.Param(1.0)
 
     def factor(self, energy):
@@ -113,13 +133,8 @@ class zTbabs(MultiplicativeComponent):
     """
 
     def __init__(self):
-        table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-        self._energy = np.asarray(table["ENERGY"], dtype=np.float64)
-        self._sigma = np.asarray(table["SIGMA"], dtype=np.float64)
+        self._energy, self._sigma = _load_xsect("xsect_tbabs_wilm.fits")
         self.nh = nnx.Param(1.0)
-        # Matches XSPEC's zTBabs and every other redshift parameter in jaxspec
-        # (Zedge.z, Zgauss.redshift, Zagauss.redshift). A default of 1.0 made
-        # `zTbabs() * Powerlaw()` differ from `Tbabs() * Powerlaw()` out of the box.
         self.z = nnx.Param(0.0)
 
     def factor(self, energy):
@@ -147,9 +162,7 @@ class Phabs(MultiplicativeComponent):
     """
 
     def __init__(self):
-        table = Table.read(table_manager.fetch("xsect_phabs_aspl.fits"))
-        self._energy = np.asarray(table["ENERGY"], dtype=np.float64)
-        self._sigma = np.asarray(table["SIGMA"], dtype=np.float64)
+        self._energy, self._sigma = _load_xsect("xsect_phabs_aspl.fits")
         self.nh = nnx.Param(1.0)
 
     def factor(self, energy):
@@ -167,9 +180,7 @@ class Wabs(MultiplicativeComponent):
     """
 
     def __init__(self):
-        table = Table.read(table_manager.fetch("xsect_wabs_angr.fits"))
-        self._energy = np.asarray(table["ENERGY"], dtype=np.float64)
-        self._sigma = np.asarray(table["SIGMA"], dtype=np.float64)
+        self._energy, self._sigma = _load_xsect("xsect_wabs_angr.fits")
         self.nh = nnx.Param(1.0)
 
     def factor(self, energy):
@@ -285,17 +296,16 @@ class Tbpcf(MultiplicativeComponent):
     """
 
     def __init__(self):
-        table = Table.read(table_manager.fetch("xsect_tbabs_wilm.fits"))
-        self._energy = np.asarray(table["ENERGY"], dtype=np.float64)
-        self._sigma = np.asarray(table["SIGMA"], dtype=np.float64)
+        self._energy, self._sigma = _load_xsect("xsect_tbabs_wilm.fits")
         self.nh = nnx.Param(1.0)
         self.f = nnx.Param(0.2)
 
     def factor(self, energy):
+        # Interpolate the shared Wilms table in log-log space.
         sigma = jnp.exp(
             jnp.interp(
-                energy,
-                self._energy,
+                jnp.log(energy),
+                jnp.log(self._energy),
                 jnp.log(self._sigma),
                 left="extrapolate",
                 right="extrapolate",

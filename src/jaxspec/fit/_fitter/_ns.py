@@ -81,7 +81,7 @@ class NSFitter(BayesianModelFitter):
 
     Because `jaxns` requires sample-site names to be valid Python identifiers,
     this fitter transparently renames sites that contain characters such as
-    ``.`` (e.g. ``spectral_model.components.powerlaw_1.alpha``) before passing
+    ``.`` (e.g. ``forward.spectrum.MOS1.powerlaw_1.alpha``) before passing
     the model to the nested sampler, and maps them back afterwards.
 
     !!! info
@@ -145,10 +145,7 @@ class NSFitter(BayesianModelFitter):
 
         keys = random.split(random.PRNGKey(rng_key), 4)
 
-        # Default to a single device: jaxns shards the per-bin likelihood across
-        # devices, which fails with an IndivisibleError when the number of bins
-        # is not a multiple of the number of devices. Users can override via
-        # ``constructor_kwargs={"devices": jax.devices()}``.
+        # A single device supports likelihood arrays with any number of bins.
         default_constructor = dict(
             verbose=verbose,
             difficult_model=True,

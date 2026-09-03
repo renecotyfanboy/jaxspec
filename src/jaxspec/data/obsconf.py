@@ -11,7 +11,7 @@ from .observation import Observation
 
 
 def to_jax_matrix(scoo, *, sparse: bool):
-    """Convert a `sparse.COO` matrix (as stored on :class:`ObsConfiguration`)
+    """Convert a `sparse.COO` matrix (as stored on [`ObsConfiguration`][jaxspec.data.obsconf.ObsConfiguration])
     to a JAX-typed dense array or a JAX BCOO sparse array."""
     if sparse:
         return BCOO.from_scipy_sparse(scoo.to_scipy_sparse().tocsr())
@@ -48,35 +48,28 @@ class ObsConfiguration(xr.Dataset):
         "transfer_matrix",
     )
 
+    def _energy_bounds(self, suffix: str) -> np.ndarray:
+        """Stack the ``(e_min, e_max)`` coordinate pair for one bin axis, in keV."""
+        return np.stack(
+            (
+                np.asarray(self.coords[f"e_min_{suffix}"], dtype=np.float64),
+                np.asarray(self.coords[f"e_max_{suffix}"], dtype=np.float64),
+            )
+        )
+
     @property
     def in_energies(self):
         """
         The energy bounds of the unfolded bins in keV. The shape is (2, n_bins).
         """
-
-        in_energies = np.stack(
-            (
-                np.asarray(self.coords["e_min_unfolded"], dtype=np.float64),
-                np.asarray(self.coords["e_max_unfolded"], dtype=np.float64),
-            )
-        )
-
-        return in_energies
+        return self._energy_bounds("unfolded")
 
     @property
     def out_energies(self):
         """
         The energy bounds of the folded bins in keV. The shape is (2, n_bins).
         """
-
-        out_energies = np.stack(
-            (
-                np.asarray(self.coords["e_min_folded"].data, dtype=np.float64),
-                np.asarray(self.coords["e_max_folded"].data, dtype=np.float64),
-            )
-        )
-
-        return out_energies
+        return self._energy_bounds("folded")
 
     @classmethod
     def from_pha_file(
@@ -104,7 +97,7 @@ class ObsConfiguration(xr.Dataset):
 
         arf_path_default, rmf_path_default, bkg_path_default = data_path_finder(
             pha_path,
-            require_arf=(arf_path is None) and (arf_path != ""),
+            require_arf=arf_path is None,
             require_rmf=rmf_path is None,
             require_bkg=bkg_path is None,
         )
@@ -140,8 +133,6 @@ class ObsConfiguration(xr.Dataset):
             high_energy: The upper bound of the energy range to consider.
 
         """
-        # First we unpack all the xarray data to classical np array for efficiency
-        # We also exclude the bins that are flagged with bad quality on the instrument
         quality_filter = observation.quality.data == 0
         grouping = (
             scipy.sparse.csr_array(observation.grouping.data.to_scipy_sparse()) * quality_filter
@@ -154,23 +145,17 @@ class ObsConfiguration(xr.Dataset):
         area = instrument.area.data
         exposure = observation.exposure.data
 
-        # Computing the lower and upper energies of the bins after grouping
-        # This is just a trick to compute it without 10 lines of code
         grouping_nan = observation.grouping.data * quality_filter
         grouping_nan.fill_value = np.nan
         e_min = sparse.nanmin(grouping_nan * e_min_channel, axis=1).todense()
         e_max = sparse.nanmax(grouping_nan * e_max_channel, axis=1).todense()
 
-        # Compute the transfer matrix
         transfer_matrix = grouping @ (redistribution * area * exposure)
 
-        # Exclude bins out of the considered energy range, and bins without contribution from the RMF
+        # Keep valid folded channels and response bins.
         row_idx = (e_min > low_energy) & (e_max < high_energy) & (grouping.sum(axis=1) > 0)
         col_idx = (e_min_unfolded > 0) & (redistribution.sum(axis=0) > 0)
 
-        # An empty selection silently yields a (0, N) transfer matrix, and a fit against
-        # it happily samples a posterior informed by zero data. Fail instead.
-        # `e_min` / `e_max` carry NaN for empty groups, so use the nan-aware reductions.
         if not row_idx.any():
             raise ValueError(
                 f"No channel falls inside the requested energy band "
@@ -185,9 +170,7 @@ class ObsConfiguration(xr.Dataset):
                 "Check the RMF."
             )
 
-        # Apply this reduction to all the relevant arrays.
-        # Element-wise ops above may have down-converted to coo_array; re-coerce
-        # to csr for slicing.
+        # Sparse elementwise operations may change format; CSR supports slicing.
         transfer_matrix = sparse.COO.from_scipy_sparse(transfer_matrix[row_idx][:, col_idx])
         redistribution_trimmed = sparse.COO.from_scipy_sparse(
             scipy.sparse.csr_array(redistribution)[:, col_idx]
