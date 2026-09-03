@@ -96,6 +96,7 @@ def _xspec_folded_rate(pha_basename):
     xspec.Xset.chatter = 0
     xspec.AllData.clear()
     xspec.AllModels.clear()
+    xspec.AllModels.setEnergies("reset")
 
     spectrum = xspec.Spectrum(pha_basename)
     spectrum.ignore(f"0.0-{LOW_ENERGY:.1f} {HIGH_ENERGY:.1f}-**")
