@@ -98,7 +98,13 @@ jobs:
         cache-downloads: true
 
     - name: Download tables
+      # HEASoft tools open /dev/tty for their parameter prompts at startup, whether or
+      # not anything is actually queried. A GitHub runner has no controlling terminal,
+      # so that open() returns ENXIO and the task dies with status 6 before it does any
+      # work. HEADASPROMPT points the prompt stream somewhere that exists; redirecting
+      # stdin or passing mode=h does NOT help, the /dev/tty open happens regardless.
       run: |
+        export HEADASPROMPT=/dev/null
         ftgetmodeldata modelname="apec" modelversion="latest"
       shell: micromamba-shell {0}
 
