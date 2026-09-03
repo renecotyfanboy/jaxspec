@@ -74,7 +74,8 @@ jobs:
       run: uv sync --all-groups --frozen
 
     - name: Run fast tests
-      run: uv run pytest -m "not slow"
+      # tests/test_apec.py is excluded CI-wide, see the full-tests job for why.
+      run: uv run pytest -m "not slow" --ignore=tests/test_apec.py
 
   full-tests:
     runs-on: ubuntu-latest
@@ -97,20 +98,6 @@ jobs:
         cache-environment: true
         cache-downloads: true
 
-    - name: Cache XSPEC model data
-      id: modeldata
-      uses: actions/cache@v4
-      with:
-        path: ~/xspec-modeldata
-        key: xspec-modeldata-apec-${{ hashFiles('environment-xspec.yml') }}-v1
-
-    - name: Download tables
-      run: |
-        export HEADASPROMPT=/dev/null
-        ftgetmodeldata modelname="apec" modelversion="latest" localdir="$HOME/xspec-modeldata"
-        mkdir -p "$HEADAS/spectral/modelData"
-        cp -n "$HOME"/xspec-modeldata/*.fits "$HEADAS/spectral/modelData/"
-      shell: micromamba-shell {0}
     - name: Install jaxspec and test dependencies
       run: |
         export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
@@ -120,7 +107,8 @@ jobs:
     - name: Run full test suite
       run: |
         export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-        uv run pytest --cov jaxspec --cov-report xml:coverage-full.xml
+        uv run pytest --cov jaxspec --cov-report xml:coverage-full.xml \
+          --ignore=tests/test_apec.py
       shell: micromamba-shell {0}
 
     - name: Upload coverage to Codecov
