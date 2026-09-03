@@ -460,10 +460,6 @@ def test_apec_family_vs_xspec(case, pset):
 @pytest.mark.slow
 def test_against_xspec_bvapec():
     pytest.importorskip("xspec")
-    from xspec_utils import APEC_SETTINGS, require_model_data
-
-    require_model_data(APEC_SETTINGS)  # skips when the install lacks AtomDB 3.1.3
-
     from xspec import AllModels, Model, Xset
 
     Xset.chatter = 0

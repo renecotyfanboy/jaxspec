@@ -19,11 +19,8 @@ relative error on the total band flux (pure normalization biases that
 bin-wise quantiles can half-hide).
 """
 
-import os
-
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from glob import glob
 from typing import Any
 
 import numpy as np
@@ -150,57 +147,6 @@ class ErrorReport:
     n_masked: int
 
 
-def _model_data_dirs() -> list[str]:
-    """Candidate XSPEC ``modelData`` directories for the active HEASOFT install.
-
-    Both layouts are probed: ``$HEADAS/spectral/modelData`` (conda-forge / HEASARC
-    conda packages) and ``$HEADAS/../spectral/modelData`` (source builds, where
-    ``$HEADAS`` is the architecture subdirectory).
-    """
-    headas = os.environ.get("HEADAS")
-    if not headas:
-        return []
-    candidates = [
-        os.path.join(headas, "spectral", "modelData"),
-        os.path.join(headas, "..", "spectral", "modelData"),
-    ]
-    return [path for path in candidates if os.path.isdir(path)]
-
-
-def missing_apec_tables(apecroot: str) -> list[str]:
-    """AtomDB files XSPEC would need for ``APECROOT = apecroot`` but cannot find.
-
-    XSPEC does not fail on a missing AtomDB version: it warns and returns an
-    all-zero spectrum, which at ``chatter = 0`` is invisible and turns a
-    comparison into an empty-mask error far from the cause. The comparison is
-    only meaningful against the AtomDB version the jaxspec table was built from,
-    so a mismatch must skip rather than fall back to whatever is installed.
-    """
-    dirs = _model_data_dirs()
-    if not dirs:
-        return []  # cannot locate the install; let the comparison speak for itself
-    return [
-        name
-        for name in (f"apec_v{apecroot}_coco.fits", f"apec_v{apecroot}_line.fits")
-        if not any(glob(os.path.join(d, name)) for d in dirs)
-    ]
-
-
-def require_model_data(settings: XspecSettings) -> None:
-    """Skip the calling test when the XSPEC install lacks the pinned AtomDB tables."""
-    apecroot = settings.model_strings.get("APECROOT")
-    if apecroot is None:
-        return
-    missing = missing_apec_tables(apecroot)
-    if missing:
-        import pytest
-
-        pytest.skip(
-            f"XSPEC install has no AtomDB {apecroot} tables ({', '.join(missing)}); "
-            "the packaged jaxspec table is only comparable against that version."
-        )
-
-
 def apply_xspec_settings(settings: XspecSettings) -> None:
     import xspec
 
@@ -218,7 +164,6 @@ def xspec_model(case: XspecComparison, pset: dict[str, float]):
     """Build the XSPEC model for a case on its energy grid, with params applied."""
     import xspec
 
-    require_model_data(case.settings)
     apply_xspec_settings(case.settings)
     e_min, e_max, n_bins, scale = case.grid
     xspec.AllModels.setEnergies(f"{e_min} {e_max} {n_bins} {scale}")
@@ -255,12 +200,6 @@ def error_report(edges, expected, got, mask_rel=1e-6) -> ErrorReport:
     mask = expected > expected.max() * mask_rel
     rel = np.abs(got[mask] - expected[mask]) / expected[mask]
     rel = np.where(np.isfinite(rel), rel, np.inf)  # NaNs must fail, not slip through
-    if rel.size == 0:
-        raise AssertionError(
-            "reference spectrum carries no flux (all bins are zero or non-finite): "
-            "XSPEC evaluated the model but returned nothing to compare against — "
-            "usually a missing model-data table, which XSPEC only reports at chatter > 0."
-        )
     centers = 0.5 * (edges[:-1] + edges[1:])[mask]
     i_worst = int(np.argmax(rel))
     total = got.sum() / expected.sum() - 1.0
