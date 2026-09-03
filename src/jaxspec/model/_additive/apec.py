@@ -444,7 +444,7 @@ class APEC(AdditiveComponent):
                 abundance_df["angr"], dtype=float
             )
 
-    def suggest_k_window(self, e_low, e_high, **kwargs) -> int:
+    def _suggest_k_window(self, e_low, e_high, **kwargs) -> int:
         """Suggest a safe `k_window` for this component and energy grid."""
         arrays = self._tables.arrays
         kwargs.setdefault(
@@ -459,7 +459,7 @@ class APEC(AdditiveComponent):
         if self._k_window is not None:
             if not traced and not self._k_window_checked:
                 self._k_window_checked = True
-                needed = self.suggest_k_window(np.asarray(e_low), np.asarray(e_high))
+                needed = self._suggest_k_window(np.asarray(e_low), np.asarray(e_high))
                 if needed > self._k_window:
                     warnings.warn(
                         f"APEC k_window={self._k_window} is smaller than the {needed} suggested "
@@ -485,7 +485,7 @@ class APEC(AdditiveComponent):
         lo, hi = np.asarray(e_low), np.asarray(e_high)
         e_min, e_max = float(lo[0]), float(hi[-1])
         if (n_bins, e_min, e_max) != (self._auto_n_bins, self._auto_e_min, self._auto_e_max):
-            self._auto_k = self.suggest_k_window(lo, hi)
+            self._auto_k = self._suggest_k_window(lo, hi)
             self._auto_n_bins, self._auto_e_min, self._auto_e_max = n_bins, e_min, e_max
         return self._auto_k
 

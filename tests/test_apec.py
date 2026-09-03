@@ -167,8 +167,8 @@ def test_suggest_k_window():
     linear_grid = np.arange(0.3, 12.0, 0.002)  # 2 eV linear bins
 
     component = APEC(energy_band=(0.3, 10.0))
-    assert component.suggest_k_window(log_grid[:-1], log_grid[1:]) == 32
-    assert component.suggest_k_window(linear_grid[:-1], linear_grid[1:]) > 32
+    assert component._suggest_k_window(log_grid[:-1], log_grid[1:]) == 32
+    assert component._suggest_k_window(linear_grid[:-1], linear_grid[1:]) > 32
 
 
 def test_k_window_auto_sizes_from_the_grid():
@@ -178,11 +178,11 @@ def test_k_window_auto_sizes_from_the_grid():
 
     log_grid = np.geomspace(0.3, 10.0, 2001)
     evaluate(component, jnp.asarray(log_grid[:-1]), jnp.asarray(log_grid[1:]), kT=4.0)
-    assert component._auto_k == component.suggest_k_window(log_grid[:-1], log_grid[1:]) == 32
+    assert component._auto_k == component._suggest_k_window(log_grid[:-1], log_grid[1:]) == 32
 
     linear_grid = np.arange(0.3, 10.0, 0.002)  # a finer grid re-sizes the window
     evaluate(component, jnp.asarray(linear_grid[:-1]), jnp.asarray(linear_grid[1:]), kT=4.0)
-    assert component._auto_k == component.suggest_k_window(linear_grid[:-1], linear_grid[1:])
+    assert component._auto_k == component._suggest_k_window(linear_grid[:-1], linear_grid[1:])
     assert component._auto_k > 32
 
 

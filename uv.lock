@@ -846,32 +846,6 @@ wheels = [
 ]
 
 [[package]]
-name = "griffe"
-version = "2.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "griffecli" },
-    { name = "griffelib" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/df/a0/927cf9416f527f623f4ccd9220337fca0cd85303b7e82adeab1e53669cd3/griffe-2.2.0.tar.gz", hash = "sha256:9c0dd9a7feda9e169d783507d777c6fb2f2fc2919b139747a5b4f5357517a611", size = 246229 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/51/c9f9cb144e2bd21cbcb6ebd7978ecb5b9f5a375e78313744158338c8039c/griffe-2.2.0-py3-none-any.whl", hash = "sha256:db20672b31c3de2a1af5a18a3b3d8c186ccc2425e10290486b4f0364d25929e9", size = 5070 },
-]
-
-[[package]]
-name = "griffecli"
-version = "2.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama" },
-    { name = "griffelib" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/de/75/3cf2fb1ae21fb55a3b917b45d24426a620ee916f4bdbd03f350c69d3d892/griffecli-2.2.0.tar.gz", hash = "sha256:b9e763131218eb19887ed52de20fe944252d811bfb4a3e339874908a588f0044", size = 58066 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1f/83/04652213d82afeecc8e8a31231eeb87cc484dcc055fd96ecb0bfd9860405/griffecli-2.2.0-py3-none-any.whl", hash = "sha256:8ebb7ae1dcc2617f5d39f00e4c238dd6b5cd0b13157b0ce22c1ea4ca8b4c5d1d", size = 11480 },
-]
-
-[[package]]
 name = "griffelib"
 version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1185,7 +1159,6 @@ dev = [
     { name = "ruff" },
 ]
 docs = [
-    { name = "griffe" },
     { name = "mkdocs" },
     { name = "mkdocs-jupyter" },
     { name = "mkdocs-material" },
@@ -1235,7 +1208,6 @@ dev = [
     { name = "ruff", specifier = ">=0.2.1,<0.16.0" },
 ]
 docs = [
-    { name = "griffe", specifier = ">=2.2.0" },
     { name = "mkdocs", specifier = ">=1.6.1,<2" },
     { name = "mkdocs-jupyter", specifier = ">=0.25.0,<0.26" },
     { name = "mkdocs-material", specifier = ">=9.4.6,<10" },

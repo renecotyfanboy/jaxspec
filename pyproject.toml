@@ -49,7 +49,6 @@ docs = [
     "mkdocs-material>=9.4.6,<10",
     "mkdocstrings[python]>=0.24,<1.1",
     "mkdocs-jupyter>=0.25.0,<0.26",
-    "griffe>=2.2.0",
 ]
 test = [
     "chex>=0.1.83,<0.2",

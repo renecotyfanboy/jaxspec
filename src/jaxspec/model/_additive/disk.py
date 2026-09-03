@@ -219,12 +219,12 @@ class Diskbb(AdditiveComponent):
     """
 
     def __init__(self, flux_band: tuple[float, float] = DEFAULT_FLUX_BAND):
-        self._flux_band = _validate_flux_band(flux_band)
+        self.__flux_band = _validate_flux_band(flux_band)
         self.Tin = nnx.Param(1.0)
         self.norm = nnx.Param(1e-4)
 
     @property
-    def flux_band(self) -> tuple[float, float]:
+    def _flux_band(self) -> tuple[float, float]:
         """Energy band, in keV, over which ``norm`` is the photon flux."""
         return self._flux_band
 
@@ -270,13 +270,13 @@ class Diskpbb(AdditiveComponent):
     """
 
     def __init__(self, flux_band: tuple[float, float] = DEFAULT_FLUX_BAND):
-        self._flux_band = _validate_flux_band(flux_band)
+        self.__flux_band = _validate_flux_band(flux_band)
         self.Tin = nnx.Param(1.0)
         self.p = nnx.Param(STANDARD_RADIAL_EXPONENT)
         self.norm = nnx.Param(1e-4)
 
     @property
-    def flux_band(self) -> tuple[float, float]:
+    def _flux_band(self) -> tuple[float, float]:
         """Energy band, in keV, over which ``norm`` is the photon flux."""
         return self._flux_band
 

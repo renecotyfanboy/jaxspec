@@ -1,7 +1,7 @@
 """Accuracy, normalization and differentiability tests for the multicolor disk models.
 
 ``Diskbb`` and ``Diskpbb`` are the two components whose ``norm`` deliberately
-departs from XSPEC's convention: it is the photon flux over ``flux_band``. The
+departs from XSPEC's convention: it is the photon flux over ``_flux_band``. The
 tests below split that into the two independent claims — the *shape* kernels
 reproduce the disk integral, and ``continuum`` divides that shape by its own
 band integral so ``norm`` really is the band flux. Formal agreement with XSPEC
@@ -236,8 +236,8 @@ def test_flux_band_rescales_without_changing_shape(model_cls):
 
 @pytest.mark.parametrize("model_cls", [Diskbb, Diskpbb])
 def test_flux_band_property_and_default(model_cls):
-    assert model_cls().flux_band == DEFAULT_FLUX_BAND
-    assert model_cls(flux_band=BAND).flux_band == BAND
+    assert model_cls()._flux_band == DEFAULT_FLUX_BAND
+    assert model_cls(flux_band=BAND)._flux_band == BAND
 
 
 @pytest.mark.parametrize(

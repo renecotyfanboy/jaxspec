@@ -116,8 +116,6 @@ plugins:
             - https://flax.readthedocs.io/en/latest/objects.inv
             - https://jaxns.readthedocs.io/en/latest/objects.inv
           options:
-            extensions:
-              - scripts/griffe_extensions.py:HideComponentAttributes
             members_order: alphabetical
             docstring_section_style: table
             docstring_style: google
