@@ -16,7 +16,7 @@ dependencies = [
     "flax>=0.12.4,<0.13",
     "numpyro>=0.21,<0.22",
     "jax>=0.5.0,<0.10",
-    "numpy<3.0.0",
+    "numpy<2.5",
     "pandas>=2.2.0,<3",
     "astropy>=6.0.0,<8",
     "networkx~=3.1",

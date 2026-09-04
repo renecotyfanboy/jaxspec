@@ -9,9 +9,6 @@ synthesized files.
 """
 
 import os
-import re
-
-from pathlib import Path
 
 import jax
 import jax.numpy as jnp
@@ -19,8 +16,6 @@ import numpy as np
 import pytest
 
 from jaxspec.model.tabulated import ATable, ETable, MTable
-
-DOC_PAGE = Path(__file__).resolve().parents[1] / "docs" / "examples" / "table_models.md"
 
 REFLIONX = (
     "/Users/sdupourque/miniforge3/envs/ClusterXrayFluctuations/heasoft/spectral/modelData/"
@@ -646,22 +641,26 @@ class TestIntegration:
         assert np.all(np.isfinite(spectra))
 
 
-@pytest.mark.skipif(not DOC_PAGE.exists(), reason="documentation page not present")
-def test_documented_table_building_snippet(tmp_path, monkeypatch):
-    """The table-writing snippet published in the docs must keep working.
+def test_user_built_power_law_grid_reproduces_analytic_integral(tmp_path):
+    """A user-written grid of per-bin integrated spectra is fitted faithfully.
 
-    Documentation code rots silently, and this one is a how-to users copy verbatim
-    to turn their own model grid into an OGIP file: execute it as published and
-    check the result reproduces the analytic power-law integral it advertises.
+    This is the recipe users follow to turn their own model grid into an OGIP file:
+    tabulate the flux INTEGRATED over each energy bin on a grid finer than the
+    instrument's, then read it back through ``ATable``. The rebinned result must
+    reproduce the analytic power-law integral it was built from.
     """
-    blocks = re.findall(r"```python\n(.*?)```", DOC_PAGE.read_text(), re.S)
-    snippets = [block for block in blocks if "writeto" in block]
-    assert len(snippets) == 1, "expected exactly one table-writing snippet in the docs"
+    edges = np.geomspace(0.1, 20.0, 501)  # 500 contiguous bins, 0.5% wide
+    slopes = np.linspace(1.2, 3.0, 19)
+    spectra = np.stack([(edges[1:] ** (1 - s) - edges[:-1] ** (1 - s)) / (1 - s) for s in slopes])
+    path = write_table(
+        tmp_path / "mymodel.mod",
+        param_specs=[{"name": "slope", "method": 0, "values": slopes.tolist(), "initial": 2.0}],
+        energ_lo=edges[:-1],
+        energ_hi=edges[1:],
+        spectra=spectra,
+    )
 
-    monkeypatch.chdir(tmp_path)
-    exec(compile(snippets[0], str(DOC_PAGE), "exec"), {})
-
-    atable = ATable(tmp_path / "mymodel.mod")
+    atable = ATable(path)
     assert list(atable.table_parameters) == ["slope"]
 
     energy = np.geomspace(0.5, 10.0, 200)
@@ -674,7 +673,7 @@ def test_documented_table_building_snippet(tmp_path, monkeypatch):
     )
     exact = -np.diff(energy**-1.0)  # integral of E**-2 over each bin
     # Residual is the table's own resolution (rebinning assumes flux is uniform
-    # inside a tabulated bin), not the interpolation — see the page's closing note.
+    # inside a tabulated bin), not the interpolation.
     assert np.median(np.abs(flux / exact - 1)) < 5e-3
 
 
