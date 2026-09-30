@@ -19,24 +19,42 @@ def to_jax_matrix(scoo, *, sparse: bool):
 
 
 class ObsConfiguration(xr.Dataset):
-    """
-    Class to store the data of a folding model, which is the link between the unfolded and folded spectra.
+    """Selected event counts and response arrays for predicting the fitted spectrum.
+
+    ``folded_channel`` indexes selected, nonempty groups of usable channels.
+    ``instrument_channel`` retains the matched raw detector channels, including
+    channels excluded from those groups. ``unfolded_channel`` indexes retained
+    incident photon-energy bins, whose coverage can extend beyond the fitted
+    detector band.
     """
 
     transfer_matrix: xr.DataArray
-    """The transfer matrix"""
+    """Response on (folded_channel, unfolded_channel), in cm² s.
+
+    Includes grouping, redistribution, effective area, exposure and source
+    AREASCAL. Multiplying by integrated photon flux in photons/cm²/s predicts
+    source counts in the selected groups.
+    """
     redistribution: xr.DataArray
-    """The redistribution matrix (RMF), trimmed to the same energy range as the transfer matrix"""
+    """Dimensionless weights on (instrument_channel, unfolded_channel).
+
+    Incident bins match the transfer matrix's columns; detector rows retain
+    the matched raw channels before quality and group selection.
+    """
     grouping: xr.DataArray
-    """The grouping matrix, trimmed to the same channel range as the transfer matrix"""
+    """Event-sum weights on (folded_channel, instrument_channel).
+
+    Rows match the transfer matrix's selected groups. Columns retain matched
+    raw channels, with zero weight for rejected channels.
+    """
     area: xr.DataArray
-    """The effective area of the instrument"""
+    """Effective area in cm² on the retained unfolded_channel bins."""
     exposure: xr.DataArray
-    """The total exposure"""
+    """Source exposure in seconds."""
     folded_counts: xr.DataArray
-    """The observed counts, after grouping"""
+    """Source-aperture event counts on the selected folded_channel groups."""
     folded_background: xr.DataArray
-    """The background counts, after grouping"""
+    """Background-aperture event counts on the same selected folded_channel groups."""
 
     __slots__ = (
         "area",
@@ -49,7 +67,7 @@ class ObsConfiguration(xr.Dataset):
     )
 
     def _energy_bounds(self, suffix: str) -> np.ndarray:
-        """Stack the ``(e_min, e_max)`` coordinate pair for one bin axis, in keV."""
+        """Read concrete keV bounds for response preparation and plotting."""
         return np.stack(
             (
                 np.asarray(self.coords[f"e_min_{suffix}"], dtype=np.float64),
@@ -59,16 +77,13 @@ class ObsConfiguration(xr.Dataset):
 
     @property
     def in_energies(self):
-        """
-        The energy bounds of the unfolded bins in keV. The shape is (2, n_bins).
-        """
+        """Lower and upper incident-energy bounds in keV, shape (2, n_unfolded_bins)."""
         return self._energy_bounds("unfolded")
 
     @property
     def out_energies(self):
-        """
-        The energy bounds of the folded bins in keV. The shape is (2, n_bins).
-        """
+        """Lower and upper grouped detector bounds in keV, shape (2, n_folded_bins)."""
+
         return self._energy_bounds("folded")
 
     @classmethod
@@ -85,14 +100,15 @@ class ObsConfiguration(xr.Dataset):
         Build the observation configuration from a PHA file.
 
         Parameters:
-            pha_path: The path to the PHA file.
+            pha_path (str | os.PathLike): The path to the PHA file.
             rmf_path: The path to the RMF or combined RSP file. When omitted,
                 use the PHA's RESPFILE link. Supply this argument when that link
                 is absent or names an unavailable response.
             arf_path: The path to the ARF file.
             bkg_path: The path to the background file.
-            low_energy: The lower bound of the energy range to consider.
-            high_energy: The upper bound of the energy range to consider.
+            low_energy: Inclusive lower bound in keV. Only groups wholly inside
+                the selected band, after rejecting bad-quality channels, are used.
+            high_energy: Inclusive upper bound in keV.
 
         Raises:
             ValueError: No response is specified by RESPFILE or ``rmf_path``.
@@ -142,13 +158,49 @@ class ObsConfiguration(xr.Dataset):
         Parameters:
             instrument: The instrument object.
             observation: The observation object.
-            low_energy: The lower bound of the energy range to consider.
-            high_energy: The upper bound of the energy range to consider.
+            low_energy: Inclusive lower bound in keV. Only groups wholly inside
+                the selected band, after rejecting bad-quality channels, are used.
+            high_energy: Inclusive upper bound in keV.
 
         """
+        if not np.isfinite(low_energy) or low_energy < 0 or not high_energy > low_energy:
+            raise ValueError("Energy bounds must satisfy 0 <= low_energy < high_energy.")
+        if "channel" in instrument.coords:
+            detector_channels = instrument.channel.data
+            indices = np.searchsorted(detector_channels, observation.channel.data)
+            if np.any(indices >= len(detector_channels)) or not np.array_equal(
+                detector_channels[np.minimum(indices, len(detector_channels) - 1)],
+                observation.channel.data,
+            ):
+                raise ValueError(
+                    "PHA channel identifiers are absent from the response EBOUNDS. "
+                    "Supply the matching RMF instead of aligning channels by position."
+                )
+            instrument = instrument.isel(instrument_channel=indices)
+        # Apply exactly the same raw-channel mask to the response and both
+        # observed spectra, including partially rejected groups.
         quality_filter = observation.quality.data == 0
         grouping = (
-            scipy.sparse.csr_array(observation.grouping.data.to_scipy_sparse()) * quality_filter
+            scipy.sparse.csr_array(observation.grouping.data.to_scipy_sparse())
+            .multiply(quality_filter)
+            .tocsr()
+        )
+        grouping.eliminate_zeros()
+        group_size = np.asarray(grouping.sum(axis=1)).ravel()
+        if grouping.shape[1] != instrument.sizes["instrument_channel"]:
+            raise ValueError(
+                "PHA and response detector-channel counts differ; supply the matching RMF."
+            )
+        grouped_counts = np.asarray(grouping @ observation.counts.data).ravel()
+        grouped_background = np.asarray(grouping @ observation.background.data).ravel()
+        # Observation.from_matrix splits groups at every change in backratio.
+        # This mean therefore recovers the common ratio within each nonempty
+        # group; it does not approximate unequal source/background scales.
+        grouped_backratio = np.divide(
+            np.asarray(grouping @ observation.backratio.data).ravel(),
+            group_size,
+            out=np.zeros_like(group_size, dtype=float),
+            where=group_size > 0,
         )
         e_min_channel = instrument.coords["e_min_channel"].data
         e_max_channel = instrument.coords["e_max_channel"].data
@@ -157,33 +209,38 @@ class ObsConfiguration(xr.Dataset):
         redistribution = scipy.sparse.csr_array(instrument.redistribution.data.to_scipy_sparse())
         area = instrument.area.data
         exposure = observation.exposure.data
+        areascal = np.where(quality_filter, observation.areascal.data, 0.0)
 
-        grouping_nan = observation.grouping.data * quality_filter
-        grouping_nan.fill_value = np.nan
-        e_min = sparse.nanmin(grouping_nan * e_min_channel, axis=1).todense()
-        e_max = sparse.nanmax(grouping_nan * e_max_channel, axis=1).todense()
+        # Empty groups retain sentinel bounds and are removed below. Explicit
+        # sparse coordinates avoid treating rejected channels as zero energy.
+        rows, columns = grouping.nonzero()
+        e_min = np.full(grouping.shape[0], np.inf)
+        e_max = np.full(grouping.shape[0], -np.inf)
+        np.minimum.at(e_min, rows, e_min_channel[columns])
+        np.maximum.at(e_max, rows, e_max_channel[columns])
 
-        transfer_matrix = grouping @ (redistribution * area * exposure)
+        # Compute the transfer matrix
+        transfer_matrix = grouping @ (redistribution.multiply(areascal[:, None]) * area * exposure)
 
-        # Keep valid folded channels and response bins.
-        row_idx = (e_min > low_energy) & (e_max < high_energy) & (grouping.sum(axis=1) > 0)
+        # These are boolean masks: rows select grouped detector channels in the
+        # fitted band; columns retain positive-energy bins with a response.
+        # Do not clip incident energies to the detector band: redistribution can
+        # bring photons from outside that band into the selected channels.
+        row_idx = (e_min >= low_energy) & (e_max <= high_energy) & (group_size > 0)
         col_idx = (e_min_unfolded > 0) & (redistribution.sum(axis=0) > 0)
-
-        if not row_idx.any():
+        if not np.any(row_idx):
             raise ValueError(
-                f"No channel falls inside the requested energy band "
-                f"[{low_energy}, {high_energy}] keV. This observation covers "
-                f"[{np.nanmin(e_min):.4g}, {np.nanmax(e_max):.4g}] keV after grouping "
-                f"and quality filtering."
+                "No usable grouped channels lie wholly inside the selected energy band."
             )
-        if not col_idx.any():
+        if not np.any(col_idx):
             raise ValueError(
                 "The response has no energy bin contributing to any channel: every "
                 "column of the redistribution matrix is empty or starts at zero energy. "
                 "Check the RMF."
             )
 
-        # Sparse elementwise operations may change format; CSR supports slicing.
+        # Apply the same detector-row and photon-column masks to the transfer
+        # matrix and its factors, keeping raw detector columns in the grouping.
         transfer_matrix = sparse.COO.from_scipy_sparse(transfer_matrix[row_idx][:, col_idx])
         redistribution_trimmed = sparse.COO.from_scipy_sparse(
             scipy.sparse.csr_array(redistribution)[:, col_idx]
@@ -191,18 +248,15 @@ class ObsConfiguration(xr.Dataset):
         grouping_trimmed = sparse.COO.from_scipy_sparse(
             scipy.sparse.csr_array(grouping)[row_idx, :]
         )
-        folded_counts = observation.folded_counts.data[row_idx]
-        folded_backratio = observation.folded_backratio.data[row_idx]
+        folded_counts = grouped_counts[row_idx]
+        folded_backratio = grouped_backratio[row_idx]
         area = instrument.area.data[col_idx]
         e_min_folded = e_min[row_idx]
         e_max_folded = e_max[row_idx]
         e_min_unfolded = e_min_unfolded[col_idx]
         e_max_unfolded = e_max_unfolded[col_idx]
 
-        if observation.folded_background is not None:
-            folded_background = observation.folded_background.data[row_idx]
-        else:
-            folded_background = np.zeros_like(folded_counts)
+        folded_background = grouped_background[row_idx]
 
         data_dict = {
             "transfer_matrix": (
@@ -216,8 +270,13 @@ class ObsConfiguration(xr.Dataset):
                 ["instrument_channel", "unfolded_channel"],
                 redistribution_trimmed,
                 {
-                    "description": "Redistribution matrix (RMF), trimmed to the same unfolded energy range as the transfer matrix. Together with grouping, area and exposure, it satisfies grouping @ (redistribution * area * exposure) == transfer_matrix."
+                    "description": "Redistribution matrix (RMF), trimmed to the same unfolded energy range as the transfer matrix. The transfer is grouping @ (areascal[:, None] * redistribution * area * exposure)."
                 },
+            ),
+            "areascal": (
+                ["instrument_channel"],
+                areascal,
+                {"description": "OGIP detector-channel response area scaling", "units": "1"},
             ),
             "grouping": (
                 ["folded_channel", "instrument_channel"],
@@ -263,6 +322,27 @@ class ObsConfiguration(xr.Dataset):
         return cls(
             data_dict,
             coords={
+                "channel": (
+                    ["instrument_channel"],
+                    observation.channel.data,
+                    {"description": "Original detector channel identifier"},
+                ),
+                "e_min_channel": (
+                    ["instrument_channel"],
+                    e_min_channel,
+                    {
+                        "description": "Raw detector lower energy aligned to grouping columns",
+                        "units": "keV",
+                    },
+                ),
+                "e_max_channel": (
+                    ["instrument_channel"],
+                    e_max_channel,
+                    {
+                        "description": "Raw detector upper energy aligned to grouping columns",
+                        "units": "keV",
+                    },
+                ),
                 "e_min_folded": (
                     ["folded_channel"],
                     e_min_folded,
@@ -300,17 +380,20 @@ class ObsConfiguration(xr.Dataset):
 
         Parameters:
             instrument: The instrument object.
-            exposure: The total exposure of the mock observation.
-            low_energy: The lower bound of the energy range to consider.
-            high_energy: The upper bound of the energy range to consider.
+            exposure: Exposure in seconds; Astropy time quantities are converted.
+            low_energy: Inclusive lower detector-energy bound in keV.
+            high_energy: Inclusive upper detector-energy bound in keV.
         """
 
-        n_channels = len(instrument.coords["instrument_channel"])
+        n_channels = instrument.sizes["instrument_channel"]
+        channels = (
+            instrument.channel.data if "channel" in instrument.coords else np.arange(n_channels)
+        )
 
         observation = Observation.from_matrix(
             np.zeros(n_channels),
             sparse.eye(n_channels),
-            np.arange(n_channels),
+            channels,
             np.zeros(n_channels, dtype=bool),
             exposure,
             backratio=np.ones(n_channels),
