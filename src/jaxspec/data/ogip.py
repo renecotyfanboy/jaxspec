@@ -7,8 +7,15 @@ import sparse
 from astropy.io import fits
 from astropy.table import QTable
 
+from ._validation import (
+    energy_bins,
+    nonnegative_values,
+    quantity_values,
+)
+
 
 def _from_header_or_column(header, data, key):
+    """Read scalar header metadata or its per-channel column representation."""
     if key in header:
         return header[key]
     if key in data.colnames:
@@ -18,6 +25,7 @@ def _from_header_or_column(header, data, key):
 
 
 def _reject_unsupported_hduclas(header, key, bad_value):
+    """Reject a PHA classification unsupported by the event-count loader."""
     if header.get(key) == bad_value:
         raise ValueError(
             f"The {key}={bad_value} keyword in the PHA file is not supported."
@@ -149,7 +157,13 @@ class DataPHA:
 
 class DataARF:
     r"""
-    Class to handle ARF data defined with OGIP standards.
+    Store an OGIP effective-area curve on the incident photon-energy grid.
+
+    Pair this container with a redistribution-only RMF to construct an Instrument.
+    ``energ_lo`` and ``energ_hi`` contain one lower and upper edge per photon bin
+    in keV; ``specresp`` contains the corresponding effective areas in cm².
+    Explicit units are converted to these defaults. Bins must be ordered and
+    nonoverlapping apart from storage roundoff; zero effective area is valid.
 
     ??? info "References"
         * [The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats)](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html)
@@ -157,9 +171,17 @@ class DataARF:
     """
 
     def __init__(self, energ_lo, energ_hi, specresp):
-        self.specresp = specresp
-        self.energ_lo = energ_lo
-        self.energ_hi = energ_hi
+        self.energ_lo, self.energ_hi = energy_bins(
+            quantity_values(energ_lo, u.keV, name="ARF ENERG_LO"),
+            quantity_values(energ_hi, u.keV, name="ARF ENERG_HI"),
+            name="ARF energies",
+            roundoff_dtype=np.result_type(np.asarray(energ_lo), np.asarray(energ_hi)),
+        )
+        self.specresp = nonnegative_values(
+            quantity_values(specresp, u.cm**2, name="ARF SPECRESP"),
+            name="ARF SPECRESP",
+            size=len(self.energ_lo),
+        )
 
     @classmethod
     def from_file(cls, arf_file: str | os.PathLike):
@@ -175,7 +197,7 @@ class DataARF:
         return cls(
             arf_table["ENERG_LO"],
             arf_table["ENERG_HI"],
-            arf_table["SPECRESP"].to(u.cm**2).value,
+            arf_table["SPECRESP"],
         )
 
 
