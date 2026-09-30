@@ -41,6 +41,18 @@ def quantity_values(values, unit, *, name):
     return np.asarray(values, dtype=np.float64)
 
 
+def exposure_seconds(values, *, name="Exposure"):
+    """Return one finite positive exposure, converting explicit time Quantities.
+
+    Use the same seconds convention for PHA input and synthetic observations so
+    a mock exposure in ks cannot be interpreted as a count-rate scale of seconds.
+    """
+    value = quantity_values(values, "s", name=name)
+    if value.ndim != 0 or not np.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be a finite, positive scalar.")
+    return float(value)
+
+
 def energy_bins(lower, upper, *, name, roundoff_dtype=None, ordered=True):
     """Validate bounds already expressed in keV without moving their edges.
 
@@ -140,6 +152,32 @@ def response_matrix(matrix, *, shape):
     return sparse.COO(np.asarray(matrix))
 
 
+def poisson_counts(values, *, name="counts"):
+    """Return exact int64 event counts, rejecting rounding and integer overflow.
+
+    Use this at file and array boundaries: truncating fractional or negative
+    measurements would silently change the data used by a Poisson likelihood.
+    Floating-point arrays are accepted only when every value is an integer.
+    """
+    array = np.asarray(require_unmasked(values, name=name))
+    if array.ndim != 1 or array.size == 0 or array.dtype.kind not in "iuf":
+        raise ValueError(f"{name} must be a nonempty one-dimensional array of event counts.")
+    if not np.isfinite(array).all() or np.any(array < 0):
+        raise ValueError(f"{name} must contain finite, nonnegative event counts.")
+    if array.dtype.kind == "f":
+        if np.any(array != np.floor(array)):
+            raise ValueError(
+                f"{name} contains fractional values. Supply raw event counts, not rates "
+                "or a background-subtracted spectrum, for a Poisson likelihood."
+            )
+        in_range = np.all(array < float(2**63))
+    else:
+        in_range = np.all(array <= np.iinfo(np.int64).max)
+    if not in_range:
+        raise ValueError(f"{name} exceeds the signed 64-bit event-count range.")
+    return array.astype(np.int64, copy=False)
+
+
 def detector_channels(values, *, size=None, name="Detector channel identifiers"):
     """Preserve integer channel labels, including integral Astropy Quantity values.
 
@@ -172,3 +210,47 @@ def detector_channels(values, *, size=None, name="Detector channel identifiers")
     if np.any(labels[1:] <= labels[:-1]):
         raise ValueError(f"{name} must be increasing, unique integers.")
     return labels
+
+
+def channel_vector(values, size, *, name, dtype=float):
+    """Broadcast scalar OGIP metadata or validate one value per detector channel.
+
+    Both header scalars and Type-I vector columns are valid storage forms for
+    area/background scaling. Shape checks prevent accidental channel mixing.
+    """
+    array = np.asarray(require_unmasked(values, name=name))
+    if array.dtype.kind not in "biuf" or not np.isfinite(array).all():
+        raise ValueError(f"{name} must contain finite numeric values.")
+    if np.issubdtype(np.dtype(dtype), np.integer) and np.any(array != np.floor(array)):
+        raise ValueError(f"{name} must contain integers.")
+    array = array.astype(dtype)
+    if array.ndim == 0:
+        array = np.full(size, array, dtype=dtype)
+    if array.shape != (size,) or not np.isfinite(array).all():
+        raise ValueError(f"{name} must be finite and scalar or have one value per channel.")
+    return array
+
+
+def poisson_grouping(grouping, size):
+    """Normalize a non-overlapping event-sum matrix to sparse COO storage.
+
+    Summing disjoint raw channels preserves independent Poisson counts; weighted
+    or overlapping groups do not have the likelihood assumed by a PHA fit.
+    """
+    require_unmasked(grouping, name="Grouping")
+    if not isinstance(grouping, sparse.COO):
+        grouping = (
+            sparse.COO.from_scipy_sparse(grouping)
+            if issparse(grouping)
+            else sparse.COO(np.asarray(grouping))
+        )
+    if (
+        grouping.ndim != 2
+        or grouping.fill_value != 0
+        or grouping.shape[0] == 0
+        or grouping.shape[1] != size
+        or not np.isin(grouping.data, [0, 1]).all()
+        or np.any(grouping.sum(axis=0).todense() > 1)
+    ):
+        raise ValueError("Grouping must sum disjoint detector channels with weights zero or one.")
+    return grouping.astype(bool)

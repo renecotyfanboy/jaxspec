@@ -8,9 +8,14 @@ from astropy.io import fits
 from astropy.table import QTable
 
 from ._validation import (
+    channel_vector,
+    detector_channels,
     energy_bins,
+    exposure_seconds,
     nonnegative_values,
+    poisson_counts,
     quantity_values,
+    require_unmasked,
 )
 
 
@@ -35,7 +40,26 @@ def _reject_unsupported_hduclas(header, key, bad_value):
 
 class DataPHA:
     r"""
-    Class to handle PHA data defined with OGIP standards.
+    Store a Type-I OGIP spectrum and its detector-channel metadata.
+
+    Use this container when reading a PHA file or constructing the equivalent
+    input for an Observation. ``counts`` contains raw nonnegative integer events,
+    and ``channel`` contains increasing, unique detector labels, not array offsets.
+    ``exposure`` is in seconds; explicit time Quantities are converted.
+
+    ``grouping`` uses the OGIP codes: 1 starts a group, -1 continues the previous
+    group, and 0 marks an ungrouped channel. Omitting it leaves channels separate.
+    The stored ``grouping`` is a sparse boolean matrix with grouped channels as
+    rows and raw detector channels as columns. ``quality`` defaults to zero
+    (usable); flags are retained here and applied when constructing a fit's
+    observation configuration.
+
+    ``backscal`` and ``areascal`` accept scalars or one value per channel.
+    BACKSCAL describes the extraction-region scale; AREASCAL scales the source
+    response. Source/background exposure and scaling ratios are combined by
+    ``Observation.from_ogip_container`` when both spectra are available.
+    Associated filenames and classification ``flags`` are retained as metadata.
+
     ??? info "References"
         * [The OGIP standard PHA file format](https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html)
     """
@@ -54,38 +78,36 @@ class DataPHA:
         areascal=1.0,
         flags=None,
     ):
-        self.channel = np.asarray(channel, dtype=int)
-        self.counts = np.asarray(counts, dtype=int)
-        self.exposure = float(exposure)
+        self.counts = poisson_counts(counts, name="PHA counts")
+        self.channel = detector_channels(
+            channel, size=len(self.counts), name="PHA channel identifiers"
+        )
+        self.exposure = exposure_seconds(exposure, name="PHA exposure")
 
-        self.quality = np.asarray(quality, dtype=int)
+        self.quality = channel_vector(
+            0 if quality is None else quality, len(self.counts), name="QUALITY", dtype=int
+        )
         self.backfile = backfile
         self.respfile = respfile
         self.ancrfile = ancrfile
-        self.backscal = np.asarray(backscal, dtype=float)
-        self.areascal = np.asarray(areascal, dtype=float)
-        self.flags = flags
+        self.backscal = channel_vector(backscal, len(self.counts), name="BACKSCAL")
+        self.areascal = channel_vector(areascal, len(self.counts), name="AREASCAL")
+        self.flags = [] if flags is None else list(flags)
 
         if grouping is not None:
-            # Indices array of the beginning of each group
-            b_grp = np.where(grouping == 1)[0]
-            # Indices array of the ending of each group
-            e_grp = np.hstack((b_grp[1:], len(channel)))
-
-            # Prepare data for sparse matrix
-            rows = []
-            cols = []
-            data = []
-
-            for i in range(len(b_grp)):
-                for j in range(b_grp[i], e_grp[i]):
-                    rows.append(i)
-                    cols.append(j)
-                    data.append(True)
-
-            # Create a COO sparse matrix
+            grouping = np.asarray(require_unmasked(grouping, name="GROUPING"))
+            if grouping.shape != self.counts.shape or not np.isin(grouping, [-1, 0, 1]).all():
+                raise ValueError("GROUPING must contain one of -1, 0 or 1 per channel.")
+            if grouping[0] == -1:
+                raise ValueError("GROUPING begins with -1 before any group starts.")
+            # Zero denotes an ungrouped channel; it must not disappear or get
+            # appended to the preceding bin when mixed with grouped channels.
+            rows = np.cumsum(grouping != -1) - 1
             grp_matrix = sparse.COO(
-                (data, (rows, cols)), shape=(len(b_grp), len(channel)), fill_value=0
+                np.stack((rows, np.arange(len(channel)))),
+                np.ones(len(channel), dtype=bool),
+                shape=(int(rows[-1]) + 1, len(channel)),
+                fill_value=0,
             )
 
         else:
@@ -127,8 +149,6 @@ class DataPHA:
         backscal = _from_header_or_column(header, data, "BACKSCAL")
         if "BACKSCAL" in header:
             backscal = backscal * np.ones_like(data["CHANNEL"], dtype=float)
-        backscal = np.where(backscal == 0, 1.0, backscal)
-
         areascal = _from_header_or_column(header, data, "AREASCAL")
 
         if header.get("HDUCLAS2") == "NET":
