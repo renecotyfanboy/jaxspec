@@ -5,7 +5,7 @@ import pytest
 import sparse
 
 from jaxspec.data import Instrument
-from jaxspec.data.ogip import DataARF
+from jaxspec.data.ogip import DataARF, DataRMF
 
 
 def make_instrument(**changes):
@@ -75,6 +75,11 @@ def test_arf_validation_also_applies_without_instrument_construction():
         DataARF([1, 1.5], [2, 3], [1, 2])
     with pytest.raises(ValueError, match="ARF SPECRESP"):
         DataARF([1, 2], [2, 3], [1, -2])
+
+
+def test_rmf_constructor_validates_energy_shape_before_compressed_rows():
+    with pytest.raises(ValueError, match="RMF energies"):
+        DataRMF([1, 1.5], [2, 3], [0, 0], [[], []], [[], []], [[], []], [0], [1], [2])
 
 
 def test_storage_roundoff_overlap_preserves_every_original_edge():
