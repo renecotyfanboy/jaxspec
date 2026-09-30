@@ -153,6 +153,8 @@ class DataPHA:
 
         if header.get("HDUCLAS2") == "NET":
             flags.append("NET")
+        if header.get("POISSERR") is False:
+            flags.append("NONPOISSON")
 
         kwargs = {
             "grouping": grouping,

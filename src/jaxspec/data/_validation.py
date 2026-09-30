@@ -254,3 +254,42 @@ def poisson_grouping(grouping, size):
     ):
         raise ValueError("Grouping must sum disjoint detector channels with weights zero or one.")
     return grouping.astype(bool)
+
+
+def split_background_groups(grouping, scale):
+    """Split groups at changes in background scaling to retain exact Poisson sums.
+
+    A single grouped background count has one source/background scale only if
+    that ratio is constant across its raw channels. Grating extraction vectors
+    can violate this. Refining those groups avoids averaging unequal ratios or
+    assuming an unknown within-group background spectral shape.
+
+    Callers supply a validated sparse COO grouping matrix and a nonempty scale
+    vector with one entry per raw detector channel. Return the refined matrix
+    and the number of additional groups. Equality is exact: treating nearby
+    ratios as equal would introduce an approximation to the likelihood.
+    """
+    if np.all(scale == scale[0]):
+        return grouping, 0
+    csr = grouping.to_scipy_sparse().tocsr()
+    csr.eliminate_zeros()
+    rows, columns = [], []
+    output_row = 0
+    for start, stop in zip(csr.indptr[:-1], csr.indptr[1:]):
+        indices = csr.indices[start:stop]
+        if not len(indices):
+            output_row += 1
+            continue
+        new_group = np.r_[True, scale[indices[1:]] != scale[indices[:-1]]]
+        local_rows = output_row + np.cumsum(new_group) - 1
+        rows.extend(local_rows)
+        columns.extend(indices)
+        output_row = int(local_rows[-1]) + 1
+    if output_row == grouping.shape[0]:
+        return grouping, 0
+    refined = sparse.COO(
+        np.array([rows, columns], dtype=np.int64),
+        np.ones(len(rows), dtype=bool),
+        shape=(output_row, grouping.shape[1]),
+    )
+    return refined, output_row - grouping.shape[0]
