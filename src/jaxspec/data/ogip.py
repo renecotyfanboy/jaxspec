@@ -78,6 +78,26 @@ def _rmf_matrix_unit(matrix):
     raise ValueError("RMF MATRIX units must be dimensionless or an effective area such as cm2.")
 
 
+def _cxc_dimensionless_rmf(header, stored_unit):
+    """Identify the documented Chandra ACIS redistribution ``au`` convention.
+
+    CXC's source-catalog product documentation labels the dimensionless ACIS
+    REDIST matrix ``au``. Interpret that exact context only; an ``au`` unit on
+    another instrument or a complete-area response is not silently discarded.
+    """
+    expected = {
+        "TELESCOP": "CHANDRA",
+        "INSTRUME": "ACIS",
+        "HDUCLASS": "OGIP",
+        "HDUCLAS1": "RESPONSE",
+        "HDUCLAS2": "RSP_MATRIX",
+        "HDUCLAS3": "REDIST",
+    }
+    return stored_unit == "au" and all(
+        str(header.get(key, "")).strip().upper() == value for key, value in expected.items()
+    )
+
+
 def _active_rmf_row(f_chan, n_chan, matrix, *, row, group_count, n_detector, scale):
     """Decode declared groups and weights before mapping a photon row to detectors.
 
@@ -468,10 +488,22 @@ class DataRMF:
         # Table retains variable-length MATRIX units without trying to coerce
         # its ragged object column into a homogeneous Quantity. Conversion is
         # explicit in the constructor for both fixed and variable row storage.
-        matrix_table = Table.read(rmf_file, matrix_extension)
+        cxc_convention = _cxc_dimensionless_rmf(matrix_header, stored_unit)
+        matrix_table = Table.read(
+            rmf_file, matrix_extension, unit_parse_strict="silent" if cxc_convention else "warn"
+        )
         ebounds_table = Table.read(rmf_file, ebounds_extension)
         matrix_values = matrix_table["MATRIX"]
         compatibility_notes = ()
+        if cxc_convention:
+            # Copy metadata only: values and original FITS bytes stay unchanged.
+            matrix_values = matrix_values.copy(copy_data=False)
+            matrix_values.unit = None
+            compatibility_notes = (
+                "Interpreted MATRIX unit 'au' as dimensionless for the documented "
+                "CHANDRA/ACIS OGIP REDIST convention; source: "
+                "https://cxc.cfa.harvard.edu/csc1/data_products/usage/",
+            )
 
         result = cls(
             matrix_table["ENERG_LO"],
