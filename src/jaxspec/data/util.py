@@ -20,111 +20,81 @@ if TYPE_CHECKING:
     from ..model.abc import SpectralModel
 
 
+_EXAMPLE_DIRECTORY = "example_data/NGC7793_ULX4"
+_EXAMPLE_PHA_FILES = {
+    "PN": "PN_spectrum_grp20.fits",
+    "MOS1": "MOS1_spectrum_grp.fits",
+    "MOS2": "MOS2_spectrum_grp.fits",
+}
+
+
+def _example_detectors(source):
+    """Select the supported detector set in the same order for spectra and responses."""
+    if source == "NGC7793_ULX4_PN":
+        return ("PN",)
+    if source == "NGC7793_ULX4_ALL":
+        return tuple(_EXAMPLE_PHA_FILES)
+    raise ValueError(f"{source} not recognized.")
+
+
 def load_example_pha(
     source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"],
-) -> (Observation, list[Observation] | dict[str, Observation]):
-    """
-    Load some example observations from the package data.
+) -> Observation | dict[str, Observation]:
+    """Load background-matched example spectra for testing or demonstrating a fit.
 
-    Parameters:
-        source: The source to be loaded. Can be either "NGC7793_ULX4_PN" or "NGC7793_ULX4_ALL".
+    ``NGC7793_ULX4_PN`` returns one Observation. ``NGC7793_ULX4_ALL`` returns
+    an ordered mapping for PN, MOS1 and MOS2, matching ``load_example_instruments``.
     """
-
-    if source == "NGC7793_ULX4_PN":
-        return Observation.from_pha_file(
-            table_manager.fetch("example_data/NGC7793_ULX4/PN_spectrum_grp20.fits"),
-            bkg_path=table_manager.fetch("example_data/NGC7793_ULX4/PNbackground_spectrum.fits"),
+    observations = {
+        detector: Observation.from_pha_file(
+            table_manager.fetch(f"{_EXAMPLE_DIRECTORY}/{_EXAMPLE_PHA_FILES[detector]}"),
+            bkg_path=table_manager.fetch(
+                f"{_EXAMPLE_DIRECTORY}/{detector}background_spectrum.fits"
+            ),
         )
-
-    elif source == "NGC7793_ULX4_ALL":
-        return {
-            "PN": Observation.from_pha_file(
-                table_manager.fetch("example_data/NGC7793_ULX4/PN_spectrum_grp20.fits"),
-                bkg_path=table_manager.fetch(
-                    "example_data/NGC7793_ULX4/PNbackground_spectrum.fits"
-                ),
-            ),
-            "MOS1": Observation.from_pha_file(
-                table_manager.fetch("example_data/NGC7793_ULX4/MOS1_spectrum_grp.fits"),
-                bkg_path=table_manager.fetch(
-                    "example_data/NGC7793_ULX4/MOS1background_spectrum.fits"
-                ),
-            ),
-            "MOS2": Observation.from_pha_file(
-                table_manager.fetch("example_data/NGC7793_ULX4/MOS2_spectrum_grp.fits"),
-                bkg_path=table_manager.fetch(
-                    "example_data/NGC7793_ULX4/MOS2background_spectrum.fits"
-                ),
-            ),
-        }
-
-    else:
-        raise ValueError(f"{source} not recognized.")
+        for detector in _example_detectors(source)
+    }
+    return observations["PN"] if source == "NGC7793_ULX4_PN" else observations
 
 
-def load_example_instruments(source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"]):
+def load_example_instruments(
+    source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"],
+) -> Instrument | dict[str, Instrument]:
+    """Load the response pairs matched to ``load_example_pha``.
+
+    ``NGC7793_ULX4_PN`` returns one Instrument. ``NGC7793_ULX4_ALL`` returns
+    an ordered mapping for PN, MOS1 and MOS2.
     """
-    Load some example instruments from the package data.
-
-    Parameters:
-        source: The source to be loaded. Can be either "NGC7793_ULX4_PN" or "NGC7793_ULX4_ALL".
-
-    """
-    if source == "NGC7793_ULX4_PN":
-        return Instrument.from_ogip_file(
-            table_manager.fetch("example_data/NGC7793_ULX4/PN.rmf"),
-            table_manager.fetch("example_data/NGC7793_ULX4/PN.arf"),
+    instruments = {
+        detector: Instrument.from_ogip_file(
+            table_manager.fetch(f"{_EXAMPLE_DIRECTORY}/{detector}.rmf"),
+            table_manager.fetch(f"{_EXAMPLE_DIRECTORY}/{detector}.arf"),
         )
-
-    elif source == "NGC7793_ULX4_ALL":
-        return {
-            "PN": Instrument.from_ogip_file(
-                table_manager.fetch("example_data/NGC7793_ULX4/PN.rmf"),
-                table_manager.fetch("example_data/NGC7793_ULX4/PN.arf"),
-            ),
-            "MOS1": Instrument.from_ogip_file(
-                table_manager.fetch("example_data/NGC7793_ULX4/MOS1.rmf"),
-                table_manager.fetch("example_data/NGC7793_ULX4/MOS1.arf"),
-            ),
-            "MOS2": Instrument.from_ogip_file(
-                table_manager.fetch("example_data/NGC7793_ULX4/MOS2.rmf"),
-                table_manager.fetch("example_data/NGC7793_ULX4/MOS2.arf"),
-            ),
-        }
-
-    else:
-        raise ValueError(f"{source} not recognized.")
+        for detector in _example_detectors(source)
+    }
+    return instruments["PN"] if source == "NGC7793_ULX4_PN" else instruments
 
 
-def load_example_obsconf(source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"]):
+def load_example_obsconf(
+    source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"],
+) -> ObsConfiguration | dict[str, ObsConfiguration]:
+    """Build ready-to-fit example observations over the 0.5--8 keV detector band.
+
+    ``NGC7793_ULX4_PN`` returns one configuration. ``NGC7793_ULX4_ALL`` returns
+    an ordered mapping for PN, MOS1 and MOS2 with their matched spectra and responses.
     """
-    Load some example ObsConfigurations.
-
-    Parameters:
-        source: The source to be loaded. Can be either "NGC7793_ULX4_PN" or "NGC7793_ULX4_ALL".
-    """
-
-    if source in "NGC7793_ULX4_PN":
-        instrument = load_example_instruments(source)
-        observation = load_example_pha(source)
-
+    instruments = load_example_instruments(source)
+    observations = load_example_pha(source)
+    if source == "NGC7793_ULX4_PN":
         return ObsConfiguration.from_instrument(
-            instrument, observation, low_energy=0.5, high_energy=8.0
+            instruments, observations, low_energy=0.5, high_energy=8.0
         )
-
-    elif source == "NGC7793_ULX4_ALL":
-        instruments_dict = load_example_instruments(source)
-        observations_dict = load_example_pha(source)
-
-        return {
-            key: ObsConfiguration.from_instrument(
-                instruments_dict[key], observations_dict[key], low_energy=0.5, high_energy=8.0
-            )
-            for key in instruments_dict.keys()
-        }
-
-    else:
-        raise ValueError(f"{source} not recognized.")
+    return {
+        detector: ObsConfiguration.from_instrument(
+            instruments[detector], observations[detector], low_energy=0.5, high_energy=8.0
+        )
+        for detector in instruments
+    }
 
 
 def forward_model_with_multiple_inputs(
@@ -254,25 +224,30 @@ def data_path_finder(
     pha_path: str, require_arf: bool = True, require_rmf: bool = True, require_bkg: bool = False
 ) -> tuple[str | None, str | None, str | None]:
     """
-    Function which tries its best to find the ARF, RMF and BKG files associated with a given PHA file.
+    Resolve the ARF, RMF and background files named in a PHA header.
+
+    Look beside the PHA file for each relative link, accepting the exact name
+    or its gzip counterpart. An absent, blank or ``none`` header value means
+    no associated file and returns None, regardless of the corresponding
+    ``require_*`` flag. A named file is loaded when present even if optional.
 
     Parameters:
         pha_path: The PHA file path.
-        require_arf: Whether to raise an error if the ARF file is not found.
-        require_rmf: Whether to raise an error if the RMF file is not found.
-        require_bkg: Whether to raise an error if the BKG file is not found.
+        require_arf: Whether to raise if a named ARF file cannot be found.
+        require_rmf: Whether to raise if a named RMF file cannot be found.
+        require_bkg: Whether to raise if a named background file cannot be found.
 
     Returns:
-        arf_path: The ARF file path.
-        rmf_path: The RMF file path.
-        bkg_path: The BKG file path.
+        arf_path: The resolved ARF path, or None when no file is associated or optional and missing.
+        rmf_path: The resolved RMF path, or None when no file is associated or optional and missing.
+        bkg_path: The resolved background path, or None when no file is associated or optional and missing.
     """
 
     def find_path(file_name: str, directory: str, raise_err: bool = True) -> str | None:
-        """Resolve one header filename, optionally raising when it is missing."""
-        if file_name.lower() == "none" or file_name == "":
+        """Look up every named link; optionality controls only a missing-file error."""
+        file_name = "" if file_name is None else str(file_name).strip()
+        if not file_name or file_name.lower() == "none":
             return None
-
         return find_file_or_compressed_in_dir(file_name, directory, raise_err)
 
     header = fits.getheader(pha_path, "SPECTRUM")
@@ -288,23 +263,23 @@ def data_path_finder(
 def find_file_or_compressed_in_dir(
     path: str | Path, directory: str | Path, raise_err: bool
 ) -> str | None:
-    """
-    Try to find a file or its .gz compressed version in a given directory and return
-    the full path of the file. Returns ``None`` when it is missing and ``raise_err``
-    is ``False``.
+    """Resolve the exact named calibration/background file or its gzip equivalent.
+
+    Relative links are interpreted beside the PHA file; absolute paths retain
+    their meaning. A similarly prefixed backup is not a calibration match.
+    Optional missing files return None, while required named files raise an
+    error that identifies the expected path.
     """
     path = Path(path) if isinstance(path, str) else path
     directory = Path(directory) if isinstance(directory, str) else directory
 
-    if directory.joinpath(path).exists():
-        return str(directory.joinpath(path))
-
-    # Only the exact ``.gz`` sibling represents the same file.
-    compressed = directory.joinpath(str(path) + ".gz")
-    if compressed.exists():
-        return str(compressed)
-
+    candidate = directory.joinpath(path)
+    candidates = [candidate]
+    if candidate.suffix.lower() != ".gz":
+        candidates.append(candidate.with_name(candidate.name + ".gz"))
+    for file in candidates:
+        if file.is_file():
+            return str(file)
     if raise_err:
         raise FileNotFoundError(f"Can't find {path}(.gz) in {directory}.")
-
     return None
