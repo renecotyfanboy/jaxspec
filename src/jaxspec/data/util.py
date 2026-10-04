@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypeVar
+from typing import TYPE_CHECKING, NamedTuple, TypeVar
 
 import jax
 import numpyro
@@ -20,72 +20,107 @@ if TYPE_CHECKING:
     from ..model.abc import SpectralModel
 
 
-_EXAMPLE_DIRECTORY = "example_data/NGC7793_ULX4"
-_EXAMPLE_PHA_FILES = {
-    "PN": "PN_spectrum_grp20.fits",
-    "MOS1": "MOS1_spectrum_grp.fits",
-    "MOS2": "MOS2_spectrum_grp.fits",
+_EXAMPLE_DIRECTORY = "example_data"
+
+
+class _ExampleObservation(NamedTuple):
+    """One observation's label and matched files, relative to the example directory.
+
+    ``background=None`` allows normal BACKFILE lookup beside the spectrum;
+    ``arf=None`` means the response already includes effective area.
+    """
+
+    label: str
+    pha: str
+    background: str | None
+    rmf: str
+    arf: str | None
+
+
+_NGC7793_ULX4 = (
+    _ExampleObservation(
+        "PN",
+        "NGC7793_ULX4/PN_spectrum_grp20.fits",
+        "NGC7793_ULX4/PNbackground_spectrum.fits",
+        "NGC7793_ULX4/PN.rmf",
+        "NGC7793_ULX4/PN.arf",
+    ),
+    _ExampleObservation(
+        "MOS1",
+        "NGC7793_ULX4/MOS1_spectrum_grp.fits",
+        "NGC7793_ULX4/MOS1background_spectrum.fits",
+        "NGC7793_ULX4/MOS1.rmf",
+        "NGC7793_ULX4/MOS1.arf",
+    ),
+    _ExampleObservation(
+        "MOS2",
+        "NGC7793_ULX4/MOS2_spectrum_grp.fits",
+        "NGC7793_ULX4/MOS2background_spectrum.fits",
+        "NGC7793_ULX4/MOS2.rmf",
+        "NGC7793_ULX4/MOS2.arf",
+    ),
+)
+# Add a source here and its file hashes to table_manager's registry to expose
+# another dataset through all three loaders. Tuple order is the returned order.
+_EXAMPLE_OBSERVATIONS = {
+    "NGC7793_ULX4_PN": _NGC7793_ULX4[:1],
+    "NGC7793_ULX4_ALL": _NGC7793_ULX4,
 }
 
 
-def _example_detectors(source):
-    """Select the supported detector set in the same order for spectra and responses."""
-    if source == "NGC7793_ULX4_PN":
-        return ("PN",)
-    if source == "NGC7793_ULX4_ALL":
-        return tuple(_EXAMPLE_PHA_FILES)
-    raise ValueError(f"{source} not recognized.")
+def _example_observations(source: str) -> tuple[_ExampleObservation, ...]:
+    """Select the registered observation paths before fetching example data."""
+    try:
+        return _EXAMPLE_OBSERVATIONS[source]
+    except KeyError:
+        raise ValueError(f"{source} not recognized.") from None
 
 
-def load_example_pha(
-    source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"],
-) -> Observation | dict[str, Observation]:
+def _fetch_example_file(path: str | None) -> str | None:
+    """Fetch a registered relative path only when its example is requested."""
+    return None if path is None else table_manager.fetch(f"{_EXAMPLE_DIRECTORY}/{path}")
+
+
+def load_example_pha(source: str) -> Observation | dict[str, Observation]:
     """Load background-matched example spectra for testing or demonstrating a fit.
 
-    ``NGC7793_ULX4_PN`` returns one Observation. ``NGC7793_ULX4_ALL`` returns
-    an ordered mapping for PN, MOS1 and MOS2, matching ``load_example_instruments``.
+    A source with one registered observation, such as ``NGC7793_ULX4_PN``,
+    returns one Observation. Multiple observations return an ordered mapping;
+    ``NGC7793_ULX4_ALL`` has PN, MOS1 and MOS2, matching ``load_example_instruments``.
     """
     observations = {
-        detector: Observation.from_pha_file(
-            table_manager.fetch(f"{_EXAMPLE_DIRECTORY}/{_EXAMPLE_PHA_FILES[detector]}"),
-            bkg_path=table_manager.fetch(
-                f"{_EXAMPLE_DIRECTORY}/{detector}background_spectrum.fits"
-            ),
+        entry.label: Observation.from_pha_file(
+            _fetch_example_file(entry.pha), bkg_path=_fetch_example_file(entry.background)
         )
-        for detector in _example_detectors(source)
+        for entry in _example_observations(source)
     }
-    return observations["PN"] if source == "NGC7793_ULX4_PN" else observations
+    return next(iter(observations.values())) if len(observations) == 1 else observations
 
 
-def load_example_instruments(
-    source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"],
-) -> Instrument | dict[str, Instrument]:
+def load_example_instruments(source: str) -> Instrument | dict[str, Instrument]:
     """Load the response pairs matched to ``load_example_pha``.
 
-    ``NGC7793_ULX4_PN`` returns one Instrument. ``NGC7793_ULX4_ALL`` returns
-    an ordered mapping for PN, MOS1 and MOS2.
+    A source with one registered observation returns one Instrument. Multiple
+    observations return an ordered mapping with the same labels as the spectra.
     """
     instruments = {
-        detector: Instrument.from_ogip_file(
-            table_manager.fetch(f"{_EXAMPLE_DIRECTORY}/{detector}.rmf"),
-            table_manager.fetch(f"{_EXAMPLE_DIRECTORY}/{detector}.arf"),
+        entry.label: Instrument.from_ogip_file(
+            _fetch_example_file(entry.rmf), _fetch_example_file(entry.arf)
         )
-        for detector in _example_detectors(source)
+        for entry in _example_observations(source)
     }
-    return instruments["PN"] if source == "NGC7793_ULX4_PN" else instruments
+    return next(iter(instruments.values())) if len(instruments) == 1 else instruments
 
 
-def load_example_obsconf(
-    source: Literal["NGC7793_ULX4_PN", "NGC7793_ULX4_ALL"],
-) -> ObsConfiguration | dict[str, ObsConfiguration]:
+def load_example_obsconf(source: str) -> ObsConfiguration | dict[str, ObsConfiguration]:
     """Build ready-to-fit example observations over the 0.5--8 keV detector band.
 
-    ``NGC7793_ULX4_PN`` returns one configuration. ``NGC7793_ULX4_ALL`` returns
-    an ordered mapping for PN, MOS1 and MOS2 with their matched spectra and responses.
+    A source with one registered observation returns one configuration. Multiple
+    observations return an ordered mapping with matched spectra and responses.
     """
     instruments = load_example_instruments(source)
     observations = load_example_pha(source)
-    if source == "NGC7793_ULX4_PN":
+    if isinstance(instruments, Instrument):
         return ObsConfiguration.from_instrument(
             instruments, observations, low_energy=0.5, high_energy=8.0
         )
