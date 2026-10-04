@@ -281,5 +281,6 @@ def find_file_or_compressed_in_dir(
         if file.is_file():
             return str(file)
     if raise_err:
-        raise FileNotFoundError(f"Can't find {path}(.gz) in {directory}.")
+        tried = ", ".join(str(file) for file in candidates)
+        raise FileNotFoundError(f"Can't find {path} (tried: {tried}).")
     return None

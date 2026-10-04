@@ -67,3 +67,24 @@ def test_absolute_links_and_none_markers_are_preserved(tmp_path):
     spectra.mkdir()
     path = write_pha(spectra / "source.pha", RESPFILE=str(response), ANCRFILE=" NONE ", BACKFILE="")
     assert data_path_finder(path) == (None, str(response), None)
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+@pytest.mark.parametrize(
+    ("name", "tried_names"),
+    [
+        ("missing.rmf", ("missing.rmf", "missing.rmf.gz")),
+        ("missing.rmf.gz", ("missing.rmf.gz",)),
+    ],
+)
+def test_missing_file_error_lists_only_the_paths_tried(tmp_path, absolute, name, tried_names):
+    """Missing response errors identify real candidates, including absolute gzip paths."""
+    directory = tmp_path / "spectra"
+    parent = tmp_path / "calibration" if absolute else directory
+    path = parent / name if absolute else name
+
+    with pytest.raises(FileNotFoundError) as error:
+        find_file_or_compressed_in_dir(path, directory, True)
+
+    tried = ", ".join(str(parent / candidate) for candidate in tried_names)
+    assert str(error.value) == f"Can't find {path} (tried: {tried})."
