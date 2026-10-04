@@ -86,11 +86,17 @@ class ObsConfiguration(xr.Dataset):
 
         Parameters:
             pha_path: The path to the PHA file.
-            rmf_path: The path to the RMF file.
+            rmf_path: The path to the RMF or combined RSP file. When omitted,
+                use the PHA's RESPFILE link. Supply this argument when that link
+                is absent or names an unavailable response.
             arf_path: The path to the ARF file.
             bkg_path: The path to the background file.
             low_energy: The lower bound of the energy range to consider.
             high_energy: The upper bound of the energy range to consider.
+
+        Raises:
+            ValueError: No response is specified by RESPFILE or ``rmf_path``.
+            FileNotFoundError: A required named calibration file cannot be found.
         """
 
         from .util import data_path_finder
@@ -105,6 +111,13 @@ class ObsConfiguration(xr.Dataset):
         arf_path = arf_path_default if arf_path is None else arf_path
         rmf_path = rmf_path_default if rmf_path is None else rmf_path
         bkg_path = bkg_path_default if bkg_path is None else bkg_path
+
+        if rmf_path is None or (isinstance(rmf_path, str) and not rmf_path.strip()):
+            raise ValueError(
+                f"No response file was supplied for PHA {str(pha_path)!r}. "
+                "Set its RESPFILE header to an RMF or combined RSP file, "
+                "or pass rmf_path='path/to/response.rmf'."
+            )
 
         instrument = Instrument.from_ogip_file(
             rmf_path, arf_path=arf_path if arf_path != "" else None
