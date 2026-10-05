@@ -1,28 +1,39 @@
 import numpy as np
 import xarray as xr
 
+from ._validation import (
+    channel_vector,
+    detector_channels,
+    exposure_seconds,
+    poisson_counts,
+    poisson_grouping,
+    split_background_groups,
+)
 from .ogip import DataPHA
 
 
 class Observation(xr.Dataset):
-    """
-    Class to store the data of an observation
+    """Raw event spectra and their detector-channel grouping.
+
+    Grouped counts here retain all channels assigned to each stored group.
+    ``ObsConfiguration.from_instrument`` applies quality and energy selection
+    when matching the observation to its response.
     """
 
     counts: xr.DataArray
-    """The observed counts"""
+    """Source-aperture event counts on instrument_channel."""
     folded_counts: xr.DataArray
-    """The observed counts, after grouping"""
+    """Source event counts on folded_channel, grouped before quality selection."""
     grouping: xr.DataArray
-    """The grouping matrix"""
+    """Zero-or-one event-sum weights on (folded_channel, instrument_channel)."""
     quality: xr.DataArray
-    """The quality flag"""
+    """Flags per raw detector channel; zero marks usable measurements."""
     exposure: xr.DataArray
-    """The total exposure"""
+    """Source exposure in seconds."""
     background: xr.DataArray
-    """The background counts if provided, otherwise 0"""
+    """Background-aperture event counts on instrument_channel; zeros if absent."""
     folded_background: xr.DataArray
-    """The background counts, after grouping"""
+    """Background event counts on folded_channel, grouped before quality selection."""
 
     __slots__ = (
         "background",
@@ -48,22 +59,51 @@ class Observation(xr.Dataset):
         background=None,
         backratio=1.0,
         attributes: dict | None = None,
+        *,
+        areascal=1.0,
     ):
+        """Build raw and grouped event spectra with explicit extraction scaling.
+
+        ``counts`` and ``background`` contain event counts per raw detector
+        channel. ``grouping`` has shape ``(n_groups, n_channels)`` and sums
+        disjoint channel sets with zero-or-one weights.
+        ``backratio`` converts expected background-region counts to expected
+        source-region background counts. ``areascal`` multiplies the folded
+        source response per detector channel. Groups crossing unequal background
+        ratios are refined so each likelihood bin has one exact scaling factor.
+        Exposure is in seconds unless an explicit Astropy time Quantity is supplied.
+        """
         if attributes is None:
             attributes = {}
 
+        counts = poisson_counts(counts)
+        exposure = exposure_seconds(exposure, name="Observation exposure")
+        channel = detector_channels(channel, size=len(counts), name="PHA channel identifiers")
         if background is None:
             background = np.zeros_like(counts, dtype=np.int64)
+        else:
+            background = poisson_counts(background, name="background counts")
+        if background.shape != counts.shape:
+            raise ValueError("Source and background counts must have matching channel shapes.")
+        quality = channel_vector(quality, len(counts), name="QUALITY", dtype=int)
+        backratio = channel_vector(backratio, len(counts), name="background scaling")
+        areascal = channel_vector(areascal, len(counts), name="AREASCAL")
+        if np.any(backratio[quality == 0] <= 0) or np.any(areascal[quality == 0] <= 0):
+            raise ValueError("Background scaling and AREASCAL must be positive in usable channels.")
+        grouping = poisson_grouping(grouping, len(counts))
+        grouping, split_count = split_background_groups(grouping, backratio)
+        attributes = dict(attributes)
+        attributes["background_scale_group_splits"] = split_count
 
         data_dict = {
             "counts": (
                 ["instrument_channel"],
-                np.asarray(counts, dtype=np.int64),
+                counts,
                 {"description": "Counts", "unit": "photons"},
             ),
             "folded_counts": (
                 ["folded_channel"],
-                np.asarray(np.ma.filled(grouping @ counts), dtype=np.int64),
+                poisson_counts(np.ma.filled(grouping @ counts), name="grouped counts"),
                 {"description": "Folded counts, after grouping", "unit": "photons"},
             ),
             "grouping": (
@@ -76,11 +116,19 @@ class Observation(xr.Dataset):
                 np.asarray(quality, dtype=np.int64),
                 {"description": "Quality flag."},
             ),
-            "exposure": ([], float(exposure), {"description": "Total exposure", "unit": "s"}),
+            "exposure": ([], exposure, {"description": "Total exposure", "unit": "s"}),
+            "areascal": (
+                ["instrument_channel"],
+                areascal,
+                {"description": "OGIP source response area scaling", "unit": "1"},
+            ),
             "backratio": (
                 ["instrument_channel"],
                 np.asarray(backratio, dtype=float),
-                {"description": "Background scaling (SRC_BACKSCAL/BKG_BACKSCAL)"},
+                {
+                    "description": "Scale from expected background-aperture counts to source-aperture "
+                    "background counts; PHA inputs include exposure, BACKSCAL and AREASCAL ratios."
+                },
             ),
             "folded_backratio": (
                 ["folded_channel"],
@@ -91,7 +139,7 @@ class Observation(xr.Dataset):
             ),
             "background": (
                 ["instrument_channel"],
-                np.asarray(background, dtype=np.int64),
+                background,
                 {"description": "Background counts", "unit": "photons"},
             ),
             "folded_background": (
@@ -106,7 +154,7 @@ class Observation(xr.Dataset):
             coords={
                 "channel": (
                     ["instrument_channel"],
-                    np.asarray(channel, dtype=np.int64),
+                    channel,
                     {"description": "Channel number"},
                 ),
                 "grouped_channel": (
@@ -115,33 +163,65 @@ class Observation(xr.Dataset):
                     {"description": "Channel number"},
                 ),
             },
-            attrs=attributes | cls._default_attributes,
+            attrs=cls._default_attributes
+            if attributes is None
+            else attributes | cls._default_attributes,
         )
 
     @classmethod
     def from_ogip_container(cls, pha: DataPHA, bkg: DataPHA | None = None, **metadata):
+        """Match source/background channels and preserve their Poisson counting data.
+
+        Background-subtracted or explicitly non-Poisson spectra cannot define
+        this likelihood. Supply the original TOTAL source and BKG spectra.
+        """
+        for label, spectrum in (("Source", pha), ("Background", bkg)):
+            if spectrum is not None and set(spectrum.flags) & {"NET", "NONPOISSON"}:
+                raise ValueError(
+                    f"{label} spectrum is background-subtracted or non-Poisson. "
+                    "Supply original TOTAL source and Poisson BKG event spectra."
+                )
+        quality = pha.quality.copy()
         if bkg is not None:
-            backratio = np.nan_to_num(
-                (pha.backscal * pha.exposure * pha.areascal)
-                / (bkg.backscal * bkg.exposure * bkg.areascal)
+            indices = np.searchsorted(bkg.channel, pha.channel)
+            if np.any(indices >= len(bkg.channel)) or not np.array_equal(
+                bkg.channel[np.minimum(indices, len(bkg.channel) - 1)], pha.channel
+            ):
+                raise ValueError(
+                    "Background spectrum is missing source detector channel identifiers."
+                )
+            quality = np.where(quality != 0, quality, bkg.quality[indices])
+            valid = quality == 0
+            for label, values in (
+                ("source BACKSCAL", pha.backscal),
+                ("source AREASCAL", pha.areascal),
+                ("background BACKSCAL", bkg.backscal[indices]),
+                ("background AREASCAL", bkg.areascal[indices]),
+            ):
+                if np.any(values[valid] <= 0):
+                    raise ValueError(f"{label} must be positive in usable channels.")
+            backratio = np.divide(
+                pha.backscal * pha.exposure * pha.areascal,
+                bkg.backscal[indices] * bkg.exposure * bkg.areascal[indices],
+                out=np.ones_like(pha.areascal),
+                where=valid,
             )
+            background = bkg.counts[indices]
+            metadata["background_exposure"] = bkg.exposure
         else:
             backratio = np.ones_like(pha.counts)
-
-        if (bkg is not None) and ("NET" in pha.flags):
-            counts = pha.counts + bkg.counts * backratio
-        else:
-            counts = pha.counts
+            background = None
 
         return cls.from_matrix(
-            counts,
+            pha.counts,
             pha.grouping,
             pha.channel,
-            pha.quality,
+            quality,
             pha.exposure,
             backratio=backratio,
-            background=bkg.counts if bkg is not None else None,
+            background=background,
             attributes=metadata,
+            areascal=pha.areascal,
         )
 
     @classmethod
@@ -152,7 +232,7 @@ class Observation(xr.Dataset):
         Parameters:
             pha_path: Path to the PHA file
             bkg_path: Path to the background file
-            metadata: Additional metadata to add to the observation
+            **metadata (dict): Additional metadata to add to the observation
         """
         from .util import data_path_finder
 
@@ -181,7 +261,7 @@ class Observation(xr.Dataset):
         Plot the counts
 
         Parameters:
-            **kwargs: `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.step.html#xarray.DataArray.plot.line
+            **kwargs (dict): `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.step.html#xarray.DataArray.plot.line
         """
 
         return self.counts.plot.step(x="instrument_channel", yscale="log", where="post", **kwargs)
