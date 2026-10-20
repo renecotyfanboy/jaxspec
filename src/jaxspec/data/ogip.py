@@ -13,6 +13,7 @@ from ._validation import (
     exposure_seconds,
     nonnegative_values,
     poisson_counts,
+    quantity_values,
     require_unmasked,
 )
 
@@ -292,14 +293,16 @@ class DataPHA:
             raise ValueError("No QUALITY column found in the PHA file.")
 
         backscal = _from_header_or_column(header, data, "BACKSCAL")
-        if "BACKSCAL" in header:
-            backscal = backscal * np.ones_like(data["CHANNEL"], dtype=float)
-        backscal = np.where(backscal == 0, 1.0, backscal)
-
         areascal = _from_header_or_column(header, data, "AREASCAL")
 
         if header.get("HDUCLAS2") == "NET":
             flags.append("NET")
+        # OGIP permits STAT_ERR in place of POISSERR. Do not silently discard
+        # supplied statistical errors and assume a Poisson experiment instead.
+        if header.get("POISSERR") is False or (
+            "STAT_ERR" in data.colnames and header.get("POISSERR") is not True
+        ):
+            flags.append("NONPOISSON")
 
         kwargs = {
             "grouping": grouping,
@@ -315,7 +318,8 @@ class DataPHA:
         if "COUNTS" in data.colnames:
             counts = data["COUNTS"]
         elif "RATE" in data.colnames:
-            counts = data["RATE"] * header["EXPOSURE"]
+            rate = quantity_values(data["RATE"], u.ct / u.s, name="PHA RATE")
+            counts = rate * exposure_seconds(header["EXPOSURE"], name="PHA exposure")
         else:
             raise ValueError("No COUNTS or RATE column found in the PHA file.")
 
