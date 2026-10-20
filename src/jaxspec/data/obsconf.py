@@ -19,24 +19,42 @@ def to_jax_matrix(scoo, *, sparse: bool):
 
 
 class ObsConfiguration(xr.Dataset):
-    """
-    Class to store the data of a folding model, which is the link between the unfolded and folded spectra.
+    """Selected event counts and response arrays for predicting the fitted spectrum.
+
+    ``folded_channel`` indexes selected, nonempty groups of usable channels.
+    ``instrument_channel`` retains the matched raw detector channels, including
+    channels excluded from those groups. ``unfolded_channel`` indexes retained
+    incident photon-energy bins, whose coverage can extend beyond the fitted
+    detector band.
     """
 
     transfer_matrix: xr.DataArray
-    """The transfer matrix"""
+    """Response on (folded_channel, unfolded_channel), in cm² s.
+
+    Includes grouping, redistribution, effective area, exposure and source
+    AREASCAL. Multiplying by integrated photon flux in photons/cm²/s predicts
+    source counts in the selected groups.
+    """
     redistribution: xr.DataArray
-    """The redistribution matrix (RMF), trimmed to the same energy range as the transfer matrix"""
+    """Dimensionless weights on (instrument_channel, unfolded_channel).
+
+    Incident bins match the transfer matrix's columns; detector rows retain
+    the matched raw channels before quality and group selection.
+    """
     grouping: xr.DataArray
-    """The grouping matrix, trimmed to the same channel range as the transfer matrix"""
+    """Event-sum weights on (folded_channel, instrument_channel).
+
+    Rows match the transfer matrix's selected groups. Columns retain matched
+    raw channels, with zero weight for rejected channels.
+    """
     area: xr.DataArray
-    """The effective area of the instrument"""
+    """Effective area in cm² on the retained unfolded_channel bins."""
     exposure: xr.DataArray
-    """The total exposure"""
+    """Source exposure in seconds."""
     folded_counts: xr.DataArray
-    """The observed counts, after grouping"""
+    """Source-aperture event counts on the selected folded_channel groups."""
     folded_background: xr.DataArray
-    """The background counts, after grouping"""
+    """Background-aperture event counts on the same selected folded_channel groups."""
 
     __slots__ = (
         "area",
@@ -49,7 +67,7 @@ class ObsConfiguration(xr.Dataset):
     )
 
     def _energy_bounds(self, suffix: str) -> np.ndarray:
-        """Stack the ``(e_min, e_max)`` coordinate pair for one bin axis, in keV."""
+        """Read concrete keV bounds for response preparation and plotting."""
         return np.stack(
             (
                 np.asarray(self.coords[f"e_min_{suffix}"], dtype=np.float64),
