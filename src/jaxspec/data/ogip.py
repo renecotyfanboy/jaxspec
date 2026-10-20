@@ -7,6 +7,10 @@ import sparse
 from astropy.io import fits
 from astropy.table import QTable
 
+from ._validation import (
+    require_unmasked,
+)
+
 
 def _from_header_or_column(header, data, key):
     """Read scalar header metadata or its per-channel column representation."""
@@ -25,6 +29,28 @@ def _reject_unsupported_hduclas(header, key, bad_value):
             f"The {key}={bad_value} keyword in the PHA file is not supported."
             f"Please open an issue if this is required."
         )
+
+
+def _rmf_integer_vector(values, *, name):
+    """Decode active compressed-row integers without truncating or wrapping labels.
+
+    A scalar FITS column and a one-element vector describe the same group. This
+    helper accepts both, while leaving unused fixed-width padding to the caller.
+    """
+    array = np.asarray(require_unmasked(values, name=name)).reshape(-1)
+    if array.dtype.kind not in "iuf" or not np.isfinite(array).all():
+        raise ValueError(f"{name} must contain finite integers.")
+    if array.dtype.kind == "f":
+        valid = np.all(array == np.floor(array)) and np.all(
+            (array >= -(2**63)) & (array < float(2**63))
+        )
+    elif array.dtype.kind == "u":
+        valid = np.all(array <= np.iinfo(np.int64).max)
+    else:
+        valid = True
+    if not valid:
+        raise ValueError(f"{name} must contain exact signed 64-bit integers.")
+    return array.astype(np.int64, copy=False)
 
 
 class DataPHA:
