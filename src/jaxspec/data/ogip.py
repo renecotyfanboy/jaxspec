@@ -118,6 +118,67 @@ def _active_rmf_row(f_chan, n_chan, matrix, *, row, group_count, n_detector, sca
     return starts, widths, row_values
 
 
+def _compressed_rmf_matrix(n_grp, f_chan, n_chan, matrix, channels, *, threshold, scale):
+    """Expand active OGIP groups into a sparse detector-by-photon response.
+
+    N_GRP and N_CHAN identify active elements; fixed-width padding is ignored.
+    A group spans contiguous *channel numbers*, so an undeclared label in that
+    interval is an invalid calibration and cannot be skipped or clipped. The
+    result stays sparse, including rows with N_GRP=0 and a completely empty RMF.
+    Weights are converted to canonical units before keeping values strictly
+    above ``threshold``. No column normalization is applied.
+    """
+    n_energy, n_detector = len(n_grp), len(channels)
+    if any(len(column) != n_energy for column in (f_chan, n_chan, matrix)):
+        raise ValueError("RMF compressed columns must have one row per photon-energy bin.")
+    if not np.isfinite(threshold) or threshold < 0:
+        raise ValueError("RMF low_threshold must be finite and nonnegative.")
+    detector_indices, energy_indices, weights = [], [], []
+    for row, group_count in enumerate(n_grp):
+        if group_count < 0:
+            raise ValueError(f"RMF row {row} N_GRP must be nonnegative.")
+        if group_count == 0:
+            continue
+        starts, widths, row_values = _active_rmf_row(
+            f_chan,
+            n_chan,
+            matrix,
+            row=row,
+            group_count=group_count,
+            n_detector=n_detector,
+            scale=scale,
+        )
+        used = np.zeros(n_detector, dtype=bool)
+        offset = 0
+        for start, width in zip(starts, widths):
+            start, width = int(start), int(width)
+            end = start + width - 1
+            if start < int(channels[0]) or end > int(channels[-1]):
+                raise ValueError(f"RMF row {row} contains channel labels absent from EBOUNDS.")
+            labels = np.arange(width, dtype=np.int64) + start
+            positions = np.searchsorted(channels, labels)
+            if not np.array_equal(channels[positions], labels):
+                raise ValueError(f"RMF row {row} contains channel labels absent from EBOUNDS.")
+            if np.any(used[positions]):
+                raise ValueError(f"RMF row {row} has overlapping channel groups.")
+            used[positions] = True
+            values = row_values[offset : offset + width]
+            keep = values > threshold
+            detector_indices.append(positions[keep])
+            energy_indices.append(np.full(np.count_nonzero(keep), row, dtype=np.int64))
+            weights.append(values[keep])
+            offset += width
+    if not weights:
+        return sparse.COO(
+            np.empty((2, 0), dtype=np.int64), np.empty(0), shape=(n_detector, n_energy)
+        )
+    return sparse.COO(
+        np.stack((np.concatenate(detector_indices), np.concatenate(energy_indices))),
+        np.concatenate(weights),
+        shape=(n_detector, n_energy),
+    )
+
+
 class DataPHA:
     r"""
     Store a Type-I OGIP spectrum and its detector-channel metadata.
