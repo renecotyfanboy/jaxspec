@@ -259,7 +259,7 @@ class Instrument(xr.Dataset):
             xscale: The scale of the x-axis.
             yscale: The scale of the y-axis.
             where: The position of the steps.
-            **kwargs: `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.line.html#xarray.DataArray.plot.line
+            **kwargs (dict): `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.line.html#xarray.DataArray.plot.line
         """
 
         return self.area.plot.step(
