@@ -469,8 +469,6 @@ class DataRMF:
         Parameters:
             rmf_file: The RMF file path.
         """
-        import inspect
-
         with fits.open(rmf_file) as hdus:
             matrix_extensions = [
                 index for index, hdu in enumerate(hdus) if hdu.name in ("MATRIX", "SPECRESP MATRIX")
@@ -510,25 +508,17 @@ class DataRMF:
                 "https://cxc.cfa.harvard.edu/csc1/data_products/usage/",
             )
 
-        constructor_keywords = {}
-        f_chan = matrix_table["F_CHAN"]
-        if "includes_effective_area" in inspect.signature(cls).parameters:
-            constructor_keywords["includes_effective_area"] = includes_area
-        else:
-            column = list(matrix_table.columns).index("F_CHAN") + 1
-            f_chan = f_chan - int(matrix_header[f"TLMIN{column}"])
-
         result = cls(
             matrix_table["ENERG_LO"],
             matrix_table["ENERG_HI"],
             matrix_table["N_GRP"],
-            f_chan,
+            matrix_table["F_CHAN"],
             matrix_table["N_CHAN"],
             matrix_values,
             ebounds_table["CHANNEL"],
             ebounds_table["E_MIN"],
             ebounds_table["E_MAX"],
-            **constructor_keywords,
+            includes_effective_area=includes_area,
         )
         result.matrix_unit_original = stored_unit
         result.compatibility_notes = compatibility_notes
