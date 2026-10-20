@@ -9,6 +9,7 @@ from astropy.table import QTable
 
 
 def _from_header_or_column(header, data, key):
+    """Read scalar header metadata or its per-channel column representation."""
     if key in header:
         return header[key]
     if key in data.colnames:
@@ -27,7 +28,26 @@ def _reject_unsupported_hduclas(header, key, bad_value):
 
 class DataPHA:
     r"""
-    Class to handle PHA data defined with OGIP standards.
+    Store a Type-I OGIP spectrum and its detector-channel metadata.
+
+    Use this container when reading a PHA file or constructing the equivalent
+    input for an Observation. ``counts`` contains raw nonnegative integer events,
+    and ``channel`` contains increasing, unique detector labels, not array offsets.
+    ``exposure`` is in seconds; explicit time Quantities are converted.
+
+    ``grouping`` uses the OGIP codes: 1 starts a group, -1 continues the previous
+    group, and 0 marks an ungrouped channel. Omitting it leaves channels separate.
+    The stored ``grouping`` is a sparse boolean matrix with grouped channels as
+    rows and raw detector channels as columns. ``quality`` defaults to zero
+    (usable); flags are retained here and applied when constructing a fit's
+    observation configuration.
+
+    ``backscal`` and ``areascal`` accept scalars or one value per channel.
+    BACKSCAL describes the extraction-region scale; AREASCAL scales the source
+    response. Source/background exposure and scaling ratios are combined by
+    ``Observation.from_ogip_container`` when both spectra are available.
+    Associated filenames and classification ``flags`` are retained as metadata.
+
     ??? info "References"
         * [The OGIP standard PHA file format](https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node5.html)
     """
@@ -149,7 +169,13 @@ class DataPHA:
 
 class DataARF:
     r"""
-    Class to handle ARF data defined with OGIP standards.
+    Store an OGIP effective-area curve on the incident photon-energy grid.
+
+    Pair this container with a redistribution-only RMF to construct an Instrument.
+    ``energ_lo`` and ``energ_hi`` contain one lower and upper edge per photon bin
+    in keV; ``specresp`` contains the corresponding effective areas in cm².
+    Explicit units are converted to these defaults. Bins must be ordered and
+    nonoverlapping apart from storage roundoff; zero effective area is valid.
 
     ??? info "References"
         * [The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats)](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html)
@@ -181,7 +207,27 @@ class DataARF:
 
 class DataRMF:
     r"""
-    Class to handle RMF data defined with OGIP standards.
+    Decode an OGIP redistribution matrix or complete response for detector folding.
+
+    Input rows describe incident photon-energy bins between ``energ_lo`` and
+    ``energ_hi``. For each row, ``n_grp`` declares the active groups, ``f_chan``
+    gives their first detector labels, and ``n_chan`` gives their widths.
+    ``matrix`` holds the concatenated weights for those groups. Unused padding
+    is ignored. Groups map to the actual ``channel`` labels, which must be
+    increasing and unique; labels need not start at zero or be gap-free.
+
+    ``e_min`` and ``e_max`` give nominal detector bounds in channel-label order;
+    that order need not follow increasing energy. All energy arrays default to
+    keV, and explicit units are converted. Redistribution weights are
+    dimensionless; area-valued complete responses are converted to cm².
+    ``includes_effective_area`` also identifies a unitless complete response
+    whose weights already use cm², preventing a second ARF from being applied.
+
+    The decoded ``sparse_matrix`` has shape ``(n_detector_channels, n_photon_bins)``.
+    Weights at or below ``low_threshold`` are omitted after unit conversion;
+    remaining columns are not renormalized. The default threshold retains all
+    positive weights. Use ``sparse_matrix`` for large calibration responses.
+
     ??? info "References"
         * [The Calibration Requirements for Spectral Analysis (Definition of RMF and ARF file formats)](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html)
         * [The Calibration Requirements for Spectral Analysis Addendum: Changes log](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002a/cal_gen_92_002a.html)
