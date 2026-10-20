@@ -385,17 +385,20 @@ class ObsConfiguration(xr.Dataset):
 
         Parameters:
             instrument: The instrument object.
-            exposure: The total exposure of the mock observation.
-            low_energy: The lower bound of the energy range to consider.
-            high_energy: The upper bound of the energy range to consider.
+            exposure: Exposure in seconds; Astropy time quantities are converted.
+            low_energy: Inclusive lower detector-energy bound in keV.
+            high_energy: Inclusive upper detector-energy bound in keV.
         """
 
-        n_channels = len(instrument.coords["instrument_channel"])
+        n_channels = instrument.sizes["instrument_channel"]
+        channels = (
+            instrument.channel.data if "channel" in instrument.coords else np.arange(n_channels)
+        )
 
         observation = Observation.from_matrix(
             np.zeros(n_channels),
             sparse.eye(n_channels),
-            np.arange(n_channels),
+            channels,
             np.zeros(n_channels, dtype=bool),
             exposure,
             backratio=np.ones(n_channels),
