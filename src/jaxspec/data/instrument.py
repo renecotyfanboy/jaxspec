@@ -230,11 +230,11 @@ class Instrument(xr.Dataset):
         Parameters:
             xscale: The scale of the x-axis.
             yscale: The scale of the y-axis.
-            cmap: The colormap to use.
+            cmap (str | Colormap | None): The colormap to use.
             vmin: The minimum value for the colormap.
             vmax: The maximum value for the colormap.
             add_labels: Whether to add labels to the plot.
-            **kwargs: `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.plot.pcolormesh.html#xarray.plot.pcolormesh
+            **kwargs (dict): `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.plot.pcolormesh.html#xarray.plot.pcolormesh
         """
 
         import cmasher as cmr
