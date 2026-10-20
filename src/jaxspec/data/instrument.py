@@ -6,18 +6,19 @@ import xarray as xr
 
 from matplotlib import colors
 
+from ._validation import (
+    detector_channels,
+)
 from .ogip import DataARF, DataRMF
 
 
 class Instrument(xr.Dataset):
-    """
-    Class to store the data of an instrument
-    """
+    """Instrument calibration with distinct detector-channel and incident-energy axes."""
 
     redistribution: xr.DataArray
-    """The photon redistribution probability matrix"""
+    """Dimensionless response weights on (instrument_channel, unfolded_channel)."""
     area: xr.DataArray
-    """The effective area of the instrument"""
+    """Effective area in cm² for each incident photon-energy bin (unfolded_channel)."""
 
     __slots__ = (
         "area",
@@ -75,6 +76,70 @@ class Instrument(xr.Dataset):
             },
             attrs={"description": "X-ray instrument response dataset"},
         )
+
+    @classmethod
+    def _from_validated_matrix(
+        cls,
+        redistribution_matrix,
+        spectral_response,
+        e_min_unfolded,
+        e_max_unfolded,
+        e_min_channel,
+        e_max_channel,
+        *,
+        channel=None,
+    ):
+        """Store canonical response values after validating their native input precision.
+
+        Both array and OGIP entry points validate before reaching this builder.
+        Rechecking canonical float64 edges would lose the original float32 FITS
+        precision used to identify harmless calibration boundary roundoff.
+        """
+        result = cls(
+            {
+                "redistribution": (
+                    ["instrument_channel", "unfolded_channel"],
+                    redistribution_matrix,
+                    {"description": "Redistribution matrix"},
+                ),
+                "area": (
+                    ["unfolded_channel"],
+                    spectral_response,
+                    {"description": "Effective area", "units": "cm^2"},
+                ),
+            },
+            coords={
+                "e_min_unfolded": (
+                    ["unfolded_channel"],
+                    e_min_unfolded,
+                    {"description": "Low bin energy for ingoing channels", "units": "keV"},
+                ),
+                "e_max_unfolded": (
+                    ["unfolded_channel"],
+                    e_max_unfolded,
+                    {"description": "High bin energy for ingoing channels", "units": "keV"},
+                ),
+                "e_min_channel": (
+                    ["instrument_channel"],
+                    e_min_channel,
+                    {"description": "Low bin energy for outgoing channels", "units": "keV"},
+                ),
+                "e_max_channel": (
+                    ["instrument_channel"],
+                    e_max_channel,
+                    {"description": "High bin energy for outgoing channels", "units": "keV"},
+                ),
+            },
+            attrs={"description": "X-ray instrument response dataset"},
+        )
+        if channel is not None:
+            labels = detector_channels(
+                channel,
+                size=result.sizes["instrument_channel"],
+                name="Response channel identifiers",
+            )
+            result = result.assign_coords(channel=("instrument_channel", labels))
+        return result
 
     @classmethod
     def from_ogip_file(cls, rmf_path: str | os.PathLike, arf_path: str | os.PathLike | None = None):
