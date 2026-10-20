@@ -103,7 +103,7 @@ To do a quick summary of what is required to build a custom component, we need t
  1. Inherit from [`AdditiveComponent`][jaxspec.model.abc.AdditiveComponent]
  2. Implement the [`continuum`][jaxspec.model.abc.AdditiveComponent.continuum] method (optional)
  3. Implement the [`integrated_continuum`][jaxspec.model.abc.AdditiveComponent.integrated_continuum] method (optional)
- 4. Ensure that the parameters to fit are defined using [`nnx.Param`][flax.nnx.Param]
+ 4. Ensure that the parameters to fit are defined using `nnx.Param`
 
 And that's all. The newly created component is directly combinable with other components, and can be used to build more complex spectral model.
 
