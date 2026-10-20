@@ -272,3 +272,28 @@ def channel_vector(values, size, *, name, dtype=float):
     if array.shape != (size,) or not np.isfinite(array).all():
         raise ValueError(f"{name} must be finite and scalar or have one value per channel.")
     return array
+
+
+def poisson_grouping(grouping, size):
+    """Normalize a non-overlapping event-sum matrix to sparse COO storage.
+
+    Summing disjoint raw channels preserves independent Poisson counts; weighted
+    or overlapping groups do not have the likelihood assumed by a PHA fit.
+    """
+    require_unmasked(grouping, name="Grouping")
+    if not isinstance(grouping, sparse.COO):
+        grouping = (
+            sparse.COO.from_scipy_sparse(grouping)
+            if issparse(grouping)
+            else sparse.COO(np.asarray(grouping))
+        )
+    if (
+        grouping.ndim != 2
+        or grouping.fill_value != 0
+        or grouping.shape[0] == 0
+        or grouping.shape[1] != size
+        or not np.isin(grouping.data, [0, 1]).all()
+        or np.any(grouping.sum(axis=0).todense() > 1)
+    ):
+        raise ValueError("Grouping must sum disjoint detector channels with weights zero or one.")
+    return grouping.astype(bool)
