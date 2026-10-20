@@ -233,7 +233,7 @@ class Observation(xr.Dataset):
         Parameters:
             pha_path: Path to the PHA file
             bkg_path: Path to the background file
-            metadata: Additional metadata to add to the observation
+            **metadata (dict): Additional metadata to add to the observation
         """
         from .util import data_path_finder
 
