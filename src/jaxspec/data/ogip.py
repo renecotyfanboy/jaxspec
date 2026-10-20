@@ -71,6 +71,26 @@ def _rmf_matrix_unit(matrix):
     raise ValueError("RMF MATRIX units must be dimensionless or an effective area such as cm2.")
 
 
+def _cxc_dimensionless_rmf(header, stored_unit):
+    """Identify the documented Chandra ACIS redistribution ``au`` convention.
+
+    CXC's source-catalog product documentation labels the dimensionless ACIS
+    REDIST matrix ``au``. Interpret that exact context only; an ``au`` unit on
+    another instrument or a complete-area response is not silently discarded.
+    """
+    expected = {
+        "TELESCOP": "CHANDRA",
+        "INSTRUME": "ACIS",
+        "HDUCLASS": "OGIP",
+        "HDUCLAS1": "RESPONSE",
+        "HDUCLAS2": "RSP_MATRIX",
+        "HDUCLAS3": "REDIST",
+    }
+    return stored_unit == "au" and all(
+        str(header.get(key, "")).strip().upper() == value for key, value in expected.items()
+    )
+
+
 class DataPHA:
     r"""
     Store a Type-I OGIP spectrum and its detector-channel metadata.
