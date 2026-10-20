@@ -192,3 +192,26 @@ def poisson_counts(values, *, name="counts"):
     if not in_range:
         raise ValueError(f"{name} exceeds the signed 64-bit event-count range.")
     return array.astype(np.int64, copy=False)
+
+
+def grouped_poisson_counts(grouping, counts, *, name):
+    """Sum disjoint event groups without allowing signed integer wraparound.
+
+    Ordinary spectra use a sparse int64 product. Only counts large enough to
+    risk overflow need Python integer sums; check those exact totals before
+    constructing an int64 observation. ``grouping`` must already be validated
+    as zero-or-one event-sum weights and ``counts`` as nonnegative int64 events.
+    """
+    matrix = grouping.to_scipy_sparse() if isinstance(grouping, sparse.COO) else grouping
+    matrix = matrix.tocsr(copy=True)
+    matrix.eliminate_zeros()
+    largest_group = int(np.diff(matrix.indptr).max(initial=0))
+    if largest_group == 0 or counts.max() <= np.iinfo(np.int64).max // largest_group:
+        return np.asarray(matrix @ counts, dtype=np.int64).ravel()
+    totals = [
+        sum(int(counts[index]) for index in matrix.indices[start:stop])
+        for start, stop in zip(matrix.indptr[:-1], matrix.indptr[1:], strict=True)
+    ]
+    if any(value > np.iinfo(np.int64).max for value in totals):
+        raise ValueError(f"{name} exceeds the signed 64-bit event-count range.")
+    return np.asarray(totals, dtype=np.int64)
