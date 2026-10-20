@@ -77,9 +77,7 @@ class ObsConfiguration(xr.Dataset):
 
     @property
     def in_energies(self):
-        """
-        The energy bounds of the unfolded bins in keV. The shape is (2, n_bins).
-        """
+        """Lower and upper incident-energy bounds in keV, shape (2, n_unfolded_bins)."""
         return self._energy_bounds("unfolded")
 
     @property
