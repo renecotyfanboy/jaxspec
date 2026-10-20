@@ -53,6 +53,24 @@ def _rmf_integer_vector(values, *, name):
     return array.astype(np.int64, copy=False)
 
 
+def _rmf_matrix_unit(matrix):
+    """Return the stored MATRIX unit scale and whether it includes collecting area.
+
+    Redistribution probabilities are dimensionless. A complete RSP can instead
+    store an area-valued matrix; convert that area to cm² before factorization.
+    Unclassified legacy columns without units retain their numeric convention.
+    """
+    unit = getattr(matrix, "unit", None)
+    if unit is None:
+        return 1.0, False
+    unit = u.Unit(unit)
+    if unit.is_equivalent(u.cm**2):
+        return unit.to(u.cm**2), True
+    if unit.is_equivalent(u.dimensionless_unscaled):
+        return unit.to(u.dimensionless_unscaled), False
+    raise ValueError("RMF MATRIX units must be dimensionless or an effective area such as cm2.")
+
+
 class DataPHA:
     r"""
     Store a Type-I OGIP spectrum and its detector-channel metadata.
