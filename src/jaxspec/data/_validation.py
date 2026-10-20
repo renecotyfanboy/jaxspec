@@ -249,3 +249,26 @@ def detector_channels(values, *, size=None, name="Detector channel identifiers")
     if np.any(labels[1:] <= labels[:-1]):
         raise ValueError(f"{name} must be increasing, unique integers.")
     return labels
+
+
+def channel_vector(values, size, *, name, dtype=float):
+    """Broadcast scalar OGIP metadata or validate one value per detector channel.
+
+    Both header scalars and Type-I vector columns are valid storage forms for
+    area/background scaling. Shape checks prevent accidental channel mixing.
+    """
+    array = (
+        quantity_values(values, "", name=name)
+        if getattr(values, "unit", None) is not None
+        else np.asarray(require_unmasked(values, name=name))
+    )
+    if array.dtype.kind not in "biuf" or not np.isfinite(array).all():
+        raise ValueError(f"{name} must contain finite numeric values.")
+    if np.issubdtype(np.dtype(dtype), np.integer) and np.any(array != np.floor(array)):
+        raise ValueError(f"{name} must contain integers.")
+    array = array.astype(dtype)
+    if array.ndim == 0:
+        array = np.full(size, array, dtype=dtype)
+    if array.shape != (size,) or not np.isfinite(array).all():
+        raise ValueError(f"{name} must be finite and scalar or have one value per channel.")
+    return array
