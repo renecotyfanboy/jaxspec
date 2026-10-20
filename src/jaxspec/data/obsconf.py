@@ -100,14 +100,15 @@ class ObsConfiguration(xr.Dataset):
         Build the observation configuration from a PHA file.
 
         Parameters:
-            pha_path: The path to the PHA file.
+            pha_path (str | os.PathLike): The path to the PHA file.
             rmf_path: The path to the RMF or combined RSP file. When omitted,
                 use the PHA's RESPFILE link. Supply this argument when that link
                 is absent or names an unavailable response.
             arf_path: The path to the ARF file.
             bkg_path: The path to the background file.
-            low_energy: The lower bound of the energy range to consider.
-            high_energy: The upper bound of the energy range to consider.
+            low_energy: Inclusive lower bound in keV. Only groups wholly inside
+                the selected band, after rejecting bad-quality channels, are used.
+            high_energy: Inclusive upper bound in keV.
 
         Raises:
             ValueError: No response is specified by RESPFILE or ``rmf_path``.
