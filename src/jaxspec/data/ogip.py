@@ -8,6 +8,7 @@ from astropy.io import fits
 from astropy.table import QTable
 
 from ._validation import (
+    nonnegative_values,
     require_unmasked,
 )
 
@@ -89,6 +90,32 @@ def _cxc_dimensionless_rmf(header, stored_unit):
     return stored_unit == "au" and all(
         str(header.get(key, "")).strip().upper() == value for key, value in expected.items()
     )
+
+
+def _active_rmf_row(f_chan, n_chan, matrix, *, row, group_count, n_detector, scale):
+    """Decode declared groups and weights before mapping a photon row to detectors.
+
+    Only N_GRP groups and their summed N_CHAN weights are calibration data.
+    Ignore all other fixed-width padding, preserve masks until active values are
+    selected, and convert area units before response thresholding or assembly.
+    """
+    raw_starts = np.asanyarray(f_chan[row]).reshape(-1)
+    raw_widths = np.asanyarray(n_chan[row]).reshape(-1)
+    if min(raw_starts.size, raw_widths.size) < group_count:
+        raise ValueError(f"RMF row {row} group arrays are shorter than N_GRP.")
+    starts = _rmf_integer_vector(raw_starts[:group_count], name=f"RMF row {row} F_CHAN")
+    widths = _rmf_integer_vector(raw_widths[:group_count], name=f"RMF row {row} N_CHAN")
+    if np.any(widths <= 0) or np.any(widths > n_detector):
+        raise ValueError(f"RMF row {row} N_CHAN must be positive and fit within EBOUNDS.")
+    total = sum(int(width) for width in widths)
+    row_values = np.asanyarray(matrix[row]).reshape(-1)
+    if row_values.size < total:
+        raise ValueError(f"RMF row {row} has fewer MATRIX values than its active N_CHAN sum.")
+    row_values = nonnegative_values(row_values[:total], name=f"RMF row {row} MATRIX values")
+    if scale != 1:
+        row_values = row_values.astype(np.float64) * scale
+        nonnegative_values(row_values, name=f"RMF row {row} converted MATRIX values")
+    return starts, widths, row_values
 
 
 class DataPHA:
