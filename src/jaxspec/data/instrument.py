@@ -1,7 +1,6 @@
 import os
 
 import numpy as np
-import sparse
 import xarray as xr
 
 from matplotlib import colors
@@ -163,20 +162,57 @@ class Instrument(xr.Dataset):
         Parameters:
             rmf_path: The RMF file path.
             arf_path: The ARF file path.
+
+        Supply the matched ARF for a redistribution-only RMF. Without an ARF,
+        the response is interpreted as a combined RSP including effective area.
+        Explicit MATRIX area units are converted to cm²; area units or
+        HDUCLAS3=FULL prohibit applying a second ARF. Unclassified unitless
+        legacy files retain this caller-selected RMF/RSP convention.
         """
 
         rmf = DataRMF.from_file(rmf_path)
 
         if arf_path is not None:
-            specresp = DataARF.from_file(arf_path).specresp
+            if getattr(rmf, "includes_effective_area", False):
+                raise ValueError(
+                    "This response MATRIX already includes effective area, as declared by its "
+                    "area units or HDUCLAS3=FULL. Supply it without an additional ARF."
+                )
+            arf = DataARF.from_file(arf_path)
+            if (
+                np.shape(arf.energ_lo) != np.shape(rmf.energ_lo)
+                or not np.allclose(arf.energ_lo, rmf.energ_lo, rtol=5e-7, atol=0)
+                or not np.allclose(arf.energ_hi, rmf.energ_hi, rtol=5e-7, atol=0)
+            ):
+                raise ValueError(
+                    "ARF and RMF photon-energy grids differ. Supply a matched response pair "
+                    "or rebin the calibration files consistently before fitting."
+                )
+            specresp = arf.specresp
 
         else:
-            specresp = rmf.matrix.sum(axis=0)
-            rmf.sparse_matrix = sparse.COO(rmf.matrix / specresp)
+            # Combined RSP files already include effective area. Factor them
+            # without allocating a dense calorimeter redistribution matrix.
+            specresp = np.asarray(rmf.sparse_matrix.sum(axis=0).todense())
+            rmf.sparse_matrix = rmf.sparse_matrix / np.where(specresp > 0, specresp, 1.0)
 
-        return cls.from_matrix(
-            rmf.sparse_matrix, specresp, rmf.energ_lo, rmf.energ_hi, rmf.e_min, rmf.e_max
+        nonnegative_values(specresp, name="Effective area", size=len(rmf.energ_lo))
+        result = cls._from_validated_matrix(
+            rmf.sparse_matrix,
+            specresp,
+            rmf.energ_lo,
+            rmf.energ_hi,
+            rmf.e_min,
+            rmf.e_max,
+            channel=rmf.channel,
         )
+        result.attrs.update(
+            response_matrix_file=str(rmf_path),
+            ancillary_response_file=None if arf_path is None else str(arf_path),
+            response_matrix_unit_original=getattr(rmf, "matrix_unit_original", None),
+            response_matrix_compatibility_notes=getattr(rmf, "compatibility_notes", ()),
+        )
+        return result
 
     def plot_redistribution(
         self,
