@@ -82,9 +82,8 @@ class ObsConfiguration(xr.Dataset):
 
     @property
     def out_energies(self):
-        """
-        The energy bounds of the folded bins in keV. The shape is (2, n_bins).
-        """
+        """Lower and upper grouped detector bounds in keV, shape (2, n_folded_bins)."""
+
         return self._energy_bounds("folded")
 
     @classmethod
