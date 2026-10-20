@@ -171,28 +171,58 @@ class Observation(xr.Dataset):
 
     @classmethod
     def from_ogip_container(cls, pha: DataPHA, bkg: DataPHA | None = None, **metadata):
+        """Match source/background channels and preserve their Poisson counting data.
+
+        Background-subtracted or explicitly non-Poisson spectra cannot define
+        this likelihood. Supply the original TOTAL source and BKG spectra.
+        """
+        for label, spectrum in (("Source", pha), ("Background", bkg)):
+            if spectrum is not None and set(spectrum.flags) & {"NET", "NONPOISSON"}:
+                raise ValueError(
+                    f"{label} spectrum is background-subtracted or non-Poisson. "
+                    "Supply original TOTAL source and Poisson BKG event spectra."
+                )
+        quality = pha.quality.copy()
         if bkg is not None:
-            backratio = np.nan_to_num(
-                (pha.backscal * pha.exposure * pha.areascal)
-                / (bkg.backscal * bkg.exposure * bkg.areascal)
+            indices = np.searchsorted(bkg.channel, pha.channel)
+            if np.any(indices >= len(bkg.channel)) or not np.array_equal(
+                bkg.channel[np.minimum(indices, len(bkg.channel) - 1)], pha.channel
+            ):
+                raise ValueError(
+                    "Background spectrum is missing source detector channel identifiers."
+                )
+            quality = np.where(quality != 0, quality, bkg.quality[indices])
+            valid = quality == 0
+            for label, values in (
+                ("source BACKSCAL", pha.backscal),
+                ("source AREASCAL", pha.areascal),
+                ("background BACKSCAL", bkg.backscal[indices]),
+                ("background AREASCAL", bkg.areascal[indices]),
+            ):
+                if np.any(values[valid] <= 0):
+                    raise ValueError(f"{label} must be positive in usable channels.")
+            backratio = np.divide(
+                pha.backscal * pha.exposure * pha.areascal,
+                bkg.backscal[indices] * bkg.exposure * bkg.areascal[indices],
+                out=np.ones_like(pha.areascal),
+                where=valid,
             )
+            background = bkg.counts[indices]
+            metadata["background_exposure"] = bkg.exposure
         else:
             backratio = np.ones_like(pha.counts)
-
-        if (bkg is not None) and ("NET" in pha.flags):
-            counts = pha.counts + bkg.counts * backratio
-        else:
-            counts = pha.counts
+            background = None
 
         return cls.from_matrix(
-            counts,
+            pha.counts,
             pha.grouping,
             pha.channel,
-            pha.quality,
+            quality,
             pha.exposure,
             backratio=backratio,
-            background=bkg.counts if bkg is not None else None,
+            background=background,
             attributes=metadata,
+            areascal=pha.areascal,
         )
 
     @classmethod
