@@ -5,7 +5,7 @@ import numpy as np
 import sparse
 
 from astropy.io import fits
-from astropy.table import QTable
+from astropy.table import QTable, Table
 
 from ._validation import (
     channel_vector,
@@ -478,38 +478,76 @@ class DataRMF:
     @classmethod
     def from_file(cls, rmf_file: str | os.PathLike):
         """
-        Load the data from an RMF file.
+        Load one OGIP response matrix, preserving actual EBOUNDS channel labels.
+
+        Fixed and variable-length compressed rows are supported, including zero
+        groups. Files containing multiple MATRIX extensions currently raise an
+        error because silently choosing one would discard part of the response.
 
         Parameters:
             rmf_file: The RMF file path.
         """
-        extension_names = [hdu[1] for hdu in fits.info(rmf_file, output=False)]
+        import inspect
 
-        if "MATRIX" in extension_names:
-            matrix_extension = "MATRIX"
+        with fits.open(rmf_file) as hdus:
+            matrix_extensions = [
+                index for index, hdu in enumerate(hdus) if hdu.name in ("MATRIX", "SPECRESP MATRIX")
+            ]
+            ebounds_extensions = [index for index, hdu in enumerate(hdus) if hdu.name == "EBOUNDS"]
+            if not matrix_extensions:
+                raise ValueError("No MATRIX or SPECRESP MATRIX extension found in the RMF file.")
+            if len(matrix_extensions) > 1:
+                raise ValueError(
+                    "RMF files with multiple MATRIX extensions are not yet supported. "
+                    "Supply a scientifically combined single-matrix response; selecting the "
+                    "first extension would discard calibration components."
+                )
+            if len(ebounds_extensions) != 1:
+                raise ValueError("The RMF must contain exactly one EBOUNDS extension.")
+            matrix_extension, ebounds_extension = matrix_extensions[0], ebounds_extensions[0]
+            matrix_header = hdus[matrix_extension].header.copy()
+            stored_unit = hdus[matrix_extension].columns["MATRIX"].unit
+            includes_area = str(matrix_header.get("HDUCLAS3", "")).strip().upper() == "FULL"
+        # Table retains variable-length MATRIX units without trying to coerce
+        # its ragged object column into a homogeneous Quantity. Conversion is
+        # explicit in the constructor for both fixed and variable row storage.
+        cxc_convention = _cxc_dimensionless_rmf(matrix_header, stored_unit)
+        matrix_table = Table.read(
+            rmf_file, matrix_extension, unit_parse_strict="silent" if cxc_convention else "warn"
+        )
+        ebounds_table = Table.read(rmf_file, ebounds_extension)
+        matrix_values = matrix_table["MATRIX"]
+        compatibility_notes = ()
+        if cxc_convention:
+            # Copy metadata only: values and original FITS bytes stay unchanged.
+            matrix_values = matrix_values.copy(copy_data=False)
+            matrix_values.unit = None
+            compatibility_notes = (
+                "Interpreted MATRIX unit 'au' as dimensionless for the documented "
+                "CHANDRA/ACIS OGIP REDIST convention; source: "
+                "https://cxc.cfa.harvard.edu/csc1/data_products/usage/",
+            )
 
-        elif "SPECRESP MATRIX" in extension_names:
-            matrix_extension = "SPECRESP MATRIX"
-
+        constructor_keywords = {}
+        f_chan = matrix_table["F_CHAN"]
+        if "includes_effective_area" in inspect.signature(cls).parameters:
+            constructor_keywords["includes_effective_area"] = includes_area
         else:
-            raise ValueError("No MATRIX or SPECRESP MATRIX extension found in the RMF file")
+            column = list(matrix_table.columns).index("F_CHAN") + 1
+            f_chan = f_chan - int(matrix_header[f"TLMIN{column}"])
 
-        matrix_table = QTable.read(rmf_file, matrix_extension)
-        ebounds_table = QTable.read(rmf_file, "EBOUNDS")
-
-        matrix_header = fits.getheader(rmf_file, matrix_extension)
-
-        f_chan_column_pos = list(matrix_table.columns).index("F_CHAN") + 1
-        tlmin_fchan = int(matrix_header[f"TLMIN{f_chan_column_pos}"])
-
-        return cls(
+        result = cls(
             matrix_table["ENERG_LO"],
             matrix_table["ENERG_HI"],
             matrix_table["N_GRP"],
-            matrix_table["F_CHAN"] - tlmin_fchan,
+            f_chan,
             matrix_table["N_CHAN"],
-            matrix_table["MATRIX"],
+            matrix_values,
             ebounds_table["CHANNEL"],
             ebounds_table["E_MIN"],
             ebounds_table["E_MAX"],
+            **constructor_keywords,
         )
+        result.matrix_unit_original = stored_unit
+        result.compatibility_notes = compatibility_notes
+        return result
