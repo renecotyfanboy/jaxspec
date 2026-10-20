@@ -413,63 +413,44 @@ class DataRMF:
         e_min,
         e_max,
         low_threshold=0.0,
+        *,
+        includes_effective_area=False,
     ):
-        # RMF stuff
-        self.energ_lo = energ_lo  # "Entry" energies
-        self.energ_hi = energ_hi  # "Entry" energies
-        self.n_grp = n_grp
+        self.energ_lo, self.energ_hi = energy_bins(
+            quantity_values(energ_lo, u.keV, name="RMF ENERG_LO"),
+            quantity_values(energ_hi, u.keV, name="RMF ENERG_HI"),
+            name="RMF energies",
+            roundoff_dtype=np.result_type(np.asarray(energ_lo), np.asarray(energ_hi)),
+        )
+        if np.shape(n_grp) != self.energ_lo.shape:
+            raise ValueError("RMF N_GRP must have one value per photon-energy bin.")
+        self.n_grp = _rmf_integer_vector(n_grp, name="RMF N_GRP")
         self.f_chan = f_chan
         self.n_chan = n_chan
         self.matrix_entry = matrix
-
-        # Detector channels
-        self.channel = channel
-        self.e_min = e_min
-        self.e_max = e_max
-
-        # Prepare data for sparse matrix
-        rows = []
-        cols = []
-        data = []
-
-        for i, n_grp_val in enumerate(self.n_grp):
-            base = 0
-
-            if np.size(self.f_chan[i]) == 1:
-                low = int(self.f_chan[i].ravel()[0])
-                high = min(
-                    int(self.f_chan[i].ravel()[0] + self.n_chan[i].ravel()[0]),
-                    len(self.channel),
-                )
-
-                rows.extend([i] * (high - low))
-                cols.extend(range(low, high))
-                data.extend(self.matrix_entry[i][0 : high - low])
-
-            else:
-                for j in range(n_grp_val):
-                    low = self.f_chan[i][j]
-                    high = min(self.f_chan[i][j] + self.n_chan[i][j], len(self.channel))
-
-                    rows.extend([i] * (high - low))
-                    cols.extend(range(low, high))
-                    data.extend(self.matrix_entry[i][base : base + self.n_chan[i][j]])
-
-                    base += self.n_chan[i][j]
-
-        # Convert lists to numpy arrays
-        rows = np.array(rows)
-        cols = np.array(cols)
-        data = np.array(data)
-
-        # Sometimes, zero elements are given in the matrix rows, so we get rid of them
-        idxs = data > low_threshold
-
-        # Create a COO sparse matrix and then convert to CSR for efficiency
-        coo = sparse.COO(
-            [rows[idxs], cols[idxs]], data[idxs], shape=(len(self.energ_lo), len(self.channel))
+        self.e_min, self.e_max = energy_bins(
+            quantity_values(e_min, u.keV, name="EBOUNDS E_MIN"),
+            quantity_values(e_max, u.keV, name="EBOUNDS E_MAX"),
+            name="EBOUNDS energies",
+            roundoff_dtype=np.result_type(np.asarray(e_min), np.asarray(e_max)),
+            ordered=False,
         )
-        self.sparse_matrix = coo.T  # .tocsr()
+        self.channel = detector_channels(
+            channel, size=len(self.e_min), name="RMF EBOUNDS channel identifiers"
+        )
+        scale, area_unit = _rmf_matrix_unit(matrix)
+        self.matrix_unit_original = str(matrix.unit) if getattr(matrix, "unit", None) else None
+        self.compatibility_notes = ()
+        self.includes_effective_area = bool(includes_effective_area or area_unit)
+        self.sparse_matrix = _compressed_rmf_matrix(
+            self.n_grp,
+            self.f_chan,
+            self.n_chan,
+            self.matrix_entry,
+            self.channel,
+            threshold=low_threshold,
+            scale=scale,
+        )
 
     @property
     def matrix(self):
