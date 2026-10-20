@@ -86,6 +86,7 @@ def _build_obs_cache(
         cache["redistribution"] = to_jax_matrix(obs.redistribution.data, sparse=sparse)
         cache["grouping"] = to_jax_matrix(obs.grouping.data, sparse=sparse)
         cache["area"] = jnp.asarray(obs.area.data)
+        cache["areascal"] = jnp.asarray(obs.areascal.data)
         cache["exposure"] = jnp.asarray(obs.exposure.data)
     return cache
 
