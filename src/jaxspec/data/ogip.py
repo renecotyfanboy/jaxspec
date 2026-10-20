@@ -369,7 +369,7 @@ class DataARF:
         return cls(
             arf_table["ENERG_LO"],
             arf_table["ENERG_HI"],
-            arf_table["SPECRESP"].to(u.cm**2).value,
+            arf_table["SPECRESP"],
         )
 
 
