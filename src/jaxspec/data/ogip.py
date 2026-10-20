@@ -19,6 +19,7 @@ def _from_header_or_column(header, data, key):
 
 
 def _reject_unsupported_hduclas(header, key, bad_value):
+    """Reject a PHA classification unsupported by the event-count loader."""
     if header.get(key) == bad_value:
         raise ValueError(
             f"The {key}={bad_value} keyword in the PHA file is not supported."
