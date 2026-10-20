@@ -454,6 +454,7 @@ class DataRMF:
 
     @property
     def matrix(self):
+        """Materialize a dense detector-by-photon array for inspection or small responses."""
         return np.asarray(self.sparse_matrix.todense())
 
     @classmethod
