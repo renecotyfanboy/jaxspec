@@ -8,6 +8,10 @@ from matplotlib import colors
 
 from ._validation import (
     detector_channels,
+    energy_bins,
+    nonnegative_values,
+    quantity_values,
+    response_matrix,
 )
 from .ogip import DataARF, DataRMF
 
@@ -38,43 +42,53 @@ class Instrument(xr.Dataset):
         e_max_unfolded,
         e_min_channel,
         e_max_channel,
+        *,
+        channel=None,
     ):
-        return cls(
-            {
-                "redistribution": (
-                    ["instrument_channel", "unfolded_channel"],
-                    redistribution_matrix,
-                    {"description": "Redistribution matrix"},
-                ),
-                "area": (
-                    ["unfolded_channel"],
-                    np.array(spectral_response, dtype=np.float64),
-                    {"description": "Effective area", "units": "cm^2"},
-                ),
-            },
-            coords={
-                "e_min_unfolded": (
-                    ["unfolded_channel"],
-                    np.array(e_min_unfolded, dtype=np.float64),
-                    {"description": "Low bin energy for ingoing channels", "units": "keV"},
-                ),
-                "e_max_unfolded": (
-                    ["unfolded_channel"],
-                    np.array(e_max_unfolded, dtype=np.float64),
-                    {"description": "High bin energy for ingoing channels", "units": "keV"},
-                ),
-                "e_min_channel": (
-                    ["instrument_channel"],
-                    np.array(e_min_channel, dtype=np.float64),
-                    {"description": "Low bin energy for outgoing channels", "units": "keV"},
-                ),
-                "e_max_channel": (
-                    ["instrument_channel"],
-                    np.array(e_max_channel, dtype=np.float64),
-                    {"description": "High bin energy for outgoing channels", "units": "keV"},
-                ),
-            },
-            attrs={"description": "X-ray instrument response dataset"},
+        """Build a response, optionally retaining detector channel identifiers.
+
+        Supply ``channel`` when matching a PHA spectrum whose detector channels
+        start at one or contain gaps; channel labels then control row alignment.
+        Labels must be increasing and unique. Without them, matching is positional
+        and the response rows must already follow the observation's channel order.
+        ``redistribution_matrix`` has shape ``(n_detector_channels, n_incident_bins)``;
+        ``spectral_response`` has one effective area per incident bin. Response
+        weights are dimensionless and need not sum to one in each column.
+        Plain energy and effective-area arrays use keV and cm² respectively.
+        Astropy Quantity inputs are converted to those units explicitly.
+        Dense arrays, SciPy sparse arrays/matrices and zero-filled PyData
+        sparse arrays are stored as one sparse COO representation, so all
+        accepted inputs can subsequently be used for observation folding.
+        """
+        e_min_unfolded, e_max_unfolded = energy_bins(
+            quantity_values(e_min_unfolded, "keV", name="Photon lower energies"),
+            quantity_values(e_max_unfolded, "keV", name="Photon upper energies"),
+            name="Photon energies",
+            roundoff_dtype=np.result_type(np.asarray(e_min_unfolded), np.asarray(e_max_unfolded)),
+        )
+        e_min_channel, e_max_channel = energy_bins(
+            quantity_values(e_min_channel, "keV", name="Detector lower energies"),
+            quantity_values(e_max_channel, "keV", name="Detector upper energies"),
+            name="Detector energies",
+            roundoff_dtype=np.result_type(np.asarray(e_min_channel), np.asarray(e_max_channel)),
+            ordered=False,
+        )
+        spectral_response = nonnegative_values(
+            quantity_values(spectral_response, "cm2", name="Effective area"),
+            name="Effective area",
+            size=len(e_min_unfolded),
+        )
+        redistribution_matrix = response_matrix(
+            redistribution_matrix, shape=(len(e_min_channel), len(e_min_unfolded))
+        )
+        return cls._from_validated_matrix(
+            redistribution_matrix,
+            spectral_response,
+            e_min_unfolded,
+            e_max_unfolded,
+            e_min_channel,
+            e_max_channel,
+            channel=channel,
         )
 
     @classmethod
