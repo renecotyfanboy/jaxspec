@@ -150,3 +150,45 @@ def response_matrix(matrix, *, shape):
     if issparse(matrix):
         return sparse.COO.from_scipy_sparse(matrix)
     return sparse.COO(np.asarray(matrix))
+
+
+def poisson_counts(values, *, name="counts"):
+    """Return exact int64 event counts, rejecting rounding and integer overflow.
+
+    Use this at file and array boundaries: truncating fractional or negative
+    measurements would silently change the data used by a Poisson likelihood.
+    Floating-point arrays are accepted only when every value is an integer.
+    Explicit count units are converted before validation; count rates are not
+    event counts and require an exposure at the file-reading boundary.
+    """
+    array = np.asarray(require_unmasked(values, name=name))
+    if getattr(values, "unit", None) is not None:
+        try:
+            factor = values.unit.to(u.ct)
+        except (ValueError, TypeError) as error:
+            raise ValueError(f"{name} must have units equivalent to counts, not rates.") from error
+        if factor != 1:
+            # Avoid converting exact integer counts through float64, including
+            # large but valid counts expressed in a scaled integer unit.
+            if array.dtype.kind in "iu" and float(factor).is_integer():
+                if np.any(array < 0) or np.any(array > np.iinfo(np.int64).max // int(factor)):
+                    raise ValueError(f"{name} exceeds the signed 64-bit event-count range.")
+                array = array.astype(np.int64) * int(factor)
+            else:
+                array = array * factor
+    if array.ndim != 1 or array.size == 0 or array.dtype.kind not in "iuf":
+        raise ValueError(f"{name} must be a nonempty one-dimensional array of event counts.")
+    if not np.isfinite(array).all() or np.any(array < 0):
+        raise ValueError(f"{name} must contain finite, nonnegative event counts.")
+    if array.dtype.kind == "f":
+        if np.any(array != np.floor(array)):
+            raise ValueError(
+                f"{name} contains fractional values. Supply raw event counts, not rates "
+                "or a background-subtracted spectrum, for a Poisson likelihood."
+            )
+        in_range = np.all(array < float(2**63))
+    else:
+        in_range = np.all(array <= np.iinfo(np.int64).max)
+    if not in_range:
+        raise ValueError(f"{name} exceeds the signed 64-bit event-count range.")
+    return array.astype(np.int64, copy=False)
