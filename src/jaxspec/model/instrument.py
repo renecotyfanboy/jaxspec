@@ -335,7 +335,9 @@ class PileupModel(InstrumentModel):
             results = self.apply_gain(results, in_energies)
 
             return jnp.clip(
-                cache["grouping"] @ cache["redistribution"] @ results * cache["exposure"],
+                cache["grouping"]
+                @ (cache.get("areascal", 1.0) * (cache["redistribution"] @ results))
+                * cache["exposure"],
                 min=1e-10,
             )
 
