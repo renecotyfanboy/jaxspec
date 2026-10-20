@@ -2,6 +2,9 @@
 
 import astropy.units as u
 import numpy as np
+import sparse
+
+from scipy.sparse import issparse
 
 
 def require_unmasked(values, *, name):
@@ -110,3 +113,40 @@ def nonnegative_values(values, *, name, size=None):
         suffix = " with one value per photon-energy bin" if size is not None else ""
         raise ValueError(f"{name} must contain finite, nonnegative values{suffix}.")
     return array
+
+
+def response_matrix(matrix, *, shape):
+    """Validate active response weights and store one zero-filled sparse COO matrix.
+
+    Use this at the array construction boundary so dense inputs and supported
+    SciPy/PyData sparse formats all support the same detector-folding operations.
+    Unused sparse padding is not calibration data; active negative, nonfinite or
+    masked weights must still fail before conversion.
+    """
+    if getattr(matrix, "unit", None) is not None:
+        matrix = quantity_values(matrix, "", name="Redistribution matrix")
+    if np.shape(matrix) != shape:
+        raise ValueError("Redistribution matrix shape must match detector and photon bins.")
+    if issparse(matrix):
+        # DOK has no numeric .data array, LIL stores lists, and DIA .data
+        # includes padding outside the matrix. COO exposes only active
+        # entries without allocating a dense detector response.
+        matrix = matrix.tocoo(copy=False)
+    if isinstance(matrix, sparse.SparseArray):
+        nonnegative_values(matrix.fill_value, name="Redistribution matrix")
+        weights = matrix.data
+    elif issparse(matrix):
+        weights = matrix.data
+    else:
+        weights = matrix
+    nonnegative_values(weights, name="Redistribution matrix")
+    if isinstance(matrix, sparse.SparseArray):
+        if matrix.fill_value != 0:
+            raise ValueError(
+                "Sparse redistribution matrices require zero fill_value. Supply a dense "
+                "array or an explicit zero-filled sparse representation."
+            )
+        return sparse.COO(matrix)
+    if issparse(matrix):
+        return sparse.COO.from_scipy_sparse(matrix)
+    return sparse.COO(np.asarray(matrix))
