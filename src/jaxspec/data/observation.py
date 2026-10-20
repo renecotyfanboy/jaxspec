@@ -262,7 +262,7 @@ class Observation(xr.Dataset):
         Plot the counts
 
         Parameters:
-            **kwargs: `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.step.html#xarray.DataArray.plot.line
+            **kwargs (dict): `kwargs` passed to https://docs.xarray.dev/en/latest/generated/xarray.DataArray.plot.step.html#xarray.DataArray.plot.line
         """
 
         return self.counts.plot.step(x="instrument_channel", yscale="log", where="post", **kwargs)
