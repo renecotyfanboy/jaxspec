@@ -215,3 +215,37 @@ def grouped_poisson_counts(grouping, counts, *, name):
     if any(value > np.iinfo(np.int64).max for value in totals):
         raise ValueError(f"{name} exceeds the signed 64-bit event-count range.")
     return np.asarray(totals, dtype=np.int64)
+
+
+def detector_channels(values, *, size=None, name="Detector channel identifiers"):
+    """Preserve integer channel labels, including integral Astropy Quantity values.
+
+    FITS CHANNEL columns are labels rather than array positions. A unit-tagged
+    integer column can become floating point when Astropy constructs a Quantity;
+    accept its exact integer values without rounding fractions or wrapping large
+    identifiers during conversion to int64. Use the same check for PHA spectra,
+    response EBOUNDS and programmatic observation/instrument construction.
+    """
+    array = np.asarray(require_unmasked(values, name=name))
+    if (
+        array.ndim != 1
+        or not array.size
+        or (size is not None and array.shape != (size,))
+        or array.dtype.kind not in "iuf"
+        or not np.isfinite(array).all()
+    ):
+        raise ValueError(f"{name} must be increasing, unique integers with one label per channel.")
+    if array.dtype.kind == "f":
+        valid = np.all(array == np.floor(array)) and np.all(
+            (array >= -(2**63)) & (array < float(2**63))
+        )
+    elif array.dtype.kind == "u":
+        valid = np.all(array <= np.iinfo(np.int64).max)
+    else:
+        valid = True
+    if not valid:
+        raise ValueError(f"{name} must be exact integers within the signed 64-bit range.")
+    labels = array.astype(np.int64)
+    if np.any(labels[1:] <= labels[:-1]):
+        raise ValueError(f"{name} must be increasing, unique integers.")
+    return labels
