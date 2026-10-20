@@ -10,6 +10,7 @@ from astropy.table import QTable
 from ._validation import (
     channel_vector,
     detector_channels,
+    energy_bins,
     exposure_seconds,
     nonnegative_values,
     poisson_counts,
@@ -342,9 +343,17 @@ class DataARF:
     """
 
     def __init__(self, energ_lo, energ_hi, specresp):
-        self.specresp = specresp
-        self.energ_lo = energ_lo
-        self.energ_hi = energ_hi
+        self.energ_lo, self.energ_hi = energy_bins(
+            quantity_values(energ_lo, u.keV, name="ARF ENERG_LO"),
+            quantity_values(energ_hi, u.keV, name="ARF ENERG_HI"),
+            name="ARF energies",
+            roundoff_dtype=np.result_type(np.asarray(energ_lo), np.asarray(energ_hi)),
+        )
+        self.specresp = nonnegative_values(
+            quantity_values(specresp, u.cm**2, name="ARF SPECRESP"),
+            name="ARF SPECRESP",
+            size=len(self.energ_lo),
+        )
 
     @classmethod
     def from_file(cls, arf_file: str | os.PathLike):
