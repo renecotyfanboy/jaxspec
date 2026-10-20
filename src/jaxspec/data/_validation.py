@@ -92,3 +92,21 @@ def energy_bins(lower, upper, *, name, roundoff_dtype=None, ordered=True):
     if np.any(upper[:-1] - lower[1:] > np.minimum(roundoff, width_limit)):
         raise ValueError(f"{name} contain overlapping energy bins beyond storage roundoff.")
     return lower, upper
+
+
+def nonnegative_values(values, *, name, size=None):
+    """Validate response weights or areas without imposing unit column sums.
+
+    Zero sensitivity is physical, and an RMF may contain detector efficiency.
+    Negative or nonfinite values instead make the predicted Poisson rate invalid.
+    """
+    array = np.asarray(require_unmasked(values, name=name))
+    if (
+        array.dtype.kind not in "biuf"
+        or (size is not None and array.shape != (size,))
+        or not np.isfinite(array).all()
+        or np.any(array < 0)
+    ):
+        suffix = " with one value per photon-energy bin" if size is not None else ""
+        raise ValueError(f"{name} must contain finite, nonnegative values{suffix}.")
+    return array
