@@ -36,3 +36,15 @@ def quantity_values(values, unit, *, name):
         except (ValueError, TypeError) as error:
             raise ValueError(f"{name} must have units equivalent to {unit}.") from error
     return np.asarray(values, dtype=np.float64)
+
+
+def exposure_seconds(values, *, name="Exposure"):
+    """Return one finite positive exposure, converting explicit time Quantities.
+
+    Use the same seconds convention for PHA input and synthetic observations so
+    a mock exposure in ks cannot be interpreted as a count-rate scale of seconds.
+    """
+    value = quantity_values(values, "s", name=name)
+    if value.ndim != 0 or not np.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be a finite, positive scalar.")
+    return float(value)
