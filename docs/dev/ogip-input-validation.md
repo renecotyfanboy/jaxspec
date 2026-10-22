@@ -66,15 +66,24 @@ decreasing energy bounds. Sorting those rows by energy would misalign the PHA
 and response. The ascending/nonoverlap rule applies to the incident photon
 grid, not to the detector's labeling convention.
 
-One explicit legacy unit convention has a narrow compatibility rule. The
+Redistribution MATRIX columns with unrecognised FITS unit labels, such as `none`
+or `au`, or with count/photon units are read as unitless with a warning. Their
+weights are unchanged. Recognised incompatible units such as seconds, metres
+or keV remain errors. Unknown units and count/photon labels are also rejected
+on complete (`HDUCLAS3=FULL`) responses, where they leave the collecting-area
+scale ambiguous. Recognised area units are converted to cm².
+
+One documented legacy convention can be read without a warning. The
 [CXC source-catalog product documentation](https://cxc.cfa.harvard.edu/csc1/data_products/usage/)
-labels ACIS redistribution matrices `au`. Only an `au` MATRIX with the complete
+labels ACIS redistribution matrices `au`. An `au` MATRIX with the complete
 CHANDRA/ACIS, OGIP, RESPONSE/RSP_MATRIX/REDIST header context is interpreted as
-dimensionless. The values and source file stay unchanged. `DataRMF` retains
+dimensionless and records the convention used. The values and source file stay
+unchanged. `DataRMF` retains
 `matrix_unit_original` and `compatibility_notes`; `Instrument.attrs` exposes
 `response_matrix_unit_original` and `response_matrix_compatibility_notes`,
-including the primary source URL. Other `au` contexts are rejected. This
-exception never makes the response an effective-area matrix or replaces its ARF.
+including the primary source URL. Other `au` contexts follow the warning/error
+rules above. This exception never makes the response an effective-area matrix
+or replaces its ARF.
 
 Adjacent calibration boundaries sometimes differ by storage roundoff, as in
 float32 NuSTAR ARF products. Validation accepts overlap up to one relative machine epsilon

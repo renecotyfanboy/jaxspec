@@ -61,22 +61,39 @@ def _rmf_integer_vector(values, *, name):
     return array.astype(np.int64, copy=False)
 
 
-def _rmf_matrix_unit(matrix):
+def _rmf_matrix_unit(matrix, *, complete=False):
     """Return the stored MATRIX unit scale and whether it includes collecting area.
 
     Redistribution probabilities are dimensionless. A complete RSP can instead
     store an area-valued matrix; convert that area to cm² before factorization.
     Unclassified legacy columns without units retain their numeric convention.
+    For redistribution-only responses, warn and ignore unknown unit labels or
+    count/photon ratios. Complete responses need unambiguous area conventions.
     """
     unit = getattr(matrix, "unit", None)
     if unit is None:
         return 1.0, False
     unit = u.Unit(unit)
-    if unit.is_equivalent(u.cm**2):
-        return unit.to(u.cm**2), True
-    if unit.is_equivalent(u.dimensionless_unscaled):
-        return unit.to(u.dimensionless_unscaled), False
-    raise ValueError("RMF MATRIX units must be dimensionless or an effective area such as cm2.")
+    if isinstance(unit, u.UnrecognizedUnit):
+        if complete:
+            raise ValueError(
+                "RMF MATRIX units of a complete (HDUCLAS3=FULL) response must "
+                "be dimensionless or an effective area such as cm2."
+            )
+    else:
+        if unit.is_equivalent(u.cm**2):
+            return unit.to(u.cm**2), True
+        if unit.is_equivalent(u.dimensionless_unscaled):
+            return unit.to(u.dimensionless_unscaled), False
+        if complete or not unit.is_equivalent(u.ct / u.ph):
+            raise ValueError(
+                "RMF MATRIX units must be dimensionless or an effective area such as cm2."
+            )
+    warnings.warn(
+        f"Ignoring RMF MATRIX unit {unit!s}; OGIP defines redistribution MATRIX as unitless.",
+        stacklevel=3,
+    )
+    return 1.0, False
 
 
 def _cxc_dimensionless_rmf(header, stored_unit):
@@ -445,7 +462,7 @@ class DataRMF:
         self.channel = detector_channels(
             channel, size=len(self.e_min), name="RMF EBOUNDS channel identifiers"
         )
-        scale, area_unit = _rmf_matrix_unit(matrix)
+        scale, area_unit = _rmf_matrix_unit(matrix, complete=includes_effective_area)
         self.matrix_unit_original = str(matrix.unit) if getattr(matrix, "unit", None) else None
         self.compatibility_notes = ()
         self.includes_effective_area = bool(includes_effective_area or area_unit)
