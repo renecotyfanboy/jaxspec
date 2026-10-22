@@ -1,5 +1,7 @@
 """Event counts and OGIP grouping must retain the supplied Poisson experiment."""
 
+import warnings
+
 import astropy.units as u
 import numpy as np
 import pytest
@@ -139,24 +141,52 @@ def test_unit_tagged_fits_counts_and_legacy_rate_columns(tmp_path, column, unit,
 
 
 @pytest.mark.parametrize("poisson", [None, False, True])
-def test_statistical_errors_require_an_explicit_poisson_declaration(tmp_path, poisson):
-    """STAT_ERR without POISSERR supplies non-Poisson errors under the OGIP standard."""
-    spectrum = fits.BinTableHDU.from_columns(
-        [
-            fits.Column(name="CHANNEL", format="J", array=[0, 1]),
-            fits.Column(name="COUNTS", format="J", array=[4, 9]),
-            fits.Column(name="STAT_ERR", format="D", array=[20, 30]),
-        ],
-        name="SPECTRUM",
-    )
+@pytest.mark.parametrize("supplied_errors", [False, True])
+def test_supplied_errors_do_not_reject_raw_event_counts(tmp_path, poisson, supplied_errors):
+    """Raw counts remain usable when a pipeline stores its own error estimates."""
+    columns = [
+        fits.Column(name="CHANNEL", format="J", array=[0, 1]),
+        fits.Column(name="COUNTS", format="J", array=[4, 9]),
+    ]
+    if supplied_errors:
+        columns.append(fits.Column(name="STAT_ERR", format="D", array=[20, 30]))
+    spectrum = fits.BinTableHDU.from_columns(columns, name="SPECTRUM")
     spectrum.header.update(EXPOSURE=10, GROUPING=0, QUALITY=0, BACKSCAL=1, AREASCAL=1)
     if poisson is not None:
         spectrum.header["POISSERR"] = poisson
     path = tmp_path / "errors.pha"
     fits.HDUList([fits.PrimaryHDU(), spectrum]).writeto(path)
-    pha = DataPHA.from_file(path)
-    if poisson:
-        np.testing.assert_array_equal(Observation.from_ogip_container(pha).counts, [4, 9])
-    else:
-        with pytest.raises(ValueError, match="non-Poisson"):
-            Observation.from_ogip_container(pha)
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        pha = DataPHA.from_file(path)
+        observation = Observation.from_ogip_container(pha)
+    expected_warning = poisson is False or (supplied_errors and poisson is not True)
+    assert len(captured) == int(expected_warning)
+    if expected_warning:
+        assert captured[0].category is UserWarning
+        assert "Poisson likelihood ignores these error settings" in str(captured[0].message)
+        assert captured[0].filename == __file__
+    assert "NONPOISSON" not in pha.flags
+    np.testing.assert_array_equal(observation.counts, [4, 9])
+    np.testing.assert_array_equal(observation.folded_counts, [4, 9])
+
+
+@pytest.mark.parametrize("counts,classification", [([4.5, 9], "TOTAL"), ([4, 9], "NET")])
+def test_supplied_errors_do_not_bypass_event_count_requirements(tmp_path, counts, classification):
+    """The warning does not allow fractional or background-subtracted spectra."""
+    spectrum = fits.BinTableHDU.from_columns(
+        [
+            fits.Column(name="CHANNEL", format="J", array=[0, 1]),
+            fits.Column(name="COUNTS", format="D", array=counts),
+            fits.Column(name="STAT_ERR", format="D", array=[20, 30]),
+        ],
+        name="SPECTRUM",
+    )
+    spectrum.header.update(EXPOSURE=10, GROUPING=0, QUALITY=0, BACKSCAL=1, AREASCAL=1)
+    spectrum.header.update(POISSERR=False, HDUCLAS2=classification)
+    path = tmp_path / "errors.pha"
+    fits.HDUList([fits.PrimaryHDU(), spectrum]).writeto(path)
+    message = "fractional" if classification == "TOTAL" else "background-subtracted"
+    with pytest.warns(UserWarning, match="Poisson likelihood ignores"):
+        with pytest.raises(ValueError, match=message):
+            Observation.from_ogip_container(DataPHA.from_file(path))

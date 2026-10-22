@@ -1,4 +1,5 @@
 import os
+import warnings
 
 import astropy.units as u
 import numpy as np
@@ -298,12 +299,18 @@ class DataPHA:
 
         if header.get("HDUCLAS2") == "NET":
             flags.append("NET")
-        # OGIP permits STAT_ERR in place of POISSERR. Do not silently discard
-        # supplied statistical errors and assume a Poisson experiment instead.
+        # Error estimates (e.g. CIAO's Gehrels errors) do not change raw event
+        # counts. Warn that this likelihood ignores the supplied error model.
         if header.get("POISSERR") is False or (
             "STAT_ERR" in data.colnames and header.get("POISSERR") is not True
         ):
-            flags.append("NONPOISSON")
+            warnings.warn(
+                "The PHA file specifies supplied statistical errors or POISSERR=False. "
+                "The Poisson likelihood ignores these error settings and uses the event counts; "
+                "supply raw, unsubtracted counts for fitting.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         kwargs = {
             "grouping": grouping,

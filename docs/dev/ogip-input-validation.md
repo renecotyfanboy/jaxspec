@@ -10,11 +10,15 @@ converted; incompatible units fail with the relevant field name.
 Counts must be nonnegative integer events. Count Quantities are converted to
 counts, while dimensionless extraction scales accept units such as percent.
 Grouped source and background counts remain exact int64 values; an overflowing
-sum is rejected. Background-subtracted spectra and files declaring non-Poisson
-errors cannot use this likelihood. Under the
+sum is rejected. Background-subtracted spectra cannot use this likelihood.
+Supplied error estimates do not make raw event counts unsuitable for a Poisson
+fit. Under the
 [PHA header specification](https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/node6.html),
-a `STAT_ERR` column without `POISSERR=True` also specifies supplied errors and
-is rejected when constructing an observation.
+a `STAT_ERR` column without `POISSERR=True` specifies supplied errors. These
+files, and files declaring `POISSERR=False`, load with a warning that the Poisson
+likelihood ignores those error settings and uses the event counts. This supports
+raw counts with pipeline-generated errors, such as CIAO Gehrels estimates;
+fractional counts and background-subtracted spectra remain rejected.
 
 Background groups are refined only when the source/background ratio differs
 between usable channels. Bad-quality channels do not introduce boundaries.
