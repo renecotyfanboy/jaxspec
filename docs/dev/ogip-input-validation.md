@@ -21,6 +21,10 @@ between usable channels. Bad-quality channels do not introduce boundaries.
 Detector `AREASCAL` multiplies redistributed counts before grouping, including
 when pileup recomposes the response from its separate components.
 
+PHA `QUALITY` and `GROUPING` columns take precedence over their header keywords.
+The zero-valued keywords supply defaults only when the corresponding column is
+absent, so stale header values cannot discard per-channel flags or grouping.
+
 The [OGIP response specification](https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/docs/memos/cal_gen_92_002/cal_gen_92_002.html)
 defines `F_CHAN` as the first detector **label** in a contiguous group, `N_CHAN`
 as its length and `N_GRP` as the number of active groups. Consequently, a response

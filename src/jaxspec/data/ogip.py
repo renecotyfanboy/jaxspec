@@ -279,17 +279,17 @@ class DataPHA:
         _reject_unsupported_hduclas(header, "HDUCLAS3", "RATE")
         _reject_unsupported_hduclas(header, "HDUCLAS4", "TYPE:II")
 
-        if header.get("GROUPING") == 0:
-            grouping = None
-        elif "GROUPING" in data.colnames:
+        if "GROUPING" in data.colnames:
             grouping = data["GROUPING"]
+        elif header.get("GROUPING") == 0:
+            grouping = None
         else:
             raise ValueError("No grouping column found in the PHA file.")
 
-        if header.get("QUALITY") == 0:
-            quality = np.zeros(len(data["CHANNEL"]), dtype=bool)
-        elif "QUALITY" in data.colnames:
+        if "QUALITY" in data.colnames:
             quality = data["QUALITY"]
+        elif header.get("QUALITY") == 0:
+            quality = np.zeros(len(data["CHANNEL"]), dtype=bool)
         else:
             raise ValueError("No QUALITY column found in the PHA file.")
 
