@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import xarray as xr
 
@@ -72,6 +74,8 @@ class Observation(xr.Dataset):
         source-region background counts. ``areascal`` multiplies the folded
         source response per detector channel. Groups crossing unequal background
         ratios are refined so each likelihood bin has one exact scaling factor.
+        A UserWarning reports the number of added groups when this changes the
+        supplied binning; ratios on rejected channels do not cause a split.
         Exposure is in seconds unless an explicit Astropy time Quantity is supplied.
         """
         if attributes is None:
@@ -93,6 +97,15 @@ class Observation(xr.Dataset):
             raise ValueError("Background scaling and AREASCAL must be positive in usable channels.")
         grouping = poisson_grouping(grouping, len(counts))
         grouping, split_count = split_background_groups(grouping, backratio, quality == 0)
+        if split_count:
+            warnings.warn(
+                f"Background scaling added {split_count} group(s) to the supplied binning "
+                f"({grouping.shape[0] - split_count} -> {grouping.shape[0]} groups): "
+                "usable channels within a group have different source/background scaling "
+                "ratios. Each resulting likelihood bin needs one scaling ratio.",
+                UserWarning,
+                stacklevel=2,
+            )
         attributes = dict(attributes)
         attributes["background_scale_group_splits"] = split_count
 

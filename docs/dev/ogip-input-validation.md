@@ -22,6 +22,11 @@ fractional counts and background-subtracted spectra remain rejected.
 
 Background groups are refined only when the source/background ratio differs
 between usable channels. Bad-quality channels do not introduce boundaries.
+This can increase the number of bins beyond the supplied grouping, potentially
+leaving fewer counts in each bin. A `UserWarning` reports the number of added
+groups and the old and new totals. The split preserves one source/background
+scaling ratio per likelihood bin instead of averaging unequal ratios; no warning
+is emitted when the supplied groups already satisfy this condition.
 Detector `AREASCAL` multiplies redistributed counts before grouping, including
 when pileup recomposes the response from its separate components.
 
