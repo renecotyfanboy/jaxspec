@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC
+from inspect import signature
 from uuid import uuid4
 
 import jax
@@ -293,6 +294,28 @@ class ModelComponent(HideUnderscore, HasDerivedQuantities, nnx.Module, Composabl
     """
 
     ...
+
+    def get_config(self) -> dict:
+        """Constructor keywords needed to recreate this component, excluding fitted values.
+
+        Configurable components retain these in ``_config`` or override this hook.
+        Unsupported custom configuration raises instead of silently using defaults.
+        Arrays belong in NNX state, not in the structural configuration.
+        """
+        if hasattr(self, "_config"):
+            return dict(self._config)
+        if type(self).__init__ is object.__init__:
+            return {}
+        arguments = [
+            parameter
+            for name, parameter in signature(type(self).__init__).parameters.items()
+            if name != "self"
+        ]
+        if arguments:
+            raise TypeError(
+                f"{type(self).__name__} must implement get_config() to serialize configuration."
+            )
+        return {}
 
 
 class AdditiveComponent(ModelComponent):
