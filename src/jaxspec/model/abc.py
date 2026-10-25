@@ -80,7 +80,6 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
         return cls(_graph)
 
-
     @classmethod
     def from_string(cls, expression: str, *, components: dict | None = None):
         """Parse registered component names, literal configuration, ``+`` and ``*``.
@@ -103,6 +102,13 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
         return serialize_model(self)
 
+    @classmethod
+    def from_dict(cls, data: dict, *, components: dict | None = None):
+        """Restore a ``to_dict`` record using registered component classes only."""
+        from ._serialization import deserialize_model
+
+        return deserialize_model(data, components=components)
+
     @property
     def graph(self) -> nx.DiGraph:
         """Return a detached structural graph with ordered edges and no model arrays."""
@@ -123,7 +129,6 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
             for node_id, in_degree in self._graph.in_degree(self._graph.nodes)
             if in_degree == 0 and ("additive" in self._graph.nodes[node_id].get("type"))
         ]
-
 
     def _evaluate_branches(self, e_low=None, e_high=None, *, energy_flux=False, n_points=2):
         """Evaluate the ordered tree, retaining nonlinear operator scopes as one branch.
@@ -374,8 +379,6 @@ class ModelComponent(HideUnderscore, HasDerivedQuantities, nnx.Module, Composabl
     Abstract class for model components
     """
 
-    ...
-
     def get_config(self) -> dict:
         """Constructor keywords needed to recreate this component, excluding fitted values.
 
@@ -411,7 +414,6 @@ class OperatorComponent(ModelComponent):
     type = "operator"
     input_type = "additive"
     output_type = "additive"
-
 
     def __call__(self, operand):
         """Apply this operator to an explicit component or model, e.g. ``op(a + b)``."""
