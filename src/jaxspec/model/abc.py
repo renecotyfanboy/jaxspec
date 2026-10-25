@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from abc import ABC
+from abc import ABC, abstractmethod
 from inspect import signature
 from uuid import uuid4
 
@@ -316,6 +316,30 @@ class ModelComponent(HideUnderscore, HasDerivedQuantities, nnx.Module, Composabl
                 f"{type(self).__name__} must implement get_config() to serialize configuration."
             )
         return {}
+
+
+class OperatorComponent(ModelComponent):
+    """Base contract for an operator acting on one complete expression.
+
+    ``apply`` receives integrated photons/cm²/s per bin on explicit keV bounds.
+    Factor operators set ``input_type`` and ``output_type`` to ``multiplicative``
+    and operate on dimensionless bin factors. Operators must account for finite
+    grid losses. No concrete convolution kernels are provided by this base class.
+    """
+
+    type = "operator"
+    input_type = "additive"
+    output_type = "additive"
+
+
+    @abstractmethod
+    def apply(self, flux, e_low, e_high):
+        """Transform a bin-integrated spectrum on the supplied keV grid.
+
+        Subclasses implement JAX-compatible operations and preserve the energy
+        axis. ``flux`` is dimensionless for operators declaring factor inputs.
+        """
+        raise NotImplementedError("Operator components must implement apply(flux, e_low, e_high).")
 
 
 class AdditiveComponent(ModelComponent):
