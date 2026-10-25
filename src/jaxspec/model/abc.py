@@ -122,6 +122,92 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
             )
             yield branch, mult_ids, root_node_name
 
+    def _evaluate_branches(self, e_low=None, e_high=None, *, energy_flux=False, n_points=2):
+        """Evaluate the ordered tree, retaining nonlinear operator scopes as one branch.
+
+        With no grid, only branch names are inspected; component code is not run.
+        """
+        inspect_only = e_low is None
+        need_photons = not energy_flux or any(
+            node["type"] == "operator_component" for _, node in self._graph.nodes(data=True)
+        )
+        results = {}
+        photon_totals = {}
+        for node_id in nx.topological_sort(self._graph):
+            node = self._graph.nodes[node_id]
+            node_type = node["type"]
+            children = sorted(
+                self._graph.predecessors(node_id),
+                key=lambda child: self._graph.edges[child, node_id].get("position", 0),
+            )
+            if node_type == "out":
+                _, _, branches = results[children[0]]
+                return {"*".join(key): value for key, value in branches.items()}
+            if node_type.endswith("_component"):
+                name = node["name"]
+                component = getattr(self, name)
+                if node_type == "operator_component":
+                    _, expression, branches = results[children[0]]
+                    label = f"{name}({expression})"
+                    value = None
+                    if not inspect_only:
+                        operand = photon_totals[children[0]]
+                        photons = jnp.asarray(component.apply(operand, e_low, e_high))
+                        if photons.shape != operand.shape:
+                            raise ValueError(f"Operator {name!r} must preserve the spectrum shape.")
+                        value = photons
+                        if energy_flux and node["output_type"] == "additive":
+                            value = photons * (e_low + e_high) / 2
+                    kind = node["output_type"]
+                else:
+                    label, kind = name, component.type
+                    if inspect_only:
+                        value = None
+                    elif kind == "multiplicative":
+                        value = component._factor(e_low, e_high, n_points=n_points)
+                        photons = value
+                    else:
+                        photons = (
+                            component._photon_flux(e_low, e_high, n_points=n_points)
+                            if need_photons
+                            else None
+                        )
+                        value = (
+                            component._energy_flux(e_low, e_high, n_points=n_points)
+                            if energy_flux
+                            else photons
+                        )
+                photon_totals[node_id] = None if inspect_only else photons
+                results[node_id] = kind, label, {(label,): value}
+                continue
+            left_kind, left_expr, left = results[children[0]]
+            right_kind, right_expr, right = results[children[1]]
+            kind = "additive" if "additive" in (left_kind, right_kind) else "multiplicative"
+            if node_type == "add_operation":
+                expression = f"({left_expr}+{right_expr})"
+                if not inspect_only and need_photons:
+                    photon_totals[node_id] = photon_totals[children[0]] + photon_totals[children[1]]
+                if kind == "additive":
+                    branches = {**left, **right}
+                else:
+                    value = None if inspect_only else sum(left.values()) + sum(right.values())
+                    branches = {(expression,): value}
+            else:
+                expression = f"({left_expr}*{right_expr})"
+                if not inspect_only and need_photons:
+                    photon_totals[node_id] = photon_totals[children[0]] * photon_totals[children[1]]
+                branches = {}
+                for left_key, left_value in left.items():
+                    for right_key, right_value in right.items():
+                        if left_kind == "additive":
+                            key = (*sorted((*left_key[:-1], *right_key)), left_key[-1])
+                        elif right_kind == "additive":
+                            key = (*sorted((*left_key, *right_key[:-1])), right_key[-1])
+                        else:
+                            key = tuple(sorted((*left_key, *right_key)))
+                        branches[key] = None if inspect_only else left_value * right_value
+            results[node_id] = kind, expression, branches
+
     @property
     def branches(self) -> list[str]:
         # Caching on an nnx.Module would mutate its graph definition.
