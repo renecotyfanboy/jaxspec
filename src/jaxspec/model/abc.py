@@ -93,6 +93,16 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
         return parse_model(expression, components=components)
 
+    def to_dict(self) -> dict:
+        """Export a JSON-compatible graph, constructor configuration and NNX state.
+
+        External data are reloaded by their constructors, not embedded. Custom
+        components must expose reconstructible configuration with ``get_config``.
+        """
+        from ._serialization import serialize_model
+
+        return serialize_model(self)
+
     @property
     def graph(self) -> nx.DiGraph:
         """Return a detached structural graph with ordered edges and no model arrays."""
