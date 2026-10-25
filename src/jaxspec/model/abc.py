@@ -75,22 +75,6 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
         return cls(_graph)
 
-    def _find_multiplicative_components(self, node_id):
-        """
-        Recursively finds all the multiplicative components connected to the node with the given ID.
-        """
-        node = self._graph.nodes[node_id]
-        multiplicative_nodes = []
-
-        if node.get("type") == "mul_operation":
-            predecessors = self._graph.pred[node_id]
-            for node_id in predecessors:
-                if "multiplicative_component" == self._graph.nodes[node_id].get("type"):
-                    multiplicative_nodes.append(node_id)
-                elif "mul_operation" == self._graph.nodes[node_id].get("type"):
-                    multiplicative_nodes.extend(self._find_multiplicative_components(node_id))
-
-        return multiplicative_nodes
 
     @property
     def root_nodes(self) -> list[str]:
