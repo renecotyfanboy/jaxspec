@@ -149,3 +149,161 @@ class MyFactor(MultiplicativeComponent):
     def factor(self, energy):
         return jnp.abs(jnp.cos(energy / self.E0))
 ```
+## Model strings and inspection
+
+Strings use the same composition rules and public parameter names as Python objects:
+
+```python
+from jaxspec.model.abc import SpectralModel
+
+model = SpectralModel.from_string(
+    "tbabs * (powerlaw + diskbb(flux_band=(0.1, 30.0)))"
+)
+print(model.parameters)  # tbabs_1.nh, powerlaw_1.alpha, diskbb_1.Tin, ...
+print(model.branches)
+print(model.to_mermaid())
+```
+
+Names are case-insensitive. Constructor options use literal keyword arguments;
+fit parameters still use component attributes or the `params` dictionary. For example,
+`model.powerlaw_1.norm.set_value(0.002)` changes the current normalization. A local
+table can be specified as `atable(path='/path/to/table.fits')` using the existing
+supported table reader.
+
+The parser accepts component names, calls, parentheses, addition and multiplication.
+It validates the entire expression before constructing components. Attribute access,
+imports, indexing and arbitrary Python calls are rejected. A valid constructor can
+read its configured file or fetch the component's usual data. Additional trusted
+component classes can be registered with `components={'MyComponent': MyComponent}`.
+
+Emission components return bin-integrated photon flux; factors are dimensionless.
+Add emission to emission, or factors to factors. Multiplication can combine factors
+or apply a factor to emission. Adding a factor to emission or multiplying two
+emission spectra raises an error. Reusing a model in `model + model` creates distinct
+component occurrences with separate parameter names. Composition copies the current
+component state, so later edits to an operand do not change the composed model.
+
+`model.graph` returns a detached NetworkX expression graph. Binary edges have
+`position=0` and `position=1` to record operand order. Graph nodes hold structural
+metadata; parameters and numerical buffers live on the named component modules.
+
+## Saving a model description
+
+A model description preserves public component names, operation order, constructor
+configuration and tracked numerical state:
+
+```python
+import json
+
+encoded = json.dumps(model.to_dict())
+restored = SpectralModel.from_dict(json.loads(encoded))
+```
+
+The versioned dictionary contains separate `nodes`, `edges` and `state` records.
+Tracked NNX parameters and buffers retain their values, shapes and dtypes. Custom
+classes must be registered again through `components` when restoring; descriptions
+cannot import arbitrary Python classes. Configurable custom components implement
+`get_config()` to return the literal keyword arguments required to reconstruct them.
+Unsupported configuration raises an error instead of falling back to defaults.
+
+External atomic and table data are loaded again by the component constructor. These
+files are not embedded or authenticated by this description; keep the same data
+available when restoring. Untracked static Python objects and mutations of cached
+external arrays are not saved. A description is not a complete fit-provenance record.
+
+## Working energy grids
+
+The existing fitter and `ForwardModel` accept `energy_grid` as finite, positive,
+strictly increasing bin edges in **keV**. This lets you evaluate a spectrum on a
+shared grid before folding it through each observation's response:
+
+```python
+import numpy as np
+from jaxspec.fit import BayesianModel
+
+# `prior` and `observations` are the usual prior dictionary and loaded data.
+fit_model = BayesianModel(
+    model, prior, observations, energy_grid=np.geomspace(0.1, 30.0, 2001)
+)
+```
+
+Each source bin contains integrated **photons/cm²/s**, not a flux density evaluated
+at its center. Redistribution assumes constant photon density within a source bin
+and transfers the fraction overlapping each response bin. Gaps and energies outside
+source coverage contribute zero; photons outside the target coverage are not
+renormalized into it. Choose enough coverage for the model and check grid refinement
+for narrow features or strongly varying factors. Energy-flux output uses **keV/cm²/s**.
+
+## Scoped custom operators
+
+An operator receives an entire subexpression on explicit lower and upper energy
+bounds. This base contract supports future spectral kernels; it does not itself
+implement smoothing, shifts or a physical scattering model. The following toy
+operator reverses bin contents to demonstrate scope, not a physical redistribution:
+
+```python
+import jax.numpy as jnp
+from jaxspec.model.abc import OperatorComponent
+from jaxspec.model.additive import Powerlaw, Gauss
+
+class ReverseBins(OperatorComponent):
+    def apply(self, flux, e_low, e_high):
+        return jnp.flip(flux, axis=-1)
+
+scoped = ReverseBins()(Powerlaw() + Gauss())
+parsed = SpectralModel.from_string(
+    'reverse(powerlaw + gauss)', components={'reverse': ReverseBins}
+)
+```
+
+`apply(flux, e_low, e_high)` receives integrated photons and must preserve the
+spectrum's shape. Bounds are in keV. Declare fixed class attributes `input_type`
+and `output_type` as `'multiplicative'` for an operator acting on dimensionless factors. Ordinary
+multiplication of an unapplied operator, such as `ReverseBins() * Powerlaw()`, is
+rejected. Operator order and parentheses are preserved. Branch plots keep an
+operator's entire scope together because a nonlinear operator need not distribute
+over a sum.
+
+For emission produced by operators, `energy_flux` weights the transported photons
+by bin midpoints. Other emission branches retain their usual energy integration;
+factor-only operators do not change it. The midpoint rule is a finite-bin
+approximation to the energy moment; refine the working grid to assess it. Custom operators are responsible for their
+physical measure, valid domains and losses outside the supplied grid.
+
+## Numerical state in compiled model evaluation
+
+Use NNX variables for mutable model-owned arrays, and pass the model or its split
+state explicitly to compiled code. For example:
+
+```python
+import jax
+import jax.numpy as jnp
+from flax import nnx
+from jaxspec.model.abc import AdditiveComponent
+
+class BinnedSource(AdditiveComponent):
+    def __init__(self):
+        self.photons = nnx.Variable(jnp.array([1.0, 2.0]))
+
+    def integrated_continuum(self, e_low, e_high):
+        return self.photons[...]
+
+source = SpectralModel.from_component(BinnedSource())
+graphdef, state = nnx.split(source)
+low, high = jnp.array([1.0, 2.0]), jnp.array([2.0, 3.0])
+
+@jax.jit
+def evaluate(current_state):
+    return nnx.merge(graphdef, current_state).photon_flux(low, high)
+
+before = evaluate(state)
+source.binnedsource_1.photons[...] = jnp.array([3.0, 4.0])
+after = evaluate(nnx.state(source))
+```
+
+The graph structure stays fixed while the array values change. An `nnx.jit` function
+that receives the model as an argument is another supported approach. This contract
+does not make an ordinary `jax.jit` closure over a mutable model safe, nor does it
+change how existing samplers capture external table objects. Bare components remain
+valid backgrounds: `SpectralModelBackground(Powerlaw())` still uses `background.alpha`
+and `background.norm` rather than adding a component-name segment.
