@@ -100,27 +100,6 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
             if in_degree == 0 and ("additive" in self._graph.nodes[node_id].get("type"))
         ]
 
-    def _iter_branches(self):
-        """Yield ``(branch_name, mult_node_ids, root_node_name)`` for every additive root.
-
-        ``mult_node_ids`` is the deduplicated list of multiplicative-component node ids
-        along the path from the additive root to ``out``. They are ordered by component
-        name so user-facing branch names are deterministic across processes.
-        """
-        for root_node_id in self.root_nodes:
-            root_node_name = self._graph.nodes[root_node_id].get("name")
-            path = nx.shortest_path(self._graph, source=root_node_id, target="out")
-
-            mult_ids: list[str] = []
-            for node_id in path[::-1]:
-                mult_ids.extend(self._find_multiplicative_components(node_id))
-            mult_ids = sorted(set(mult_ids), key=lambda mid: self._graph.nodes[mid]["name"])
-
-            branch = (
-                "".join(f"{self._graph.nodes[mid].get('name')}*" for mid in mult_ids)
-                + root_node_name
-            )
-            yield branch, mult_ids, root_node_name
 
     def _evaluate_branches(self, e_low=None, e_high=None, *, energy_flux=False, n_points=2):
         """Evaluate the ordered tree, retaining nonlinear operator scopes as one branch.
