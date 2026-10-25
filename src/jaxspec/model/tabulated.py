@@ -229,6 +229,10 @@ class _TableComponent:
 
     def _init_table(self, path: str | Path, energy_band: tuple[float, float] | None):
         path = str(Path(path).expanduser().resolve())
+        self._config = {
+            "path": path,
+            "energy_band": None if energy_band is None else tuple(energy_band),
+        }
         signature = _file_signature(path)
         if energy_band is None:
             table = _load_ogip_table(path, signature)
