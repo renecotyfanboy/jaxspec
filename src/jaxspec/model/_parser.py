@@ -10,18 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from keyword import iskeyword
 
-from .abc import ModelComponent, OperatorComponent
-
-
-@dataclass(frozen=True)
-class _Expression:
-    """An inert, validated instruction; no component exists until the full tree passes."""
-
-    kind: str
-    operation: str
-    operands: tuple[_Expression, ...] = ()
-    component: type[ModelComponent] | None = None
-    config: dict | None = None
+from .abc import ModelComponent, OperatorComponent, SpectralModel
 
 
 def component_registry(
@@ -72,6 +61,17 @@ def component_registry(
             raise ValueError(f"Component name {name!r} is already registered.")
         registry[key] = cls
     return registry
+
+
+@dataclass(frozen=True)
+class _Expression:
+    """An inert, validated instruction; no component exists until the full tree passes."""
+
+    kind: str
+    operation: str
+    operands: tuple[_Expression, ...] = ()
+    component: type[ModelComponent] | None = None
+    config: dict | None = None
 
 
 def _literal_config(node: ast.AST):
@@ -179,3 +179,51 @@ def _build_expression(expression: _Expression):
         return expression.component(**expression.config)(_build_expression(expression.operands[0]))
     left, right = (_build_expression(operand) for operand in expression.operands)
     return left + right if expression.operation == "add" else left * right
+
+
+def parse_model(
+    expression: str,
+    *,
+    components: Mapping[str, type[ModelComponent]] | None = None,
+) -> SpectralModel:
+    """Construct a model from a restricted spectral expression.
+
+    Names are case-insensitive. ``+`` adds spectra or dimensionless factors;
+    ``*`` combines factors or applies a factor to a spectrum. Constructor
+    configuration uses literal keywords, for example
+    ``diskbb(flux_band=(0.1, 50.0)) + powerlaw``. Fitted parameter values are
+    assigned through the usual model attributes or ``params`` dictionaries.
+
+    A trusted custom operator registered through ``components`` is applied as
+    ``operator_name(subexpression, setting=literal)``. Its positional argument
+    is the complete scope, not constructor configuration. Python attribute
+    access, imports, indexing, unpacking and arbitrary function calls are
+    rejected. The full expression is validated before any component constructor
+    runs; valid table constructors may then read their explicitly supplied file.
+
+    Parameters:
+        expression: At most 16,384 characters, 1,024 AST nodes and 64 levels deep.
+        components: Additional trusted component classes indexed by public name.
+
+    Returns:
+        A spectral model with the same component names as object composition.
+    """
+    if not isinstance(expression, str):
+        raise TypeError("A model expression must be a string.")
+    if len(expression) > 16_384:
+        raise ValueError("Model expression exceeds the 16,384-character limit.")
+    try:
+        tree = ast.parse(expression.strip(), mode="eval")
+    except (SyntaxError, RecursionError) as exc:
+        raise ValueError(f"Invalid model expression: {exc}") from exc
+    pending = [(tree, 0)]
+    count = 0
+    while pending:
+        node, depth = pending.pop()
+        count += 1
+        if count > 1_024 or depth > 64:
+            raise ValueError("Model expression exceeds the node or nesting limit.")
+        pending.extend((child, depth + 1) for child in ast.iter_child_nodes(node))
+    plan = _validate_expression(tree.body, component_registry(components))
+    model = _build_expression(plan)
+    return model if isinstance(model, SpectralModel) else SpectralModel.from_component(model)
