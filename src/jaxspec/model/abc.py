@@ -81,6 +81,18 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
         return cls(_graph)
 
 
+    @classmethod
+    def from_string(cls, expression: str, *, components: dict | None = None):
+        """Parse registered component names, literal configuration, ``+`` and ``*``.
+
+        For example, ``SpectralModel.from_string('tbabs * powerlaw')``. Custom
+        classes must be supplied explicitly in ``components``; no Python code
+        is evaluated. Operators require an explicit argument expression.
+        """
+        from ._parser import parse_model
+
+        return parse_model(expression, components=components)
+
     @property
     def graph(self) -> nx.DiGraph:
         """Return a detached structural graph with ordered edges and no model arrays."""
