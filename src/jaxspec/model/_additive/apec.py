@@ -387,6 +387,15 @@ class APEC(AdditiveComponent):
         line_chunks: int | None = None,
         z_max: float = 0.3,
     ):
+        self._config = {
+            "broadening": broadening,
+            "abundances": abundances,
+            "abundance_table": abundance_table,
+            "energy_band": None if energy_band is None else tuple(energy_band),
+            "k_window": k_window,
+            "line_chunks": line_chunks,
+            "z_max": z_max,
+        }
         self.kT = nnx.Param(1.0)
         self.redshift = nnx.Param(0.0)
         self.norm = nnx.Param(1.0)
