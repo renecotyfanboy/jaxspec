@@ -28,17 +28,16 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
     def compose(self, other, operation=None):
         """Combine two spectral models with an addition or multiplication node."""
 
-        if operation == "mul" and self.root_nodes and other.root_nodes:
-            raise ValueError(
-                f"Cannot multiply two additive models "
-                f"({'+'.join(self.branches)!r} * {'+'.join(other.branches)!r}). "
-                f"`*` applies a multiplicative component (e.g. Tbabs) to a model; use "
-                f"`+` to add two additive components together."
-            )
-
-        composed_graph = compose(self._graph, other._graph, operation=operation)
-
-        return SpectralModel(composed_graph)
+        if not isinstance(other, SpectralModel):
+            raise TypeError("Model arithmetic requires spectral components or models.")
+        graphs = []
+        for model in (self, other):
+            graph = model._graph.copy()
+            for _, node in graph.nodes(data=True):
+                if "component" in node["type"]:
+                    node["component"] = nnx.clone(getattr(model, node["name"]))
+            graphs.append(graph)
+        return SpectralModel(compose(*graphs, operation=operation))
 
     @classmethod
     def from_component(cls, component):
