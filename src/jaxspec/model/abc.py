@@ -87,6 +87,14 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
         return self._graph.copy()
 
     @property
+    def parameters(self) -> dict:
+        """Current fitted values keyed by public paths, e.g. ``powerlaw_1.norm``."""
+        return {
+            ".".join(map(str, path)): variable.get_value()
+            for path, variable in nnx.to_flat_state(nnx.state(self, nnx.Param))
+        }
+
+    @property
     def root_nodes(self) -> list[str]:
         return [
             node_id
