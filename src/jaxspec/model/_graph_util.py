@@ -112,43 +112,6 @@ def compose(graph_1: nx.DiGraph, graph_2: nx.DiGraph, operation: str = ""):
     return graph
 
 
-_MERMAID_OP_SYMBOLS = {"add": "**+**", "mul": "**x**"}
-
-
-def _render_mermaid_node(node, attributes) -> str:
-    if attributes["type"] == "out":
-        return f'    {node}("Output")\n'
-
-    operation_type, node_type = attributes["type"].split("_")
-
-    if node_type == "component":
-        name, number = attributes["name"].split("_")
-        return f'    {node}("{name.capitalize()} ({number})")\n'
-
-    if node_type == "operation":
-        symbol = _MERMAID_OP_SYMBOLS.get(operation_type)
-        if symbol is not None:
-            return f"    {node}{{{symbol}}}\n"
-
-    return ""
-
-
-def export_to_mermaid(graph, file=None):
-    mermaid_code = "graph LR\n"  # LR = left to right
-
-    for node, attributes in graph.nodes(data=True):
-        mermaid_code += _render_mermaid_node(node, attributes)
-
-    for source, target in graph.edges():
-        mermaid_code += f"    {source} --> {target}\n"
-
-    if file is None:
-        return mermaid_code
-    else:
-        with open(file, "w") as f:
-            f.write(mermaid_code)
-
-
 def validate_graph(graph: nx.DiGraph) -> str:
     """Validate an ordered expression tree and return its output kind.
 
@@ -209,3 +172,40 @@ def validate_graph(graph: nx.DiGraph) -> str:
     if graph.nodes["out"].get("type") != "out":
         raise ValueError("The 'out' node must have type 'out'.")
     return kinds["out"]
+
+
+_MERMAID_OP_SYMBOLS = {"add": "**+**", "mul": "**x**"}
+
+
+def _render_mermaid_node(node, attributes) -> str:
+    if attributes["type"] == "out":
+        return f'    {node}("Output")\n'
+
+    operation_type, node_type = attributes["type"].split("_")
+
+    if node_type == "component":
+        name, number = attributes["name"].rsplit("_", 1)
+        return f'    {node}("{name.capitalize()} ({number})")\n'
+
+    if node_type == "operation":
+        symbol = _MERMAID_OP_SYMBOLS.get(operation_type)
+        if symbol is not None:
+            return f"    {node}{{{symbol}}}\n"
+
+    return ""
+
+
+def export_to_mermaid(graph, file=None):
+    mermaid_code = "graph LR\n"  # LR = left to right
+
+    for node, attributes in graph.nodes(data=True):
+        mermaid_code += _render_mermaid_node(node, attributes)
+
+    for source, target in graph.edges():
+        mermaid_code += f"    {source} --> {target}\n"
+
+    if file is None:
+        return mermaid_code
+    else:
+        with open(file, "w") as f:
+            f.write(mermaid_code)
