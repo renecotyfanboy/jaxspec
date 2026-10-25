@@ -147,3 +147,65 @@ def export_to_mermaid(graph, file=None):
     else:
         with open(file, "w") as f:
             f.write(mermaid_code)
+
+
+def validate_graph(graph: nx.DiGraph) -> str:
+    """Validate an ordered expression tree and return its output kind.
+
+    Graph nodes contain structural metadata only. Addition combines equal kinds;
+    multiplication permits at most one photon spectrum. Operators have exactly
+    one explicitly scoped operand and declare its input and output kinds.
+    """
+    if not isinstance(graph, nx.DiGraph) or graph.is_multigraph():
+        raise ValueError("A spectral graph must be a directed expression tree.")
+    if "out" not in graph or not nx.is_directed_acyclic_graph(graph):
+        raise ValueError("A spectral graph must be acyclic and have an 'out' node.")
+    kinds, names = {}, set()
+    for node_id in nx.topological_sort(graph):
+        node = graph.nodes[node_id]
+        node_type = node.get("type")
+        children = list(graph.predecessors(node_id))
+        expected_out = 0 if node_id == "out" else 1
+        if graph.out_degree(node_id) != expected_out:
+            raise ValueError("Each expression node must have exactly one parent.")
+        if node_type == "out":
+            if node_id != "out" or len(children) != 1:
+                raise ValueError("A spectral graph must have exactly one output expression.")
+            kinds[node_id] = kinds[children[0]]
+        elif node_type in {"add_operation", "mul_operation"}:
+            if len(children) != 2 or {
+                graph.edges[child, node_id].get("position") for child in children
+            } != {0, 1}:
+                raise ValueError("Binary model operations require two ordered operands.")
+            left, right = (kinds[child] for child in children)
+            if node_type == "add_operation" and left != right:
+                raise ValueError("Cannot add emission and dimensionless factors.")
+            if node_type == "mul_operation" and left == right == "additive":
+                raise ValueError("Cannot multiply two additive models; use '+' to add emission.")
+            kinds[node_id] = "additive" if "additive" in (left, right) else "multiplicative"
+        elif node_type in {"additive_component", "multiplicative_component", "operator_component"}:
+            name = node.get("name")
+            if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]*_[1-9][0-9]*", name):
+                raise ValueError(f"Invalid public component name: {name!r}.")
+            if name in names:
+                raise ValueError(f"Duplicate public component name: {name!r}.")
+            names.add(name)
+            if node_type == "operator_component":
+                input_type, output_type = node.get("input_type"), node.get("output_type")
+                if input_type not in {"additive", "multiplicative"} or output_type not in {
+                    "additive",
+                    "multiplicative",
+                }:
+                    raise ValueError("Operators must declare valid input and output kinds.")
+                if len(children) != 1 or kinds[children[0]] != input_type:
+                    raise ValueError(f"Operator {name!r} requires one {input_type} expression.")
+                kinds[node_id] = output_type
+            else:
+                if children:
+                    raise ValueError("Emission and factor components cannot have operands.")
+                kinds[node_id] = node_type.removesuffix("_component")
+        else:
+            raise ValueError(f"Unknown spectral graph node type: {node_type!r}.")
+    if graph.nodes["out"].get("type") != "out":
+        raise ValueError("The 'out' node must have type 'out'.")
+    return kinds["out"]
