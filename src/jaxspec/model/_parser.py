@@ -169,3 +169,13 @@ def _validate_expression(node: ast.AST, registry: dict[str, type[ModelComponent]
     if arguments:
         raise ValueError(f"Component {name!r} accepts keyword constructor configuration only.")
     return _Expression(kind, "component", component=cls, config=config)
+
+
+def _build_expression(expression: _Expression):
+    """Instantiate a fully validated expression using the ordinary object model API."""
+    if expression.operation == "component":
+        return expression.component(**expression.config)
+    if expression.operation == "apply":
+        return expression.component(**expression.config)(_build_expression(expression.operands[0]))
+    left, right = (_build_expression(operand) for operand in expression.operands)
+    return left + right if expression.operation == "add" else left * right
