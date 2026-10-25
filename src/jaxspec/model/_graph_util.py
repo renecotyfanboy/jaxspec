@@ -94,6 +94,12 @@ def compose(graph_1: nx.DiGraph, graph_2: nx.DiGraph, operation: str = ""):
         operation: The string describing the operation to perform.
     """
 
+    if operation not in {"add", "mul"}:
+        raise ValueError(f"Unsupported model operation: {operation!r}.")
+    graph_1, graph_2 = graph_1.copy(), graph_2.copy()
+    for position, operand in enumerate((graph_1, graph_2)):
+        for source in operand.predecessors("out"):
+            operand.edges[source, "out"]["position"] = position
     combined_graph = compose_with_rename(graph_1, graph_2)
     node_id = str(uuid4())
     graph = nx.relabel_nodes(combined_graph, {"out": node_id})
