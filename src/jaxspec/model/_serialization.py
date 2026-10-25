@@ -5,9 +5,12 @@ from __future__ import annotations
 import math
 
 import jax
+import networkx as nx
 import numpy as np
 
 from flax import nnx
+
+from ._graph_util import validate_graph
 
 
 def _json_config(value):
@@ -96,3 +99,38 @@ def _decode_state_leaf(record):
     if record["storage"] in ("scalar", "numpy_scalar") and shape:
         raise ValueError("Scalar numerical state cannot have array dimensions.")
     return tuple(path), array
+
+
+def serialize_model(model):
+    """Return a version-1 JSON-compatible model description.
+
+    The graph records ordered operations, public component names and constructor
+    configuration. ``state`` separately records the current NNX parameters and
+    tracked buffers. Constructor-managed external tables are reloaded by their
+    configuration; their file contents are not embedded. Unsupported configuration
+    or non-finite/opaque numerical state raises ``ValueError``.
+    """
+    validate_graph(model._graph)
+    ordered = list(nx.topological_sort(model._graph))
+    identifiers = {node: "out" if node == "out" else f"n{i}" for i, node in enumerate(ordered)}
+    nodes = []
+    for node in ordered:
+        metadata = model._graph.nodes[node]
+        item = {"id": identifiers[node], "type": metadata["type"]}
+        if metadata["type"].endswith("_component"):
+            component = getattr(model, metadata["name"])
+            config = _json_config(component.get_config())
+            if not isinstance(config, dict):
+                raise ValueError("Component get_config() must return a dictionary.")
+            item.update(name=metadata["name"], component=type(component).__name__, config=config)
+        nodes.append(item)
+    edges = [
+        {"source": identifiers[source], "target": identifiers[target], "position": position}
+        for target in ordered
+        for position, source in sorted(
+            (model._graph.edges[source, target].get("position", 0), source)
+            for source in model._graph.predecessors(target)
+        )
+    ]
+    state = [_encode_state_leaf(path, leaf) for path, leaf in nnx.to_flat_state(nnx.state(model))]
+    return {"version": 1, "nodes": nodes, "edges": edges, "state": state}
