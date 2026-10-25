@@ -273,6 +273,7 @@ class Diskpbb(AdditiveComponent):
 
     def __init__(self, flux_band: tuple[float, float] = DEFAULT_FLUX_BAND):
         self._flux_band = _validate_flux_band(flux_band)
+        self._config = {"flux_band": self._flux_band}
         self.Tin = nnx.Param(1.0)
         self.p = nnx.Param(STANDARD_RADIAL_EXPONENT)
         self.norm = nnx.Param(1e-4)
