@@ -59,3 +59,40 @@ def _encode_state_leaf(path, leaf):
         "shape": list(array.shape),
         "value": _json_config(array.tolist()),
     }
+
+
+def _decode_state_leaf(record):
+    """Validate a numerical-state record before any model constructor runs."""
+    keys = {"path", "variable", "storage", "dtype", "shape", "value"}
+    if not isinstance(record, dict) or set(record) != keys:
+        raise ValueError("Invalid numerical state record.")
+    path, shape = record["path"], record["shape"]
+    if not isinstance(path, list) or not path or any(type(p) not in (str, int) for p in path):
+        raise ValueError("Numerical state paths must be non-empty lists of strings or integers.")
+    if not isinstance(shape, list) or any(type(n) is not int or n < 0 for n in shape):
+        raise ValueError("Numerical state shapes must be lists of non-negative integers.")
+    if record["variable"] is not None and not isinstance(record["variable"], str):
+        raise ValueError("Invalid numerical state variable type.")
+    if record["storage"] not in ("scalar", "numpy_scalar", "numpy", "jax"):
+        raise ValueError("Unknown numerical state storage kind.")
+    if not isinstance(record["dtype"], str):
+        raise ValueError("Invalid numerical state dtype.")
+    try:
+        dtype = np.dtype(record["dtype"])
+        if dtype.kind not in "biuf":
+            raise ValueError("Numerical state requires a real numeric or boolean dtype.")
+        values = np.asarray(record["value"])
+        if values.dtype.kind not in "biuf" or not np.isfinite(values).all():
+            raise ValueError("Numerical state must contain finite real values.")
+        array = values.astype(dtype)
+    except (TypeError, OverflowError) as exc:
+        raise ValueError("Invalid numerical state values or dtype.") from exc
+    if 0 in shape and array.size == 0:
+        array = array.reshape(shape)
+    if array.shape != tuple(shape) or not np.isfinite(array).all():
+        raise ValueError("Numerical state values do not match their finite shape and dtype.")
+    if dtype.kind in "biu" and not np.array_equal(array, values):
+        raise ValueError("Numerical state values cannot be represented by their dtype.")
+    if record["storage"] in ("scalar", "numpy_scalar") and shape:
+        raise ValueError("Scalar numerical state cannot have array dimensions.")
+    return tuple(path), array
