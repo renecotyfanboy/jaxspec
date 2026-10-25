@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from keyword import iskeyword
 
-from .abc import ModelComponent
+from .abc import ModelComponent, OperatorComponent
 
 
 @dataclass(frozen=True)
@@ -101,3 +101,71 @@ def _literal_config(node: ast.AST):
             result[key.value] = _literal_config(value)
         return result
     raise ValueError("Constructor configuration must contain finite literal values only.")
+
+
+def _validate_expression(node: ast.AST, registry: dict[str, type[ModelComponent]]) -> _Expression:
+    """Resolve names, constructor signatures and spectral types before instantiation."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Mult):
+        left = _validate_expression(node.left, registry)
+        right = _validate_expression(node.right, registry)
+        if isinstance(node.op, ast.Add):
+            if left.kind != right.kind:
+                raise ValueError("Cannot add an emission spectrum and a dimensionless factor.")
+            return _Expression(left.kind, "add", (left, right))
+        if left.kind == right.kind == "additive":
+            raise ValueError("Cannot multiply two additive models; use '+' to add emission.")
+        kind = "additive" if "additive" in (left.kind, right.kind) else "multiplicative"
+        return _Expression(kind, "mul", (left, right))
+
+    if isinstance(node, ast.Name):
+        name, arguments, keywords = node.id, [], []
+    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        name, arguments, keywords = node.func.id, node.args, node.keywords
+    else:
+        raise ValueError(
+            "Model expressions support component names, calls, parentheses, '+' and '*' only."
+        )
+
+    cls = registry.get(name.casefold())
+    if cls is None:
+        raise ValueError(f"Unknown model component {name!r}.")
+    if inspect.isabstract(cls):
+        raise ValueError(f"Model component {name!r} is abstract.")
+    kind = getattr(cls, "type", None)
+    if kind not in {"additive", "multiplicative", "operator"}:
+        raise ValueError(f"Model component {name!r} has an unsupported spectral type.")
+
+    config = {}
+    for keyword in keywords:
+        if keyword.arg is None or keyword.arg.startswith("_"):
+            raise ValueError("Constructor arguments must be explicit public keywords.")
+        if keyword.arg in config:
+            raise ValueError(f"Duplicate constructor keyword {keyword.arg!r}.")
+        config[keyword.arg] = _literal_config(keyword.value)
+    try:
+        if cls.__init__ is object.__init__ and config:
+            raise TypeError("this component does not accept constructor arguments")
+        inspect.signature(cls.__init__).bind(None, **config)
+    except TypeError as exc:
+        raise ValueError(f"Invalid constructor arguments for {name!r}: {exc}") from exc
+
+    if kind == "operator":
+        if not issubclass(cls, OperatorComponent):
+            raise ValueError(f"Operator {name!r} must inherit from OperatorComponent.")
+        if len(arguments) != 1:
+            raise ValueError(
+                f"Operator {name!r} requires one explicit scope, e.g. {name}(powerlaw)."
+            )
+        scope = _validate_expression(arguments[0], registry)
+        input_type, output_type = cls.input_type, cls.output_type
+        if input_type not in {"additive", "multiplicative"} or output_type not in {
+            "additive",
+            "multiplicative",
+        }:
+            raise ValueError(f"Operator {name!r} declares an invalid input or output type.")
+        if scope.kind != input_type:
+            raise ValueError(f"Operator {name!r} requires a {input_type} subexpression.")
+        return _Expression(output_type, "apply", (scope,), cls, config)
+    if arguments:
+        raise ValueError(f"Component {name!r} accepts keyword constructor configuration only.")
+    return _Expression(kind, "component", component=cls, config=config)
