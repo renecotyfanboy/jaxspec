@@ -6,6 +6,7 @@ import inspect
 import math
 
 import jax
+import jax.numpy as jnp
 import networkx as nx
 import numpy as np
 
@@ -202,3 +203,58 @@ def _restore_graph(data, registry):
             if graph.edges[source, node]["position"] != 0:
                 raise ValueError("Unary graph edges require position 0.")
     return graph, constructors
+
+
+def deserialize_model(data, *, components=None):
+    """Restore a model from :func:`serialize_model` without importing named classes.
+
+    ``components`` is the same trusted, explicit component registry extension used
+    by the model-string parser. Graph structure, constructor signatures and state
+    records are validated before constructors execute. State paths, variable types
+    and shapes must then match the reconstructed component templates.
+    """
+    from ._parser import component_registry
+    from .abc import SpectralModel
+
+    registry = {}
+    for component in component_registry(components).values():
+        name = component.__name__.casefold()
+        if name in registry and registry[name] is not component:
+            raise ValueError(f"Ambiguous serialized component class name: {name!r}.")
+        registry[name] = component
+    graph, constructors = _restore_graph(data, registry)
+    decoded = {}
+    for record in data["state"]:
+        path, value = _decode_state_leaf(record)
+        if path in decoded:
+            raise ValueError(f"Duplicate numerical state path: {path!r}.")
+        decoded[path] = (record, value)
+    for node, (component, config) in constructors.items():
+        graph.nodes[node]["component"] = component(**config)
+    model = SpectralModel(graph)
+    template = dict(nnx.to_flat_state(nnx.state(model)))
+    if template.keys() != decoded.keys():
+        raise ValueError("Serialized numerical state paths do not match the model template.")
+    restored = []
+    for path, leaf in template.items():
+        record, array = decoded[path]
+        variable = isinstance(leaf, nnx.Variable)
+        expected_type = f"{type(leaf).__module__}.{type(leaf).__qualname__}" if variable else None
+        if record["variable"] != expected_type:
+            raise ValueError(f"Numerical state variable type mismatch at {path!r}.")
+        expected = leaf.get_value() if variable else leaf
+        if np.shape(expected) != array.shape:
+            raise ValueError(f"Numerical state shape mismatch at {path!r}.")
+        if record["storage"] == "jax":
+            value = jnp.asarray(array)
+            if value.dtype != array.dtype:
+                raise ValueError("Restoring this state requires enabling JAX's 64-bit precision.")
+        elif record["storage"] == "scalar":
+            value = array.item()
+        elif record["storage"] == "numpy_scalar":
+            value = array[()]
+        else:
+            value = array
+        restored.append((path, leaf.replace(value) if variable else value))
+    nnx.update(model, nnx.from_flat_state(restored))
+    return model
