@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import inspect
+import math
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -70,3 +72,32 @@ def component_registry(
             raise ValueError(f"Component name {name!r} is already registered.")
         registry[key] = cls
     return registry
+
+
+def _literal_config(node: ast.AST):
+    """Read finite primitive constructor values without evaluating any expression."""
+    if isinstance(node, ast.Constant):
+        value = node.value
+        if value is None or type(value) in (str, bool, int):
+            return value
+        if type(value) is float and math.isfinite(value):
+            return value
+    elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub | ast.UAdd):
+        if isinstance(node.operand, ast.Constant) and type(node.operand.value) in (int, float):
+            value = _literal_config(node.operand)
+            return -value if isinstance(node.op, ast.USub) else value
+    elif isinstance(node, ast.List | ast.Tuple):
+        values = [_literal_config(child) for child in node.elts]
+        return tuple(values) if isinstance(node, ast.Tuple) else values
+    elif isinstance(node, ast.Dict):
+        result = {}
+        for key, value in zip(node.keys, node.values, strict=True):
+            if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+                raise ValueError(
+                    "Constructor configuration dictionaries require literal string keys."
+                )
+            if key.value in result:
+                raise ValueError(f"Duplicate constructor configuration key {key.value!r}.")
+            result[key.value] = _literal_config(value)
+        return result
+    raise ValueError("Constructor configuration must contain finite literal values only.")
