@@ -214,53 +214,27 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
         return list(self._evaluate_branches())
 
     def flux_func(self, e_low, e_high, energy_flux=False, n_points=2, return_branches=False):
-        # Reject models without an emitting component before folding.
-        if not self.root_nodes:
+        """Evaluate integrated photon flux on explicit lower/upper bin edges in keV.
+
+        Operators always consume integrated photons (or dimensionless factors).
+        Energy flux from an operator producing emission uses the final bin
+        midpoint times its transported photons; refine the grid to resolve that
+        energy moment. Other branches retain their usual energy integration.
+        """
+        if self._kind != "additive":
             raise ValueError(
-                "This model has no additive component, so it produces no flux. "
-                "A spectral model needs at least one additive component "
-                "(e.g. Powerlaw(), Blackbodyrad()) — multiplicative components such as "
-                "Tbabs only modify an existing continuum."
+                "This model has no additive component at its output, so it produces no flux. "
+                "Multiply dimensionless factors by an emitting component."
             )
-
-        continuum = {}
-
-        for node_id in nx.dag.topological_sort(self._graph):
-            node = self._graph.nodes[node_id]
-
-            if node["type"] == "additive_component":
-                node_name = node["name"]
-                runtime_modules = getattr(self, node_name)
-
-                if not energy_flux:
-                    continuum[node_name] = runtime_modules._photon_flux(
-                        e_low, e_high, n_points=n_points
-                    )
-
-                else:
-                    continuum[node_name] = runtime_modules._energy_flux(
-                        e_low, e_high, n_points=n_points
-                    )
-
-            elif node["type"] == "multiplicative_component":
-                node_name = node["name"]
-                runtime_modules = getattr(self, node_name)
-                continuum[node_name] = runtime_modules._factor(e_low, e_high, n_points=n_points)
-
-            else:
-                pass
-
-        branches = {}
-        for branch_name, mult_ids, root_node_name in self._iter_branches():
-            flux = continuum[root_node_name]
-            for mid in mult_ids:
-                flux = flux * continuum[self._graph.nodes[mid].get("name")]
-            branches[branch_name] = flux
-
-        if return_branches:
-            return branches
-
-        return sum(branches.values())
+        if not isinstance(n_points, int) or isinstance(n_points, bool) or n_points < 2:
+            raise ValueError("n_points must be an integer of at least two.")
+        e_low, e_high = jnp.asarray(e_low), jnp.asarray(e_high)
+        if e_low.shape != e_high.shape:
+            raise ValueError("Lower and upper energy bounds must have matching shapes.")
+        branches = self._evaluate_branches(
+            e_low, e_high, energy_flux=energy_flux, n_points=n_points
+        )
+        return branches if return_branches else sum(branches.values())
 
     def to_mermaid(self, file: str | None = None):
         """
