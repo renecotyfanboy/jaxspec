@@ -210,8 +210,8 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
     @property
     def branches(self) -> list[str]:
-        # Caching on an nnx.Module would mutate its graph definition.
-        return [branch for branch, _, _ in self._iter_branches()]
+        """Deterministic branch labels; each operator's full scope stays together."""
+        return list(self._evaluate_branches())
 
     def flux_func(self, e_low, e_high, energy_flux=False, n_points=2, return_branches=False):
         # Reject models without an emitting component before folding.
