@@ -11,7 +11,7 @@ import networkx as nx
 
 from flax import nnx
 
-from ._graph_util import compose, export_to_mermaid, validate_graph
+from ._graph_util import compose, export_to_mermaid, increment_name, validate_graph
 from ._mixin import Composable, HasDerivedQuantities, HideUnderscore
 
 
@@ -377,6 +377,35 @@ class OperatorComponent(ModelComponent):
     input_type = "additive"
     output_type = "additive"
 
+
+    def __call__(self, operand):
+        """Apply this operator to an explicit component or model, e.g. ``op(a + b)``."""
+        if isinstance(operand, ModelComponent):
+            operand = SpectralModel.from_component(operand)
+        if not isinstance(operand, SpectralModel):
+            raise TypeError("An operator requires a spectral expression as its argument.")
+        graph = operand._graph.copy()
+        used_names = set()
+        for _, node in graph.nodes(data=True):
+            if "component" in node["type"]:
+                used_names.add(node["name"])
+                node["component"] = nnx.clone(getattr(operand, node["name"]))
+        name = increment_name(f"{type(self).__name__}_1".lower(), used_names)
+        child = next(graph.predecessors("out"))
+        graph.remove_node("out")
+        node_id = str(uuid4())
+        graph.add_node(
+            node_id,
+            type="operator_component",
+            name=name,
+            component=nnx.clone(self),
+            input_type=self.input_type,
+            output_type=self.output_type,
+        )
+        graph.add_edge(child, node_id, position=0)
+        graph.add_node("out", type="out")
+        graph.add_edge(node_id, "out")
+        return SpectralModel(graph)
 
     @abstractmethod
     def apply(self, flux, e_low, e_high):
