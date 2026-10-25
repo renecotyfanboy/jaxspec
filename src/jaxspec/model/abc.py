@@ -82,6 +82,11 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
 
     @property
+    def graph(self) -> nx.DiGraph:
+        """Return a detached structural graph with ordered edges and no model arrays."""
+        return self._graph.copy()
+
+    @property
     def root_nodes(self) -> list[str]:
         return [
             node_id
