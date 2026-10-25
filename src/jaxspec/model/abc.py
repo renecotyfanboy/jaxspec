@@ -60,6 +60,11 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
     @classmethod
     def from_component(cls, component):
+        """Wrap an emission or factor component, retaining its public parameter names."""
+        if not isinstance(component, ModelComponent):
+            raise TypeError("Expected a spectral ModelComponent.")
+        if component.type == "operator":
+            raise ValueError("An operator must act on an explicit expression: operator(model).")
         node_id = str(uuid4())
         _graph = nx.DiGraph()
 
