@@ -11,7 +11,7 @@ import networkx as nx
 
 from flax import nnx
 
-from ._graph_util import compose, export_to_mermaid
+from ._graph_util import compose, export_to_mermaid, validate_graph
 from ._mixin import Composable, HasDerivedQuantities, HideUnderscore
 
 
@@ -19,11 +19,30 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
     _graph: nx.DiGraph
 
     def __init__(self, graph: nx.DiGraph):
-        self._graph = graph
-
-        for node, data in self._graph.nodes(data=True):
+        graph = graph.copy()
+        self._kind = validate_graph(graph)
+        for node, data in graph.nodes(data=True):
             if "component" in data["type"]:
-                setattr(self, data["name"], data["component"])
+                component = data.pop("component", None)
+                if (
+                    not isinstance(component, ModelComponent)
+                    or data["type"] != f"{component.type}_component"
+                ):
+                    raise ValueError(f"Component {data['name']!r} does not match its graph kind.")
+                if component.type == "operator" and (
+                    not isinstance(component, OperatorComponent)
+                    or data["input_type"] != type(component).input_type
+                    or data["output_type"] != type(component).output_type
+                    or data["input_type"] != component.input_type
+                    or data["output_type"] != component.output_type
+                ):
+                    raise ValueError(
+                        f"Operator {data['name']!r} must use its class-declared graph kinds."
+                    )
+                setattr(self, data["name"], component)
+        # NNX tracks numerical state through the named modules, never through a
+        # second reference hidden in a static NetworkX graph.
+        self._graph = nx.freeze(graph)
 
     def compose(self, other, operation=None):
         """Combine two spectral models with an addition or multiplication node."""
