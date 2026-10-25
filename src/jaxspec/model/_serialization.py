@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import math
 
 import jax
@@ -134,3 +135,70 @@ def serialize_model(model):
     ]
     state = [_encode_state_leaf(path, leaf) for path, leaf in nnx.to_flat_state(nnx.state(model))]
     return {"version": 1, "nodes": nodes, "edges": edges, "state": state}
+
+
+def _restore_graph(data, registry):
+    """Validate serialized graph structure and configurations without constructing models."""
+    from .abc import OperatorComponent
+
+    if not isinstance(data, dict) or set(data) != {"version", "nodes", "edges", "state"}:
+        raise ValueError("Invalid serialized model schema.")
+    if type(data["version"]) is not int or data["version"] != 1:
+        raise ValueError("Unsupported serialized model version.")
+    if any(not isinstance(data[key], list) for key in ("nodes", "edges", "state")):
+        raise ValueError("Serialized model nodes, edges and state must be lists.")
+    graph, constructors = nx.DiGraph(), {}
+    for item in data["nodes"]:
+        if not isinstance(item, dict) or not isinstance(item.get("type"), str):
+            raise ValueError("Invalid serialized model node.")
+        component_node = item["type"].endswith("_component")
+        keys = {"id", "type", "name", "component", "config"} if component_node else {"id", "type"}
+        if set(item) != keys or not isinstance(item["id"], str) or item["id"] in graph:
+            raise ValueError("Invalid or duplicate serialized model node identifier.")
+        metadata = {"type": item["type"]}
+        if component_node:
+            name = item["component"]
+            if not isinstance(name, str) or name.casefold() not in registry:
+                raise ValueError(f"Unknown model component: {name!r}.")
+            component = registry[name.casefold()]
+            if inspect.isabstract(component):
+                raise ValueError(f"Model component {name!r} is abstract.")
+            kind = getattr(component, "type", None)
+            if item["type"] != f"{kind}_component":
+                raise ValueError("Serialized component kind does not match its registered class.")
+            config = _json_config(item["config"])
+            if not isinstance(config, dict) or any(
+                not key.isidentifier() or key.startswith("_") for key in config
+            ):
+                raise ValueError("Serialized component configuration must be a dictionary.")
+            try:
+                if component.__init__ is object.__init__ and config:
+                    raise TypeError("this component does not accept constructor arguments")
+                inspect.signature(component.__init__).bind(None, **config)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid constructor configuration for {name!r}.") from exc
+            metadata["name"] = item["name"]
+            if kind == "operator":
+                if not issubclass(component, OperatorComponent):
+                    raise ValueError(f"Operator {name!r} must inherit from OperatorComponent.")
+                metadata.update(input_type=component.input_type, output_type=component.output_type)
+            constructors[item["id"]] = (component, config)
+        graph.add_node(item["id"], **metadata)
+    for edge in data["edges"]:
+        if not isinstance(edge, dict) or set(edge) != {"source", "target", "position"}:
+            raise ValueError("Invalid serialized graph edge.")
+        source, target, position = edge["source"], edge["target"], edge["position"]
+        if not isinstance(source, str) or not isinstance(target, str):
+            raise ValueError("Serialized edge endpoints must be node identifiers.")
+        if source not in graph or target not in graph or graph.has_edge(source, target):
+            raise ValueError("Serialized edges must connect known nodes exactly once.")
+        if type(position) is not int or position not in (0, 1):
+            raise ValueError("Serialized edge positions must be 0 or 1.")
+        graph.add_edge(source, target, position=position)
+    validate_graph(graph)
+    for node in graph:
+        if graph.in_degree(node) == 1:
+            source = next(graph.predecessors(node))
+            if graph.edges[source, node]["position"] != 0:
+                raise ValueError("Unary graph edges require position 0.")
+    return graph, constructors
