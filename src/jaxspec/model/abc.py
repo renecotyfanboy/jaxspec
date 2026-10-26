@@ -20,6 +20,7 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
     def __init__(self, graph: nx.DiGraph):
         graph = graph.copy()
         self._kind = validate_graph(graph)
+        used = set()
         for node, data in graph.nodes(data=True):
             if "component" in data["type"]:
                 component = data.pop("component", None)
@@ -28,6 +29,12 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
                     or data["type"] != f"{component.type}_component"
                 ):
                     raise ValueError(f"Component {data['name']!r} does not match its graph kind.")
+                if id(component) in used:
+                    raise ValueError(
+                        f"The same {type(component).__name__} instance is used twice in this "
+                        "model; create a new component for each use."
+                    )
+                used.add(id(component))
                 setattr(self, data["name"], component)
         # NNX tracks numerical state through the named modules, never through a
         # second reference hidden in a static NetworkX graph.
@@ -43,7 +50,7 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
             graph = model._graph.copy()
             for _, node in graph.nodes(data=True):
                 if "component" in node["type"]:
-                    node["component"] = nnx.clone(getattr(model, node["name"]))
+                    node["component"] = getattr(model, node["name"])
             graphs.append(graph)
         return SpectralModel(compose(*graphs, operation=operation))
 

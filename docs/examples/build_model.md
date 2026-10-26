@@ -168,10 +168,10 @@ expression graph. Values are set through the components, e.g.
 `model.powerlaw_1.norm.set_value(0.002)`.
 
 Adding emission to a factor, or multiplying two emission components, raises an error.
-Each `+` and `*` copies its operands: later edits to an operand do not reach the composed
-model, and a component used twice gets two independent sets of parameters. With
-`t = Tbabs()`, `t * Powerlaw() + t * Blackbody()` has both `tbabs_1.nh` and `tbabs_2.nh`;
-use a [tied parameter](flexible_priors.md#tied-parameters) to share one value.
+Each component can appear only once in a model: reusing an instance, as in
+`model + model` or `t * Powerlaw() + t * Blackbody()`, raises an error. Create one
+component per use, and use a [tied parameter](flexible_priors.md#tied-parameters) to
+share a value between them.
 
 ## Working energy grids
 

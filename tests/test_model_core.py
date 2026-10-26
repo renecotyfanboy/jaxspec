@@ -40,26 +40,35 @@ def tiny_observation():
     return ObsConfiguration.from_instrument(instrument, observation)
 
 
-@pytest.mark.parametrize("reuse_model", [False, True])
-def test_repeated_expression_occurrences_keep_distinct_parameters(reuse_model):
-    component = Additiveconstant()
-    operand = component + component if reuse_model else component
-    model = operand + operand
-    names = ["additiveconstant_1", "additiveconstant_2"]
-    if reuse_model:
-        names += ["additiveconstant_3", "additiveconstant_4"]
-    assert set(model.parameters) == {f"{name}.norm" for name in names}
-    assert len({id(getattr(model, name).norm) for name in names}) == len(names)
-    assert len(model.root_nodes) == len(names)
+def test_distinct_components_keep_distinct_parameters():
+    model = Additiveconstant() + Additiveconstant()
+    assert set(model.parameters) == {"additiveconstant_1.norm", "additiveconstant_2.norm"}
     assert nx.is_tree(model.graph)
-
     model.additiveconstant_1.norm.set_value(3.0)
-    np.testing.assert_allclose(model.photon_flux([1.0], [2.0]), [len(names) + 2.0])
-    assert float(component.norm.get_value()) == 1.0
-    for name in names[1:]:
-        assert float(getattr(model, name).norm.get_value()) == 1.0
-    if reuse_model:
-        assert set(operand.parameters) == {"additiveconstant_1.norm", "additiveconstant_2.norm"}
+    np.testing.assert_allclose(model.photon_flux([1.0], [2.0]), [4.0])
+
+
+def _same_component_twice():
+    component = Additiveconstant()
+    return component + component
+
+
+def _same_model_twice():
+    model = Tbabs() * Powerlaw()
+    return model + model
+
+
+def _same_factor_on_two_branches():
+    absorption = Tbabs()
+    return absorption * Powerlaw() + absorption * Additiveconstant()
+
+
+@pytest.mark.parametrize(
+    "build", [_same_component_twice, _same_model_twice, _same_factor_on_two_branches]
+)
+def test_reusing_a_component_is_refused(build):
+    with pytest.raises(ValueError, match="used twice"):
+        build()
 
 
 def test_composition_uses_replaced_current_component():
@@ -69,9 +78,7 @@ def test_composition_uses_replaced_current_component():
     original.additiveconstant_1 = replacement
     composed = original + Additiveconstant()
     np.testing.assert_allclose(composed.photon_flux([1.0], [2.0]), [8.0])
-    assert float(composed.parameters["additiveconstant_1.norm"]) == 7.0
-    replacement.norm.set_value(11.0)
-    np.testing.assert_allclose(composed.photon_flux([1.0], [2.0]), [8.0])
+    assert composed.additiveconstant_1 is replacement
 
 
 def test_graph_inspection_is_detached_and_contains_no_model_state():

@@ -53,7 +53,8 @@ def compose_with_rename(graph_1: nx.DiGraph, graph_2: nx.DiGraph):
         graph_2: The second graph to compose.
     """
 
-    # Every occurrence is a distinct expression node, including ``model + model``.
+    # Fresh node ids keep the operands apart, so ``model + model`` reaches the
+    # reused-component check instead of being merged into one occurrence.
     # Relabel on a copy so neither operand's topology or names are mutated.
     graph_2 = nx.relabel_nodes(
         graph_2, {node: str(uuid4()) for node in graph_2 if node != "out"}, copy=True
