@@ -199,39 +199,6 @@ source coverage contribute zero; photons outside the target coverage are not
 renormalized into it. Choose enough coverage for the model and check grid refinement
 for narrow features or strongly varying factors. Energy-flux output uses **keV/cm²/s**.
 
-## Scoped custom operators
-
-An operator receives an entire subexpression on explicit lower and upper energy
-bounds. This base contract supports future spectral kernels; it does not itself
-implement smoothing, shifts or a physical scattering model. The following toy
-operator reverses bin contents to demonstrate scope, not a physical redistribution:
-
-```python
-import jax.numpy as jnp
-from jaxspec.model.abc import OperatorComponent
-from jaxspec.model.additive import Powerlaw, Gauss
-
-class ReverseBins(OperatorComponent):
-    def apply(self, flux, e_low, e_high):
-        return jnp.flip(flux, axis=-1)
-
-scoped = ReverseBins()(Powerlaw() + Gauss())
-```
-
-`apply(flux, e_low, e_high)` receives integrated photons and must preserve the
-spectrum's shape. Bounds are in keV. Declare fixed class attributes `input_type`
-and `output_type` as `'multiplicative'` for an operator acting on dimensionless factors. Ordinary
-multiplication of an unapplied operator, such as `ReverseBins() * Powerlaw()`, is
-rejected. Operator order and parentheses are preserved. Branch plots keep an
-operator's entire scope together because a nonlinear operator need not distribute
-over a sum.
-
-For emission produced by operators, `energy_flux` weights the transported photons
-by bin midpoints. Other emission branches retain their usual energy integration;
-factor-only operators do not change it. The midpoint rule is a finite-bin
-approximation to the energy moment; refine the working grid to assess it. Custom operators are responsible for their
-physical measure, valid domains and losses outside the supplied grid.
-
 ## Numerical state in compiled model evaluation
 
 Use NNX variables for mutable model-owned arrays, and pass the model or its split

@@ -34,11 +34,3 @@
         - derived_quantities
       show_root_heading: true
       show_root_toc_entry: false
-
-::: jaxspec.model.abc.OperatorComponent
-    options:
-      members:
-        - __call__
-        - apply
-      show_root_heading: true
-      show_root_toc_entry: false
