@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import operator
+
 from abc import ABC
 from uuid import uuid4
 
@@ -162,9 +164,16 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
                 "This model has no additive component at its output, so it produces no flux. "
                 "Multiply dimensionless factors by an emitting component."
             )
-        if not isinstance(n_points, int) or isinstance(n_points, bool) or n_points < 2:
+        try:
+            n_points = operator.index(n_points)
+        except TypeError:
+            n_points = None
+        if n_points is None or n_points < 2:
             raise ValueError("n_points must be an integer of at least two.")
-        e_low, e_high = jnp.asarray(e_low), jnp.asarray(e_high)
+        # Convert eagerly: under a trace jnp.asarray would stage host grids as tracers, and
+        # components that size static work on the grid (APEC) need concrete values.
+        with jax.ensure_compile_time_eval():
+            e_low, e_high = jnp.asarray(e_low), jnp.asarray(e_high)
         if e_low.shape != e_high.shape:
             raise ValueError("Lower and upper energy bounds must have matching shapes.")
         branches = self._evaluate_branches(

@@ -191,6 +191,35 @@ def test_flux_requires_meaningful_quadrature_resolution(n_points):
         model.photon_flux([1.0], [2.0], n_points=n_points)
 
 
+@pytest.mark.parametrize("n_points", [np.int64(3), jnp.int32(3)])
+def test_flux_accepts_numpy_and_jax_integer_quadrature(n_points):
+    model = SpectralModel.from_component(Additiveconstant())
+    np.testing.assert_allclose(model.photon_flux([1.0], [2.0], n_points=n_points), [1.0])
+
+
+def test_numpy_energy_grids_stay_concrete_under_jit():
+    traced = []
+
+    class GridProbe(AdditiveComponent):
+        def __init__(self):
+            self.norm = nnx.Param(1.0)
+
+        def integrated_continuum(self, e_low, e_high):
+            traced.append(isinstance(e_low, jax.core.Tracer))
+            return self.norm * (e_high - e_low)
+
+    model = SpectralModel.from_component(GridProbe())
+    low, high = np.array([1.0, 2.0]), np.array([2.0, 4.0])
+
+    @jax.jit
+    def flux(norm):
+        return model.photon_flux(low, high, params={"gridprobe_1.norm": norm})
+
+    np.testing.assert_allclose(flux(3.0), [3.0, 6.0])
+    # Components such as APEC size static work from concrete grids.
+    assert traced == [False]
+
+
 def test_bare_background_keeps_public_parameter_names(tiny_observation):
     forward = ForwardModel(
         Additiveconstant(),
