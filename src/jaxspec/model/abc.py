@@ -21,7 +21,7 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
     def __init__(self, graph: nx.DiGraph):
         graph = graph.copy()
-        self._kind = validate_graph(graph)
+        validate_graph(graph)
         used = set()
         for node, data in graph.nodes(data=True):
             if "component" in data["type"]:
@@ -117,7 +117,7 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
             if node_type.endswith("_component"):
                 name = node["name"]
                 component = getattr(self, name)
-                kind = component.type
+                kind = node_type.removesuffix("_component")
                 if inspect_only:
                     value = None
                 elif kind == "multiplicative":
@@ -159,7 +159,7 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
     def flux_func(self, e_low, e_high, energy_flux=False, n_points=2, return_branches=False):
         """Integrated photon flux, or energy flux with ``energy_flux=True``, on keV bins."""
-        if self._kind != "additive":
+        if not self.root_nodes:
             raise ValueError(
                 "This model has no additive component at its output, so it produces no flux. "
                 "Multiply dimensionless factors by an emitting component."

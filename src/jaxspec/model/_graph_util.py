@@ -136,10 +136,10 @@ def validate_graph(graph: nx.DiGraph) -> str:
                 raise ValueError("A spectral graph must have exactly one output expression.")
             kinds[node_id] = kinds[children[0]]
         elif node_type in {"add_operation", "mul_operation"}:
-            if len(children) != 2 or {
-                graph.edges[child, node_id].get("position") for child in children
-            } != {0, 1}:
-                raise ValueError("Binary model operations require two ordered operands.")
+            # `+` and `*` commute: positions only order labels, and graphs pickled
+            # before they existed have none.
+            if len(children) != 2:
+                raise ValueError("Binary model operations require two operands.")
             left, right = (kinds[child] for child in children)
             if node_type == "add_operation" and left != right:
                 raise ValueError("Cannot add emission and dimensionless factors.")
@@ -148,7 +148,7 @@ def validate_graph(graph: nx.DiGraph) -> str:
             kinds[node_id] = "additive" if "additive" in (left, right) else "multiplicative"
         elif node_type in {"additive_component", "multiplicative_component"}:
             name = node.get("name")
-            if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]*_[1-9][0-9]*", name):
+            if not isinstance(name, str) or not name.isidentifier():
                 raise ValueError(f"Invalid public component name: {name!r}.")
             if name in names:
                 raise ValueError(f"Duplicate public component name: {name!r}.")

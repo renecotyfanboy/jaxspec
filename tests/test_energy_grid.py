@@ -80,6 +80,13 @@ def test_redistribute_preserves_leading_axes():
     np.testing.assert_allclose(result, expected)
 
 
+def test_redistribute_accepts_multidimensional_target_bounds():
+    low = np.asarray([[1.0, 2.0], [1.5, 2.5]])
+    result = redistribute([4.0, 6.0], [1.0, 2.0], [2.0, 3.0], low, low + 0.5)
+    rows = [redistribute([4.0, 6.0], [1.0, 2.0], [2.0, 3.0], row, row + 0.5) for row in low]
+    np.testing.assert_allclose(result, np.stack(rows))
+
+
 def test_redistribute_zero_width_targets_and_boundary_gradients():
     result = redistribute([4.0, 6.0], [1.0, 3.0], [2.0, 4.0], [1.5, 2.5], [1.5, 2.5])
     np.testing.assert_array_equal(result, [0.0, 0.0])

@@ -81,6 +81,34 @@ def test_composition_uses_replaced_current_component():
     assert composed.additiveconstant_1 is replacement
 
 
+def test_replacing_a_component_by_another_kind_fails():
+    model = Additiveconstant() + Additiveconstant()
+    model.additiveconstant_2 = MultiplicativeConstant()
+    with pytest.raises(AttributeError):
+        model.photon_flux([1.0], [2.0])
+
+
+@pytest.mark.parametrize("class_name", ["_Line", "RaieÉtroite"])
+def test_private_and_non_ascii_class_names_are_accepted(class_name):
+    component = type(class_name, (Additiveconstant,), {})()
+    model = Tbabs() * component
+    assert f"{class_name.lower()}_1.norm" in model.parameters
+
+
+def test_graphs_without_operand_positions_are_accepted():
+    # Models pickled before operand positions existed have none.
+    model = Tbabs() * Powerlaw()
+    graph = model.graph
+    for _, _, data in graph.edges(data=True):
+        data.pop("position", None)
+    for _, data in graph.nodes(data=True):
+        if "name" in data:
+            data["component"] = getattr(model, data["name"])
+    legacy = SpectralModel(graph)
+    np.testing.assert_allclose(legacy.photon_flux([1.0], [2.0]), model.photon_flux([1.0], [2.0]))
+    assert (legacy + Additiveconstant()).branches == ["tbabs_1*powerlaw_1", "additiveconstant_1"]
+
+
 def test_graph_inspection_is_detached_and_contains_no_model_state():
     model = SpectralModel.from_component(ArrayEmission([2.0, 3.0])) + Additiveconstant()
     graph = model.graph

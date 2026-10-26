@@ -42,20 +42,20 @@ def redistribute(
         integrated_spectrum: Integrated flux with source bins on the last axis.
         old_e_low: One-dimensional source lower bounds.
         old_e_high: One-dimensional source upper bounds.
-        e_low: One-dimensional target lower bounds.
-        e_high: One-dimensional target upper bounds.
+        e_low: Target lower bounds, of any shape.
+        e_high: Target upper bounds, of the same shape.
 
     Returns:
-        jax.Array: Integrated flux with the same leading axes and target bins on
-            the last axis. Differentiable in flux and, away from bin boundaries,
-            bin edges.
+        jax.Array: Integrated flux with the spectrum's leading axes followed by
+            the target shape. Differentiable in flux and, away from bin
+            boundaries, bin edges.
     """
     spectrum = jnp.asarray(integrated_spectrum)
     old_e_low, old_e_high, e_low, e_high = (
         jnp.asarray(edges) for edges in (old_e_low, old_e_high, e_low, e_high)
     )
-    if any(edges.ndim != 1 for edges in (old_e_low, old_e_high, e_low, e_high)):
-        raise ValueError("Energy-bin bounds must be one-dimensional.")
+    if old_e_low.ndim != 1 or old_e_high.ndim != 1:
+        raise ValueError("Source energy-bin bounds must be one-dimensional.")
     if old_e_low.shape != old_e_high.shape or e_low.shape != e_high.shape:
         raise ValueError("Lower and upper energy-bin bounds must have matching shapes.")
     if spectrum.ndim < 1 or spectrum.shape[-1] != old_e_low.size:
@@ -63,7 +63,7 @@ def redistribute(
 
     dtype = jnp.result_type(spectrum, old_e_low, old_e_high, e_low, e_high, 1.0)
     if old_e_low.size == 0 or e_low.size == 0:
-        return jnp.zeros((*spectrum.shape[:-1], e_low.size), dtype=dtype)
+        return jnp.zeros((*spectrum.shape[:-1], *e_low.shape), dtype=dtype)
 
     bounds = jnp.stack((e_low, e_high))
     indices = jnp.minimum(jnp.searchsorted(old_e_high, bounds, side="right"), old_e_low.size - 1)
