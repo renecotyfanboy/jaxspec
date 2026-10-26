@@ -16,11 +16,76 @@ if TYPE_CHECKING:
     from ..data import ObsConfiguration
 
 
-def redistribute(integrated_spectrum, old_e_low, old_e_high, e_low, e_high):
-    # Reconstruct the contiguous source-bin edges.
-    edges = jnp.concatenate([old_e_low[:1], old_e_high])
-    cumflux = jnp.concatenate([jnp.zeros(1), jnp.cumsum(integrated_spectrum)])
-    return jnp.interp(e_high, edges, cumflux) - jnp.interp(e_low, edges, cumflux)
+def redistribute(
+    integrated_spectrum: ArrayLike,
+    old_e_low: ArrayLike,
+    old_e_high: ArrayLike,
+    e_low: ArrayLike,
+    e_high: ArrayLike,
+) -> jax.Array:
+    """Conservatively map integrated flux onto another set of energy bins.
+
+    Assume constant photon-flux density within each source bin, zero in gaps,
+    and zero outside the source coverage. A target bin receives only its overlap
+    with source bins: flux outside the target coverage is not renormalized back
+    into it. For example, a source bin ``[1, 3]`` with flux ``4`` contributes
+    ``2`` to ``[2, 4]``. All energy bounds are in keV and the returned values
+    retain the input integrated-flux units (normally photons/cm²/s).
+
+    Source bins must be finite, sorted, non-overlapping and have positive width.
+    Target bins may have gaps or arbitrary order; their widths must be
+    nonnegative. These value constraints belong to the grid constructors, so
+    this function can also accept traced bin edges. Empty inputs are supported.
+    Search and cumulative sums avoid allocating a dense bin-overlap matrix.
+
+    Parameters:
+        integrated_spectrum: Integrated flux with source bins on the last axis.
+        old_e_low: One-dimensional source lower bounds.
+        old_e_high: One-dimensional source upper bounds.
+        e_low: Target lower bounds, of any shape.
+        e_high: Target upper bounds, of the same shape.
+
+    Returns:
+        jax.Array: Integrated flux with the spectrum's leading axes followed by
+            the target shape. Differentiable in flux and, away from bin
+            boundaries, bin edges.
+    """
+    spectrum = jnp.asarray(integrated_spectrum)
+    old_e_low, old_e_high, e_low, e_high = (
+        jnp.asarray(edges) for edges in (old_e_low, old_e_high, e_low, e_high)
+    )
+    if old_e_low.ndim != 1 or old_e_high.ndim != 1:
+        raise ValueError("Source energy-bin bounds must be one-dimensional.")
+    if old_e_low.shape != old_e_high.shape or e_low.shape != e_high.shape:
+        raise ValueError("Lower and upper energy-bin bounds must have matching shapes.")
+    if spectrum.ndim < 1 or spectrum.shape[-1] != old_e_low.size:
+        raise ValueError("The spectrum's last axis must match the source energy bins.")
+
+    dtype = jnp.result_type(spectrum, old_e_low, old_e_high, e_low, e_high, 1.0)
+    if old_e_low.size == 0 or e_low.size == 0:
+        return jnp.zeros((*spectrum.shape[:-1], *e_low.shape), dtype=dtype)
+
+    bounds = jnp.stack((e_low, e_high))
+    indices = jnp.minimum(jnp.searchsorted(old_e_high, bounds, side="right"), old_e_low.size - 1)
+    fractions = jnp.clip(
+        (bounds - old_e_low[indices]) / (old_e_high[indices] - old_e_low[indices]),
+        0.0,
+        1.0,
+    )
+    lower, upper = indices
+    low_fraction, high_fraction = fractions
+    cumulative = jnp.concatenate(
+        (jnp.zeros((*spectrum.shape[:-1], 1), dtype=spectrum.dtype), jnp.cumsum(spectrum, axis=-1)),
+        axis=-1,
+    )
+    # Keep endpoint pieces separate: subtracting two large cumulative totals
+    # would otherwise erase faint bins after a bright one, even on an identity grid.
+    interior = cumulative[..., upper] - cumulative[..., lower + 1]
+    multi_bin = (
+        spectrum[..., lower] * (1 - low_fraction) + interior + spectrum[..., upper] * high_fraction
+    )
+    same_bin = spectrum[..., lower] * (high_fraction - low_fraction)
+    return jnp.where(lower == upper, same_bin, multi_bin)
 
 
 class GainModel(HasDerivedQuantities, nnx.Module):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import operator
+
 from abc import ABC
 from uuid import uuid4
 
@@ -10,7 +12,7 @@ import networkx as nx
 
 from flax import nnx
 
-from ._graph_util import compose, export_to_mermaid
+from ._graph_util import compose, export_to_mermaid, validate_graph
 from ._mixin import Composable, HasDerivedQuantities, HideUnderscore
 
 
@@ -18,29 +20,47 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
     _graph: nx.DiGraph
 
     def __init__(self, graph: nx.DiGraph):
-        self._graph = graph
-
-        for node, data in self._graph.nodes(data=True):
+        graph = graph.copy()
+        validate_graph(graph)
+        used = set()
+        for node, data in graph.nodes(data=True):
             if "component" in data["type"]:
-                setattr(self, data["name"], data["component"])
+                component = data.pop("component", None)
+                if (
+                    not isinstance(component, ModelComponent)
+                    or data["type"] != f"{component.type}_component"
+                ):
+                    raise ValueError(f"Component {data['name']!r} does not match its graph kind.")
+                if id(component) in used:
+                    raise ValueError(
+                        f"The same {type(component).__name__} instance is used twice in this "
+                        "model; create a new component for each use."
+                    )
+                used.add(id(component))
+                setattr(self, data["name"], component)
+        # NNX tracks numerical state through the named modules, never through a
+        # second reference hidden in a static NetworkX graph.
+        self._graph = nx.freeze(graph)
 
     def compose(self, other, operation=None):
         """Combine two spectral models with an addition or multiplication node."""
 
-        if operation == "mul" and self.root_nodes and other.root_nodes:
-            raise ValueError(
-                f"Cannot multiply two additive models "
-                f"({'+'.join(self.branches)!r} * {'+'.join(other.branches)!r}). "
-                f"`*` applies a multiplicative component (e.g. Tbabs) to a model; use "
-                f"`+` to add two additive components together."
-            )
-
-        composed_graph = compose(self._graph, other._graph, operation=operation)
-
-        return SpectralModel(composed_graph)
+        if not isinstance(other, SpectralModel):
+            raise TypeError("Model arithmetic requires spectral components or models.")
+        graphs = []
+        for model in (self, other):
+            graph = model._graph.copy()
+            for _, node in graph.nodes(data=True):
+                if "component" in node["type"]:
+                    node["component"] = getattr(model, node["name"])
+            graphs.append(graph)
+        return SpectralModel(compose(*graphs, operation=operation))
 
     @classmethod
     def from_component(cls, component):
+        """Wrap an emission or factor component, retaining its public parameter names."""
+        if not isinstance(component, ModelComponent):
+            raise TypeError("Expected a spectral ModelComponent.")
         node_id = str(uuid4())
         _graph = nx.DiGraph()
 
@@ -56,22 +76,18 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
         return cls(_graph)
 
-    def _find_multiplicative_components(self, node_id):
-        """
-        Recursively finds all the multiplicative components connected to the node with the given ID.
-        """
-        node = self._graph.nodes[node_id]
-        multiplicative_nodes = []
+    @property
+    def graph(self) -> nx.DiGraph:
+        """Copy of the model's expression graph; editing it does not change the model."""
+        return self._graph.copy()
 
-        if node.get("type") == "mul_operation":
-            predecessors = self._graph.pred[node_id]
-            for node_id in predecessors:
-                if "multiplicative_component" == self._graph.nodes[node_id].get("type"):
-                    multiplicative_nodes.append(node_id)
-                elif "mul_operation" == self._graph.nodes[node_id].get("type"):
-                    multiplicative_nodes.extend(self._find_multiplicative_components(node_id))
-
-        return multiplicative_nodes
+    @property
+    def parameters(self) -> dict:
+        """Current parameter values keyed by path, e.g. ``powerlaw_1.norm``."""
+        return {
+            ".".join(map(str, path)): variable.get_value()
+            for path, variable in nnx.to_flat_state(nnx.state(self, nnx.Param))
+        }
 
     @property
     def root_nodes(self) -> list[str]:
@@ -81,81 +97,89 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
             if in_degree == 0 and ("additive" in self._graph.nodes[node_id].get("type"))
         ]
 
-    def _iter_branches(self):
-        """Yield ``(branch_name, mult_node_ids, root_node_name)`` for every additive root.
+    def _evaluate_branches(self, e_low=None, e_high=None, *, energy_flux=False, n_points=2):
+        """Evaluate the ordered tree into one value per additive branch.
 
-        ``mult_node_ids`` is the deduplicated list of multiplicative-component node ids
-        along the path from the additive root to ``out``. They are ordered by component
-        name so user-facing branch names are deterministic across processes.
+        With no grid, only branch names are inspected; component code is not run.
         """
-        for root_node_id in self.root_nodes:
-            root_node_name = self._graph.nodes[root_node_id].get("name")
-            path = nx.shortest_path(self._graph, source=root_node_id, target="out")
-
-            mult_ids: list[str] = []
-            for node_id in path[::-1]:
-                mult_ids.extend(self._find_multiplicative_components(node_id))
-            mult_ids = sorted(set(mult_ids), key=lambda mid: self._graph.nodes[mid]["name"])
-
-            branch = (
-                "".join(f"{self._graph.nodes[mid].get('name')}*" for mid in mult_ids)
-                + root_node_name
+        inspect_only = e_low is None
+        results = {}
+        for node_id in nx.topological_sort(self._graph):
+            node = self._graph.nodes[node_id]
+            node_type = node["type"]
+            children = sorted(
+                self._graph.predecessors(node_id),
+                key=lambda child: self._graph.edges[child, node_id].get("position", 0),
             )
-            yield branch, mult_ids, root_node_name
+            if node_type == "out":
+                _, _, branches = results[children[0]]
+                return {"*".join(key): value for key, value in branches.items()}
+            if node_type.endswith("_component"):
+                name = node["name"]
+                component = getattr(self, name)
+                kind = node_type.removesuffix("_component")
+                if inspect_only:
+                    value = None
+                elif kind == "multiplicative":
+                    value = component._factor(e_low, e_high, n_points=n_points)
+                elif energy_flux:
+                    value = component._energy_flux(e_low, e_high, n_points=n_points)
+                else:
+                    value = component._photon_flux(e_low, e_high, n_points=n_points)
+                results[node_id] = kind, name, {(name,): value}
+                continue
+            left_kind, left_expr, left = results[children[0]]
+            right_kind, right_expr, right = results[children[1]]
+            kind = "additive" if "additive" in (left_kind, right_kind) else "multiplicative"
+            if node_type == "add_operation":
+                expression = f"({left_expr}+{right_expr})"
+                if kind == "additive":
+                    branches = {**left, **right}
+                else:
+                    value = None if inspect_only else sum(left.values()) + sum(right.values())
+                    branches = {(expression,): value}
+            else:
+                expression = f"({left_expr}*{right_expr})"
+                branches = {}
+                for left_key, left_value in left.items():
+                    for right_key, right_value in right.items():
+                        if left_kind == "additive":
+                            key = (*sorted((*left_key[:-1], *right_key)), left_key[-1])
+                        elif right_kind == "additive":
+                            key = (*sorted((*left_key, *right_key[:-1])), right_key[-1])
+                        else:
+                            key = tuple(sorted((*left_key, *right_key)))
+                        branches[key] = None if inspect_only else left_value * right_value
+            results[node_id] = kind, expression, branches
 
     @property
     def branches(self) -> list[str]:
-        # Caching on an nnx.Module would mutate its graph definition.
-        return [branch for branch, _, _ in self._iter_branches()]
+        """Name of each additive branch, e.g. ``tbabs_1*powerlaw_1``."""
+        return list(self._evaluate_branches())
 
     def flux_func(self, e_low, e_high, energy_flux=False, n_points=2, return_branches=False):
-        # Reject models without an emitting component before folding.
+        """Integrated photon flux, or energy flux with ``energy_flux=True``, on keV bins."""
         if not self.root_nodes:
             raise ValueError(
-                "This model has no additive component, so it produces no flux. "
-                "A spectral model needs at least one additive component "
-                "(e.g. Powerlaw(), Blackbodyrad()) — multiplicative components such as "
-                "Tbabs only modify an existing continuum."
+                "This model has no additive component at its output, so it produces no flux. "
+                "Multiply dimensionless factors by an emitting component."
             )
-
-        continuum = {}
-
-        for node_id in nx.dag.topological_sort(self._graph):
-            node = self._graph.nodes[node_id]
-
-            if node["type"] == "additive_component":
-                node_name = node["name"]
-                runtime_modules = getattr(self, node_name)
-
-                if not energy_flux:
-                    continuum[node_name] = runtime_modules._photon_flux(
-                        e_low, e_high, n_points=n_points
-                    )
-
-                else:
-                    continuum[node_name] = runtime_modules._energy_flux(
-                        e_low, e_high, n_points=n_points
-                    )
-
-            elif node["type"] == "multiplicative_component":
-                node_name = node["name"]
-                runtime_modules = getattr(self, node_name)
-                continuum[node_name] = runtime_modules._factor(e_low, e_high, n_points=n_points)
-
-            else:
-                pass
-
-        branches = {}
-        for branch_name, mult_ids, root_node_name in self._iter_branches():
-            flux = continuum[root_node_name]
-            for mid in mult_ids:
-                flux = flux * continuum[self._graph.nodes[mid].get("name")]
-            branches[branch_name] = flux
-
-        if return_branches:
-            return branches
-
-        return sum(branches.values())
+        try:
+            n_points = operator.index(n_points)
+        except TypeError:
+            n_points = None
+        if n_points is None or n_points < 2:
+            raise ValueError("n_points must be an integer of at least two.")
+        # Convert eagerly: under a trace jnp.asarray would stage host grids as tracers, and
+        # components that size static work on the grid (APEC) need concrete values.
+        with jax.ensure_compile_time_eval():
+            e_low, e_high = jnp.asarray(e_low), jnp.asarray(e_high)
+        if e_low.shape != e_high.shape:
+            raise ValueError("Lower and upper energy bounds must have matching shapes.")
+        branches = self._evaluate_branches(
+            e_low, e_high, energy_flux=energy_flux, n_points=n_points
+        )
+        return branches if return_branches else sum(branches.values())
 
     def to_mermaid(self, file: str | None = None):
         """

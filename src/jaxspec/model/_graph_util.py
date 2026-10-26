@@ -53,8 +53,12 @@ def compose_with_rename(graph_1: nx.DiGraph, graph_2: nx.DiGraph):
         graph_2: The second graph to compose.
     """
 
-    # Renaming must not mutate the right-hand model's graph.
-    graph_2 = graph_2.copy()
+    # Fresh node ids keep the operands apart, so ``model + model`` reaches the
+    # reused-component check instead of being merged into one occurrence.
+    # Relabel on a copy so neither operand's topology or names are mutated.
+    graph_2 = nx.relabel_nodes(
+        graph_2, {node: str(uuid4()) for node in graph_2 if node != "out"}, copy=True
+    )
 
     used_names = get_component_names(graph_1)
 
@@ -91,6 +95,12 @@ def compose(graph_1: nx.DiGraph, graph_2: nx.DiGraph, operation: str = ""):
         operation: The string describing the operation to perform.
     """
 
+    if operation not in {"add", "mul"}:
+        raise ValueError(f"Unsupported model operation: {operation!r}.")
+    graph_1, graph_2 = graph_1.copy(), graph_2.copy()
+    for position, operand in enumerate((graph_1, graph_2)):
+        for source in operand.predecessors("out"):
+            operand.edges[source, "out"]["position"] = position
     combined_graph = compose_with_rename(graph_1, graph_2)
     node_id = str(uuid4())
     graph = nx.relabel_nodes(combined_graph, {"out": node_id})
@@ -103,6 +113,56 @@ def compose(graph_1: nx.DiGraph, graph_2: nx.DiGraph, operation: str = ""):
     return graph
 
 
+def validate_graph(graph: nx.DiGraph) -> str:
+    """Validate an ordered expression tree and return its output kind.
+
+    Graph nodes contain structural metadata only. Addition combines equal kinds;
+    multiplication permits at most one photon spectrum.
+    """
+    if not isinstance(graph, nx.DiGraph) or graph.is_multigraph():
+        raise ValueError("A spectral graph must be a directed expression tree.")
+    if "out" not in graph or not nx.is_directed_acyclic_graph(graph):
+        raise ValueError("A spectral graph must be acyclic and have an 'out' node.")
+    kinds, names = {}, set()
+    for node_id in nx.topological_sort(graph):
+        node = graph.nodes[node_id]
+        node_type = node.get("type")
+        children = list(graph.predecessors(node_id))
+        expected_out = 0 if node_id == "out" else 1
+        if graph.out_degree(node_id) != expected_out:
+            raise ValueError("Each expression node must have exactly one parent.")
+        if node_type == "out":
+            if node_id != "out" or len(children) != 1:
+                raise ValueError("A spectral graph must have exactly one output expression.")
+            kinds[node_id] = kinds[children[0]]
+        elif node_type in {"add_operation", "mul_operation"}:
+            # `+` and `*` commute: positions only order labels, and graphs pickled
+            # before they existed have none.
+            if len(children) != 2:
+                raise ValueError("Binary model operations require two operands.")
+            left, right = (kinds[child] for child in children)
+            if node_type == "add_operation" and left != right:
+                raise ValueError("Cannot add emission and dimensionless factors.")
+            if node_type == "mul_operation" and left == right == "additive":
+                raise ValueError("Cannot multiply two additive models; use '+' to add emission.")
+            kinds[node_id] = "additive" if "additive" in (left, right) else "multiplicative"
+        elif node_type in {"additive_component", "multiplicative_component"}:
+            name = node.get("name")
+            if not isinstance(name, str) or not name.isidentifier():
+                raise ValueError(f"Invalid public component name: {name!r}.")
+            if name in names:
+                raise ValueError(f"Duplicate public component name: {name!r}.")
+            names.add(name)
+            if children:
+                raise ValueError("Emission and factor components cannot have operands.")
+            kinds[node_id] = node_type.removesuffix("_component")
+        else:
+            raise ValueError(f"Unknown spectral graph node type: {node_type!r}.")
+    if graph.nodes["out"].get("type") != "out":
+        raise ValueError("The 'out' node must have type 'out'.")
+    return kinds["out"]
+
+
 _MERMAID_OP_SYMBOLS = {"add": "**+**", "mul": "**x**"}
 
 
@@ -113,7 +173,7 @@ def _render_mermaid_node(node, attributes) -> str:
     operation_type, node_type = attributes["type"].split("_")
 
     if node_type == "component":
-        name, number = attributes["name"].split("_")
+        name, number = attributes["name"].rsplit("_", 1)
         return f'    {node}("{name.capitalize()} ({number})")\n'
 
     if node_type == "operation":

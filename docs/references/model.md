@@ -4,6 +4,9 @@
     options:
       members:
         - from_component
+        - graph
+        - parameters
+        - branches
         - photon_flux
         - energy_flux
         - integrated_flux

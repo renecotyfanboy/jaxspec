@@ -36,20 +36,40 @@ def _validate_energy_grid(energy_grid: ArrayLike) -> jnp.ndarray:
     [`InstrumentModel.fold`][jaxspec.model.instrument.InstrumentModel.fold]. We require:
 
     * 1-D with at least 2 edges (the model integrates over ``[edge_i, edge_{i+1}]``);
-    * strictly increasing (the redistribution path uses
-      ``interp`` which assumes a monotonic ``xp``);
-    * strictly positive (energies are in keV).
+    * strictly increasing (redistribution searches the ordered source bins);
+    * finite and strictly positive (energies are in keV).
+
+    These constraints must also hold after conversion to the active JAX dtype;
+    otherwise float32 rounding can collapse narrow bins or lose finite bounds.
     """
     arr = np.asarray(energy_grid)
+    if arr.dtype.kind not in "iuf":
+        raise ValueError("energy_grid values must be real numbers.")
     if arr.ndim != 1:
         raise ValueError(f"energy_grid must be 1-D, got shape {arr.shape}.")
     if arr.size < 2:
         raise ValueError(f"energy_grid must have at least 2 points, got {arr.size}.")
+    if not bool(np.isfinite(arr).all()):
+        raise ValueError("energy_grid values must be finite.")
     if not bool((arr[1:] > arr[:-1]).all()):
         raise ValueError("energy_grid must be strictly increasing.")
     if not bool((arr > 0).all()):
         raise ValueError("energy_grid values must be strictly positive.")
-    return jnp.asarray(arr)
+    with np.errstate(over="ignore", under="ignore"):
+        # Energies are floating point; narrowing int64 to int32 can wrap large
+        # positive values into an unrelated, apparently valid grid.
+        grid = jnp.asarray(arr, dtype=jnp.result_type(arr, 1.0))
+    effective = np.asarray(grid)
+    if not (
+        np.isfinite(effective).all()
+        and (effective > 0).all()
+        and (effective[1:] > effective[:-1]).all()
+    ):
+        raise ValueError(
+            "energy_grid must remain finite, positive and strictly increasing at the "
+            f"active JAX precision ({grid.dtype}). Adjust the bounds/bin spacing or enable x64."
+        )
+    return grid
 
 
 def _normalise_observations(

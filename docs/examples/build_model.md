@@ -149,3 +149,45 @@ class MyFactor(MultiplicativeComponent):
     def factor(self, energy):
         return jnp.abs(jnp.cos(energy / self.E0))
 ```
+
+## Inspecting a model
+
+```python
+from jaxspec.model.additive import Diskbb, Powerlaw
+from jaxspec.model.multiplicative import Tbabs
+
+model = Tbabs() * (Powerlaw() + Diskbb(flux_band=(0.1, 30.0)))
+print(model.parameters)  # tbabs_1.nh, powerlaw_1.alpha, diskbb_1.Tin, ...
+print(model.branches)
+print(model.to_mermaid())
+```
+
+`model.parameters` gives the current value of each parameter, `model.branches` the name
+of each additive branch (e.g. `tbabs_1*powerlaw_1`), and `model.graph` a copy of the
+expression graph. Values are set through the components, e.g.
+`model.powerlaw_1.norm.set_value(0.002)`.
+
+Adding emission to a factor, or multiplying two emission components, raises an error.
+Each component can appear only once in a model: reusing an instance, as in
+`model + model` or `t * Powerlaw() + t * Blackbody()`, raises an error. Create one
+component per use, and use a [tied parameter](flexible_priors.md#tied-parameters) to
+share a value between them.
+
+## Working energy grids
+
+`BayesianModel` and the fitters accept an `energy_grid` of bin edges in keV. The model is
+then evaluated once on this grid, and each response bin receives the photons of the grid
+bins it overlaps, in proportion to the overlap:
+
+```python
+import numpy as np
+from jaxspec.fit import BayesianModel
+
+# `prior` and `observations` are the usual prior dictionary and loaded data.
+fit_model = BayesianModel(
+    model, prior, observations, energy_grid=np.geomspace(0.1, 30.0, 2001)
+)
+```
+
+Response bins outside the grid receive nothing: make it cover the whole response band,
+with bins fine enough to resolve narrow lines.
