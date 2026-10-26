@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from inspect import signature
 from uuid import uuid4
 
 import jax
@@ -79,35 +78,6 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
         _graph.add_edge(node_id, "out")
 
         return cls(_graph)
-
-    @classmethod
-    def from_string(cls, expression: str, *, components: dict | None = None):
-        """Parse registered component names, literal configuration, ``+`` and ``*``.
-
-        For example, ``SpectralModel.from_string('tbabs * powerlaw')``. Custom
-        classes must be supplied explicitly in ``components``; no Python code
-        is evaluated. Operators require an explicit argument expression.
-        """
-        from ._parser import parse_model
-
-        return parse_model(expression, components=components)
-
-    def to_dict(self) -> dict:
-        """Export a JSON-compatible graph, constructor configuration and NNX state.
-
-        External data are reloaded by their constructors, not embedded. Custom
-        components must expose reconstructible configuration with ``get_config``.
-        """
-        from ._serialization import serialize_model
-
-        return serialize_model(self)
-
-    @classmethod
-    def from_dict(cls, data: dict, *, components: dict | None = None):
-        """Restore a ``to_dict`` record using registered component classes only."""
-        from ._serialization import deserialize_model
-
-        return deserialize_model(data, components=components)
 
     @property
     def graph(self) -> nx.DiGraph:
@@ -379,27 +349,7 @@ class ModelComponent(HideUnderscore, HasDerivedQuantities, nnx.Module, Composabl
     Abstract class for model components
     """
 
-    def get_config(self) -> dict:
-        """Constructor keywords needed to recreate this component, excluding fitted values.
-
-        Configurable components retain these in ``_config`` or override this hook.
-        Unsupported custom configuration raises instead of silently using defaults.
-        Arrays belong in NNX state, not in the structural configuration.
-        """
-        if hasattr(self, "_config"):
-            return dict(self._config)
-        if type(self).__init__ is object.__init__:
-            return {}
-        arguments = [
-            parameter
-            for name, parameter in signature(type(self).__init__).parameters.items()
-            if name != "self"
-        ]
-        if arguments:
-            raise TypeError(
-                f"{type(self).__name__} must implement get_config() to serialize configuration."
-            )
-        return {}
+    ...
 
 
 class OperatorComponent(ModelComponent):

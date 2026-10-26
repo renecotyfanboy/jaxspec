@@ -149,32 +149,21 @@ class MyFactor(MultiplicativeComponent):
     def factor(self, energy):
         return jnp.abs(jnp.cos(energy / self.E0))
 ```
-## Model strings and inspection
 
-Strings use the same composition rules and public parameter names as Python objects:
+## Inspecting a model
 
 ```python
-from jaxspec.model.abc import SpectralModel
+from jaxspec.model.additive import Diskbb, Powerlaw
+from jaxspec.model.multiplicative import Tbabs
 
-model = SpectralModel.from_string(
-    "tbabs * (powerlaw + diskbb(flux_band=(0.1, 30.0)))"
-)
+model = Tbabs() * (Powerlaw() + Diskbb(flux_band=(0.1, 30.0)))
 print(model.parameters)  # tbabs_1.nh, powerlaw_1.alpha, diskbb_1.Tin, ...
 print(model.branches)
 print(model.to_mermaid())
 ```
 
-Names are case-insensitive. Constructor options use literal keyword arguments;
-fit parameters still use component attributes or the `params` dictionary. For example,
-`model.powerlaw_1.norm.set_value(0.002)` changes the current normalization. A local
-table can be specified as `atable(path='/path/to/table.fits')` using the existing
-supported table reader.
-
-The parser accepts component names, calls, parentheses, addition and multiplication.
-It validates the entire expression before constructing components. Attribute access,
-imports, indexing and arbitrary Python calls are rejected. A valid constructor can
-read its configured file or fetch the component's usual data. Additional trusted
-component classes can be registered with `components={'MyComponent': MyComponent}`.
+Fit parameters use component attributes or the `params` dictionary. For example,
+`model.powerlaw_1.norm.set_value(0.002)` changes the current normalization.
 
 Emission components return bin-integrated photon flux; factors are dimensionless.
 Add emission to emission, or factors to factors. Multiplication can combine factors
@@ -186,30 +175,6 @@ component state, so later edits to an operand do not change the composed model.
 `model.graph` returns a detached NetworkX expression graph. Binary edges have
 `position=0` and `position=1` to record operand order. Graph nodes hold structural
 metadata; parameters and numerical buffers live on the named component modules.
-
-## Saving a model description
-
-A model description preserves public component names, operation order, constructor
-configuration and tracked numerical state:
-
-```python
-import json
-
-encoded = json.dumps(model.to_dict())
-restored = SpectralModel.from_dict(json.loads(encoded))
-```
-
-The versioned dictionary contains separate `nodes`, `edges` and `state` records.
-Tracked NNX parameters and buffers retain their values, shapes and dtypes. Custom
-classes must be registered again through `components` when restoring; descriptions
-cannot import arbitrary Python classes. Configurable custom components implement
-`get_config()` to return the literal keyword arguments required to reconstruct them.
-Unsupported configuration raises an error instead of falling back to defaults.
-
-External atomic and table data are loaded again by the component constructor. These
-files are not embedded or authenticated by this description; keep the same data
-available when restoring. Untracked static Python objects and mutations of cached
-external arrays are not saved. A description is not a complete fit-provenance record.
 
 ## Working energy grids
 
@@ -251,9 +216,6 @@ class ReverseBins(OperatorComponent):
         return jnp.flip(flux, axis=-1)
 
 scoped = ReverseBins()(Powerlaw() + Gauss())
-parsed = SpectralModel.from_string(
-    'reverse(powerlaw + gauss)', components={'reverse': ReverseBins}
-)
 ```
 
 `apply(flux, e_low, e_high)` receives integrated photons and must preserve the
@@ -279,7 +241,7 @@ state explicitly to compiled code. For example:
 import jax
 import jax.numpy as jnp
 from flax import nnx
-from jaxspec.model.abc import AdditiveComponent
+from jaxspec.model.abc import AdditiveComponent, SpectralModel
 
 class BinnedSource(AdditiveComponent):
     def __init__(self):

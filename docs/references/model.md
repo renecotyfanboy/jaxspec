@@ -4,9 +4,6 @@
     options:
       members:
         - from_component
-        - from_string
-        - from_dict
-        - to_dict
         - graph
         - parameters
         - branches
@@ -43,12 +40,5 @@
       members:
         - __call__
         - apply
-      show_root_heading: true
-      show_root_toc_entry: false
-
-::: jaxspec.model.abc.ModelComponent
-    options:
-      members:
-        - get_config
       show_root_heading: true
       show_root_toc_entry: false
