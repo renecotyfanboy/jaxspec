@@ -162,25 +162,22 @@ print(model.branches)
 print(model.to_mermaid())
 ```
 
-Fit parameters use component attributes or the `params` dictionary. For example,
-`model.powerlaw_1.norm.set_value(0.002)` changes the current normalization.
+`model.parameters` gives the current value of each parameter, `model.branches` the name
+of each additive branch (e.g. `tbabs_1*powerlaw_1`), and `model.graph` a copy of the
+expression graph. Values are set through the components, e.g.
+`model.powerlaw_1.norm.set_value(0.002)`.
 
-Emission components return bin-integrated photon flux; factors are dimensionless.
-Add emission to emission, or factors to factors. Multiplication can combine factors
-or apply a factor to emission. Adding a factor to emission or multiplying two
-emission spectra raises an error. Reusing a model in `model + model` creates distinct
-component occurrences with separate parameter names. Composition copies the current
-component state, so later edits to an operand do not change the composed model.
-
-`model.graph` returns a detached NetworkX expression graph. Binary edges have
-`position=0` and `position=1` to record operand order. Graph nodes hold structural
-metadata; parameters and numerical buffers live on the named component modules.
+Adding emission to a factor, or multiplying two emission components, raises an error.
+Each `+` and `*` copies its operands: later edits to an operand do not reach the composed
+model, and a component used twice gets two independent sets of parameters. With
+`t = Tbabs()`, `t * Powerlaw() + t * Blackbody()` has both `tbabs_1.nh` and `tbabs_2.nh`;
+use a [tied parameter](flexible_priors.md#tied-parameters) to share one value.
 
 ## Working energy grids
 
-The existing fitter and `ForwardModel` accept `energy_grid` as finite, positive,
-strictly increasing bin edges in **keV**. This lets you evaluate a spectrum on a
-shared grid before folding it through each observation's response:
+`BayesianModel` and the fitters accept an `energy_grid` of bin edges in keV. The model is
+then evaluated once on this grid, and each response bin receives the photons of the grid
+bins it overlaps, in proportion to the overlap:
 
 ```python
 import numpy as np
@@ -192,47 +189,5 @@ fit_model = BayesianModel(
 )
 ```
 
-Each source bin contains integrated **photons/cm²/s**, not a flux density evaluated
-at its center. Redistribution assumes constant photon density within a source bin
-and transfers the fraction overlapping each response bin. Gaps and energies outside
-source coverage contribute zero; photons outside the target coverage are not
-renormalized into it. Choose enough coverage for the model and check grid refinement
-for narrow features or strongly varying factors. Energy-flux output uses **keV/cm²/s**.
-
-## Numerical state in compiled model evaluation
-
-Use NNX variables for mutable model-owned arrays, and pass the model or its split
-state explicitly to compiled code. For example:
-
-```python
-import jax
-import jax.numpy as jnp
-from flax import nnx
-from jaxspec.model.abc import AdditiveComponent, SpectralModel
-
-class BinnedSource(AdditiveComponent):
-    def __init__(self):
-        self.photons = nnx.Variable(jnp.array([1.0, 2.0]))
-
-    def integrated_continuum(self, e_low, e_high):
-        return self.photons[...]
-
-source = SpectralModel.from_component(BinnedSource())
-graphdef, state = nnx.split(source)
-low, high = jnp.array([1.0, 2.0]), jnp.array([2.0, 3.0])
-
-@jax.jit
-def evaluate(current_state):
-    return nnx.merge(graphdef, current_state).photon_flux(low, high)
-
-before = evaluate(state)
-source.binnedsource_1.photons[...] = jnp.array([3.0, 4.0])
-after = evaluate(nnx.state(source))
-```
-
-The graph structure stays fixed while the array values change. An `nnx.jit` function
-that receives the model as an argument is another supported approach. This contract
-does not make an ordinary `jax.jit` closure over a mutable model safe, nor does it
-change how existing samplers capture external table objects. Bare components remain
-valid backgrounds: `SpectralModelBackground(Powerlaw())` still uses `background.alpha`
-and `background.norm` rather than adding a component-name segment.
+Response bins outside the grid receive nothing: make it cover the whole response band,
+with bins fine enough to resolve narrow lines.

@@ -69,12 +69,12 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
     @property
     def graph(self) -> nx.DiGraph:
-        """Return a detached structural graph with ordered edges and no model arrays."""
+        """Copy of the model's expression graph; editing it does not change the model."""
         return self._graph.copy()
 
     @property
     def parameters(self) -> dict:
-        """Current fitted values keyed by public paths, e.g. ``powerlaw_1.norm``."""
+        """Current parameter values keyed by path, e.g. ``powerlaw_1.norm``."""
         return {
             ".".join(map(str, path)): variable.get_value()
             for path, variable in nnx.to_flat_state(nnx.state(self, nnx.Param))
@@ -145,11 +145,11 @@ class SpectralModel(HideUnderscore, Composable, nnx.Module):
 
     @property
     def branches(self) -> list[str]:
-        """Deterministic branch labels, one per additive component."""
+        """Name of each additive branch, e.g. ``tbabs_1*powerlaw_1``."""
         return list(self._evaluate_branches())
 
     def flux_func(self, e_low, e_high, energy_flux=False, n_points=2, return_branches=False):
-        """Evaluate integrated photon flux on explicit lower/upper bin edges in keV."""
+        """Integrated photon flux, or energy flux with ``energy_flux=True``, on keV bins."""
         if self._kind != "additive":
             raise ValueError(
                 "This model has no additive component at its output, so it produces no flux. "

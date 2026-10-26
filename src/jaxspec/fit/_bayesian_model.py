@@ -77,8 +77,9 @@ class BayesianModel:
         energy_grid: Optional shared grid of energy **bin edges** in keV (``N`` edges
             define ``N - 1`` bins). When given, the spectral model is evaluated once on
             this grid and redistributed onto each observation's native grid, instead of
-            being evaluated separately per observation. Must be 1-D, strictly increasing
-            and strictly positive.
+            being evaluated separately per observation. Must be 1-D, finite, strictly
+            increasing and strictly positive. Response bins outside the grid receive
+            no flux.
     """
 
     def __init__(
