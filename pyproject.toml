@@ -29,7 +29,7 @@ dependencies = [
     # the reason was never recorded. scipy is used for sparse assembly in
     # `data/obsconf.py` and `gammaln` in `analysis/results.py`, so test those before
     # widening.
-    "scipy<1.16",
+    "scipy<1.18",
     "mendeleev>=0.15,<1.2",
     "pooch>=1.8.2,<2",
     "interpax>=0.3.5,<0.4",
