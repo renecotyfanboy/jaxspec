@@ -1,5 +1,9 @@
 # Contributing to jaxspec
 
+Before writing more than a small fix, open an issue or a discussion and wait for a maintainer
+to agree. This rule and the use of AI tools are covered by the
+[AI policy](https://github.com/renecotyfanboy/jaxspec/blob/main/AI_POLICY.md).
+
 ## Install `jaxspec` repository locally
 
 Adding content to the `jaxspec`'s source code requires you to clone the repository locally. This is done by running the
